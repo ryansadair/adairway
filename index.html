@@ -217,6 +217,7 @@
     <button data-tab="bag"><span class="peg">4</span>Bag</button>
     <button data-tab="courses"><span class="peg">5</span>Courses</button>
     <button data-tab="notes"><span class="peg">6</span>Notes</button>
+    <button data-tab="backup"><span class="peg">7</span>Backup</button>
   </nav>
 
   <!-- PLAY (on-course, one hole at a time) -->
@@ -407,6 +408,29 @@
     <div class="card">
       <h2>Journal</h2>
       <div id="notesList"></div>
+    </div>
+  </section>
+
+  <!-- BACKUP -->
+  <section id="tab-backup">
+    <div class="card">
+      <h2>Export a backup</h2>
+      <p style="font-size:13.5px;line-height:1.5;margin-top:0;">
+        Downloads everything — rounds, practice log, bag, course notes, journal — as one
+        JSON file. Save it to Google Drive, Files, email it to yourself, wherever. This
+        browser's storage is durable for normal use, but this file is your safety net if
+        anything ever gets cleared.
+      </p>
+      <button class="btn" id="exportBtn">Download backup (.json)</button>
+    </div>
+    <div class="card">
+      <h2>Restore from a backup</h2>
+      <p style="font-size:13.5px;line-height:1.5;margin-top:0;">
+        Picks up a backup file you exported earlier and replaces everything currently in
+        this browser with it. Use this if you're setting up on a new phone/browser, or
+        recovering after data got cleared.
+      </p>
+      <input type="file" id="importFile" accept="application/json">
     </div>
   </section>
 
@@ -999,6 +1023,56 @@ document.getElementById('notesList').addEventListener('click', async e=>{
   notes = notes.filter(n=>n.id!==btn.dataset.id);
   await saveList('notes', notes);
   renderNotes();
+});
+
+// ---------- BACKUP / RESTORE ----------
+document.getElementById('exportBtn').addEventListener('click', ()=>{
+  const data = { exportedAt: new Date().toISOString(), rounds, practice, bag, courses, notes };
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `back-nine-backup-${todayISO()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById('importFile').addEventListener('change', async (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  let data;
+  try{
+    const text = await file.text();
+    data = JSON.parse(text);
+  }catch(err){
+    alert('That file could not be read — make sure it\'s a backup JSON file exported from Back Nine.');
+    e.target.value='';
+    return;
+  }
+  const hasAny = ['rounds','practice','bag','courses','notes'].some(k=>Array.isArray(data[k]));
+  if(!hasAny){
+    alert('That file doesn\'t look like a Back Nine backup.');
+    e.target.value='';
+    return;
+  }
+  if(!confirm('This replaces everything currently saved in this browser with the backup. Continue?')){
+    e.target.value='';
+    return;
+  }
+  rounds = Array.isArray(data.rounds) ? data.rounds : [];
+  practice = Array.isArray(data.practice) ? data.practice : [];
+  bag = Array.isArray(data.bag) ? data.bag : [];
+  courses = Array.isArray(data.courses) ? data.courses : [];
+  notes = Array.isArray(data.notes) ? data.notes : [];
+  await Promise.all([
+    saveList('rounds', rounds), saveList('practice', practice), saveList('bag', bag),
+    saveList('courses', courses), saveList('notes', notes)
+  ]);
+  renderRounds(); renderPractice(); renderBag(); renderCourses(); renderNotes();
+  e.target.value='';
+  alert('Backup restored.');
 });
 
 // ---------- init ----------
