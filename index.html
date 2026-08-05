@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Back Nine — Golf Tracker</title>
+<title>Adairway — Golf Tracker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -202,7 +202,7 @@
         <ellipse cx="10" cy="37" rx="7" ry="2" fill="#8FA89A" opacity="0.5"/>
       </svg>
       <div>
-        <h1>Back Nine</h1>
+        <h1>Adairway</h1>
         <div class="tag">Personal course log · saved to this device</div>
       </div>
     </div>
@@ -1032,7 +1032,7 @@ document.getElementById('exportBtn').addEventListener('click', ()=>{
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `back-nine-backup-${todayISO()}.json`;
+  a.download = `adairway-backup-${todayISO()}.json`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
