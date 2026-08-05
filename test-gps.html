@@ -395,37 +395,59 @@ document.getElementById('apiSearchBtn').addEventListener('click', async () => {
   }
 });
 
-// IMPORT API COURSE DATA
+// FLEXIBLE API COURSE IMPORT PARSER
 window.importApiCourse = function(idx) {
   const c = window._apiCourseCache?.[idx];
-  if(!c) return;
+  if (!c) { alert('Course data not found.'); return; }
 
-  document.getElementById('newCourseName').value = c.name;
+  // Set Course Name
+  document.getElementById('newCourseName').value = c.name || '';
 
   const pars = [];
   const coords = {};
 
-  const holesData = c.holes || Array.from({length:18}, (_,i)=>({hole_number:i+1, par:4}));
+  // Find where hole details live
+  const rawHoles = c.holes || c.hole_data || c.holes_attributes || [];
 
-  holesData.forEach(h => {
-    const hNum = h.hole_number || h.number;
-    pars.push(h.par || 4);
+  if (Array.isArray(rawHoles) && rawHoles.length > 0) {
+    rawHoles.slice(0, 18).forEach((h, index) => {
+      const hNum = h.hole_number || h.number || (index + 1);
+      const parVal = parseInt(h.par, 10) || 4;
+      pars.push(parVal);
 
-    // If API returns green center, project front and back pins (~15 yds offset)
-    if(h.green_lat && h.green_lng){
-      const lat = parseFloat(h.green_lat);
-      const lng = parseFloat(h.green_lng);
-      const offset = 0.00013; // Approx 15 yards in lat/lng degrees
+      // Extract latitude & longitude from any possible key location
+      const lat = parseFloat(h.green_lat || h.latitude || h.lat || h.green?.lat || c.latitude || c.lat);
+      const lng = parseFloat(h.green_lng || h.longitude || h.lng || h.green?.lng || c.longitude || c.lng);
 
-      coords[hNum] = {
-        front: { lat: lat - offset, lng: lng - offset },
-        back:  { lat: lat + offset, lng: lng + offset }
-      };
+      if (!isNaN(lat) && !isNaN(lng)) {
+        const offset = 0.00013; // ~15 yard offset estimation
+        coords[hNum] = {
+          front: { lat: +(lat - offset).toFixed(6), lng: +(lng - offset).toFixed(6) },
+          back:  { lat: +(lat + offset).toFixed(6), lng: +(lng + offset).toFixed(6) }
+        };
+      }
+    });
+  } else {
+    // Fallback: If hole array is missing, use course-level coordinates
+    const fallbackLat = parseFloat(c.latitude || c.lat || c.location?.lat);
+    const fallbackLng = parseFloat(c.longitude || c.lng || c.location?.lng);
+
+    for (let i = 1; i <= 18; i++) {
+      pars.push(4);
+      if (!isNaN(fallbackLat) && !isNaN(fallbackLng)) {
+        const offset = 0.00013;
+        coords[i] = {
+          front: { lat: +(fallbackLat - offset).toFixed(6), lng: +(fallbackLng - offset).toFixed(6) },
+          back:  { lat: +(fallbackLat + offset).toFixed(6), lng: +(fallbackLng + offset).toFixed(6) }
+        };
+      }
     }
-  });
+  }
+
+  while (pars.length < 18) pars.push(4);
 
   renderBuilderTable({ pars, coords });
-  alert(`Imported "${c.name}" into the form below! Review and hit "Save Course to Presets".`);
+  alert(`Imported "${c.name}"! Par values and coordinates have been filled in below.`);
 };
 
 // Save Custom Course
