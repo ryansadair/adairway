@@ -28,42 +28,7 @@
       repeating-linear-gradient(0deg, transparent, transparent 27px, rgba(51,49,44,0.035) 28px),
       repeating-linear-gradient(90deg, transparent, transparent 27px, rgba(51,49,44,0.035) 28px);
   }
-  .wrap{max-width:980px;margin:0 auto;padding:28px 20px 80px;display:none;}
-
-  .auth-card {
-    max-width: 420px;
-    margin: 60px auto;
-    padding: 28px;
-    background: var(--paper-light);
-    border: 1px solid var(--line);
-    border-radius: 3px;
-    box-shadow: 0 4px 12px rgba(31,58,46,0.08);
-  }
-  .auth-header {
-    text-align: center;
-    margin-bottom: 20px;
-  }
-  .auth-header h2 {
-    font-family: 'Fraunces', serif;
-    color: var(--fairway-deep);
-    margin: 8px 0 4px;
-  }
-  .auth-btn-row {
-    display: flex;
-    gap: 10px;
-    margin-top: 18px;
-  }
-  .user-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: rgba(31,58,46,0.05);
-    padding: 8px 14px;
-    border-radius: 3px;
-    margin-bottom: 16px;
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 12px;
-  }
+  .wrap{max-width:980px;margin:0 auto;padding:28px 20px 80px;display:block;}
 
   header{
     display:flex;align-items:flex-end;justify-content:space-between;
@@ -218,44 +183,8 @@
 </head>
 <body>
 
-<!-- AUTH CONTAINER -->
-<div id="authContainer" class="auth-card">
-  <div class="auth-header">
-    <svg class="flagmark" viewBox="0 0 40 40" fill="none" style="margin:0 auto; display:block;">
-      <line x1="10" y1="4" x2="10" y2="36" stroke="#1F3A2E" stroke-width="2"/>
-      <path d="M10 5 L28 10 L10 15 Z" fill="#A4402F"/>
-      <ellipse cx="10" cy="37" rx="7" ry="2" fill="#8FA89A" opacity="0.5"/>
-    </svg>
-    <h2>Adairway Golf</h2>
-    <div style="font-size: 13px; color: var(--turf);">Sign in or create an account</div>
-  </div>
-  
-  <div class="field">
-    <label>Email</label>
-    <input type="text" id="authEmail" placeholder="golfer@example.com">
-  </div>
-  
-  <div class="field">
-    <label>Password</label>
-    <input type="password" id="authPassword" placeholder="••••••••">
-  </div>
-  
-  <div id="authError" style="color: var(--flag); font-size: 12px; margin-top: 8px; font-family: 'IBM Plex Mono', monospace; display: none;"></div>
-
-  <div class="auth-btn-row">
-    <button class="btn" id="loginBtn" style="flex: 1;">Log In</button>
-    <button class="btn outline" id="signupBtn" style="flex: 1;">Create Account</button>
-  </div>
-</div>
-
 <!-- MAIN APP CONTAINER -->
 <div class="wrap">
-
-  <div class="user-bar">
-    <span>Logged in as: <strong id="userEmailDisplay">...</strong></span>
-    <button class="del" id="logoutBtn">Sign Out</button>
-  </div>
-
   <header>
     <div class="brand">
       <svg class="flagmark" viewBox="0 0 40 40" fill="none">
@@ -481,6 +410,7 @@ const OGA_BASE = 'https://api.opengolfapi.org';
 let activeCourseApiId = null;
 let currentLoadedPars = Array(18).fill(4);
 let currentLoadedYards = Array(18).fill(0);
+let currentLoadedGreenCoords = Array(18).fill(null);
 let currentPlayHole = 1;
 
 let savedCourses = JSON.parse(localStorage.getItem('adairway_courses') || '[]');
@@ -492,8 +422,8 @@ document.getElementById('p-date').value = todayISO();
 document.getElementById('n-date').value = todayISO();
 document.getElementById('pl-date').value = todayISO();
 
-// ---------- SCORECARD PAR & YARDAGE POPULATION ----------
-function applyScorecardData(pars, yards) {
+// ---------- SCORECARD PAR, YARDAGE & GPS POPULATION ----------
+function applyScorecardData(pars, yards, coords) {
   if (pars && pars.length) {
     currentLoadedPars = pars;
     for (let i = 1; i <= 18; i++) {
@@ -512,6 +442,12 @@ function applyScorecardData(pars, yards) {
       }
     }
   }
+  if (coords && coords.length) {
+    currentLoadedGreenCoords = coords;
+  } else {
+    currentLoadedGreenCoords = Array(18).fill(null);
+  }
+  
   updateTotals();
   updatePlayHoleUI();
 }
@@ -519,6 +455,7 @@ function applyScorecardData(pars, yards) {
 function updatePlayHoleUI() {
   document.getElementById('playHoleNum').textContent = `Hole ${currentPlayHole}`;
   document.getElementById('playHolePar').innerHTML = `Par ${currentLoadedPars[currentPlayHole - 1] || 4} &bull; <span>${currentLoadedYards[currentPlayHole - 1] || '--'} yds</span>`;
+  document.getElementById('gpsDisplay').textContent = '-- yds';
 }
 
 // ---------- COURSE SAVING & DROPDOWN SYNC ----------
@@ -574,7 +511,10 @@ document.getElementById('saveCourseBtn').addEventListener('click', () => {
     yards.push(isNaN(ydVal) ? 0 : ydVal);
   }
 
-  const newCourse = { name, rating, slope, apiId, pars, yards, id: Date.now() };
+  const newCourse = { 
+    name, rating, slope, apiId, pars, yards, coords: currentLoadedGreenCoords, id: Date.now() 
+  };
+  
   savedCourses.push(newCourse);
   localStorage.setItem('adairway_courses', JSON.stringify(savedCourses));
 
@@ -585,7 +525,7 @@ document.getElementById('saveCourseBtn').addEventListener('click', () => {
   document.getElementById('co-api-id').value = '';
 
   updateCourseDropdowns();
-  alert('Course saved successfully with hole pars and distances!');
+  alert('Course saved successfully with hole pars, distances, and GPS data!');
 });
 
 window.deleteCourse = function(index) {
@@ -601,7 +541,8 @@ document.getElementById('r-preset').addEventListener('change', (e) => {
     const course = savedCourses[selectedIndex];
     if (course) {
       document.getElementById('r-course').value = course.name;
-      applyScorecardData(course.pars, course.yards);
+      applyScorecardData(course.pars, course.yards, course.coords);
+      activeCourseApiId = course.apiId;
     }
   }
 });
@@ -612,12 +553,13 @@ document.getElementById('pl-preset').addEventListener('change', (e) => {
     const course = savedCourses[selectedIndex];
     if (course) {
       document.getElementById('pl-course').value = course.name;
-      applyScorecardData(course.pars, course.yards);
+      applyScorecardData(course.pars, course.yards, course.coords);
+      activeCourseApiId = course.apiId;
     }
   }
 });
 
-// ---------- OPENGOLFAPI INTEGRATION (ROBUST PAR & YARDAGE FETCHING) ----------
+// ---------- OPENGOLFAPI INTEGRATION (ROBUST PAR, YARDAGE & GPS FETCHING) ----------
 document.getElementById('apiSearchBtn').addEventListener('click', async () => {
   const query = document.getElementById('apiSearchInput').value.trim();
   const resultsDiv = document.getElementById('apiSearchResults');
@@ -653,6 +595,27 @@ document.getElementById('apiSearchBtn').addEventListener('click', async () => {
   }
 });
 
+// Helper function to extract hole data dynamically
+function extractHoleData(hole, index, extractedPars, extractedYards, extractedCoords) {
+  if (hole.par) extractedPars[index] = parseInt(hole.par, 10);
+  
+  // Try finding yardage/distance
+  const distance = hole.length || hole.yardage || hole.yards || hole.distance;
+  if (distance) extractedYards[index] = parseInt(distance, 10);
+
+  // Extract Coordinates for GPS
+  if (hole.latitude && hole.longitude) {
+    extractedCoords[index] = { lat: parseFloat(hole.latitude), lon: parseFloat(hole.longitude) };
+  } else if (hole.center_lat && hole.center_lng) {
+    extractedCoords[index] = { lat: parseFloat(hole.center_lat), lon: parseFloat(hole.center_lng) };
+  } else if (hole.green_lat && hole.green_lng) {
+    extractedCoords[index] = { lat: parseFloat(hole.green_lat), lon: parseFloat(hole.green_lng) };
+  } else if (hole.coordinates && Array.isArray(hole.coordinates)) {
+    // GeoJSON [lon, lat] format
+    extractedCoords[index] = { lat: parseFloat(hole.coordinates[1]), lon: parseFloat(hole.coordinates[0]) };
+  }
+}
+
 async function applyApiCourse(courseId) {
   try {
     const res = await fetch(`${OGA_BASE}/api/v1/courses/${courseId}`);
@@ -669,6 +632,7 @@ async function applyApiCourse(courseId) {
 
     let extractedPars = Array(18).fill(4);
     let extractedYards = Array(18).fill(0);
+    let extractedCoords = Array(18).fill(null);
     let dataFound = false;
 
     // Direct course hole array check
@@ -677,8 +641,7 @@ async function applyApiCourse(courseId) {
       rawHoles.forEach(h => {
         const num = (h.number || h.hole_number || h.hole) - 1;
         if (num >= 0 && num < 18) {
-          if (h.par) extractedPars[num] = parseInt(h.par, 10);
-          if (h.length || h.yardage || h.yards) extractedYards[num] = parseInt(h.length || h.yardage || h.yards, 10);
+          extractHoleData(h, num, extractedPars, extractedYards, extractedCoords);
         }
       });
       dataFound = true;
@@ -690,16 +653,17 @@ async function applyApiCourse(courseId) {
         const teeRes = await fetch(`${OGA_BASE}/api/v1/courses/${courseId}/tees`);
         if (teeRes.ok) {
           const teeData = await teeRes.json();
-          const tees = teeData.tees || teeData;
+          let tees = teeData.tees || teeData;
+          if (!Array.isArray(tees) && tees.tees) tees = tees.tees;
+          
           if (Array.isArray(tees) && tees.length > 0) {
             // Pick default white/middle tee or first tee box
             const selectedTee = tees.find(t => (t.name || '').toLowerCase().includes('white')) || tees[0];
             const teeHoles = selectedTee.holes || [];
             teeHoles.forEach(h => {
-              const num = (h.number || h.hole_number) - 1;
+              const num = (h.number || h.hole_number || h.hole) - 1;
               if (num >= 0 && num < 18) {
-                if (h.par) extractedPars[num] = parseInt(h.par, 10);
-                if (h.length || h.yardage || h.yards) extractedYards[num] = parseInt(h.length || h.yardage || h.yards, 10);
+                extractHoleData(h, num, extractedPars, extractedYards, extractedCoords);
               }
             });
             if (teeHoles.length > 0) dataFound = true;
@@ -717,10 +681,9 @@ async function applyApiCourse(courseId) {
           const holes = holeData.holes || holeData;
           if (Array.isArray(holes) && holes.length > 0) {
             holes.forEach(h => {
-              const num = (h.number || h.hole_number) - 1;
+              const num = (h.number || h.hole_number || h.hole) - 1;
               if (num >= 0 && num < 18) {
-                if (h.par) extractedPars[num] = parseInt(h.par, 10);
-                if (h.length || h.yardage || h.yards) extractedYards[num] = parseInt(h.length || h.yardage || h.yards, 10);
+                extractHoleData(h, num, extractedPars, extractedYards, extractedCoords);
               }
             });
           }
@@ -728,10 +691,10 @@ async function applyApiCourse(courseId) {
       } catch(e) {}
     }
 
-    applyScorecardData(extractedPars, extractedYards);
-    alert(`Loaded ${courseName}! Hole pars and distances have been updated on the scorecard.`);
+    applyScorecardData(extractedPars, extractedYards, extractedCoords);
+    alert(`Loaded ${courseName}! Hole pars, distances, and GPS data have been updated.`);
   } catch(err) {
-    alert('Failed to load course details.');
+    alert('Failed to load course details. Make sure you are connected to the network.');
   }
 }
 
@@ -764,21 +727,33 @@ document.getElementById('gpsBtn').addEventListener('click', () => {
     const userLat = pos.coords.latitude;
     const userLon = pos.coords.longitude;
     
+    // First, try cached coordinates from the initial robust API fetch
+    const preLoadedCoords = currentLoadedGreenCoords[currentPlayHole - 1];
+    if (preLoadedCoords && preLoadedCoords.lat && preLoadedCoords.lon) {
+       const yds = distanceYards(userLat, userLon, preLoadedCoords.lat, preLoadedCoords.lon);
+       display.textContent = `${yds} yds`;
+       return;
+    }
+    
+    // If not cached, fallback to dynamic fetch (for older saved courses)
     if (activeCourseApiId) {
       try {
         const res = await fetch(`${OGA_BASE}/api/v1/features?course=${activeCourseApiId}&hole=${currentPlayHole}&type=green`);
-        const data = await res.json();
-        
-        if (data && data.length > 0 && data[0].coordinates) {
-          const greenLat = data[0].coordinates[1];
-          const greenLon = data[0].coordinates[0];
-          const yds = distanceYards(userLat, userLon, greenLat, greenLon);
-          display.textContent = `${yds} yds`;
-          return;
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.length > 0 && data[0].coordinates) {
+            // Usually [longitude, latitude] in standard geojson features
+            const greenLat = parseFloat(data[0].coordinates[1]);
+            const greenLon = parseFloat(data[0].coordinates[0]);
+            const yds = distanceYards(userLat, userLon, greenLat, greenLon);
+            display.textContent = `${yds} yds`;
+            return;
+          }
         }
       } catch(e) {}
     }
-    display.textContent = "No GPS Data";
+    
+    display.textContent = "No GPS Data found for this hole.";
   }, (err) => {
     display.textContent = "GPS Error";
   });
@@ -952,74 +927,6 @@ document.getElementById('tabs').addEventListener('click', e=>{
   btn.classList.add('active');
   document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
 });
-</script>
-
-<!-- FIREBASE AUTH INTEGRATION -->
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-  import { 
-    getAuth, 
-    createUserWithEmailAndPassword, 
-    signInWithEmailAndPassword, 
-    onAuthStateChanged, 
-    signOut 
-  } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-
-  const firebaseConfig = {
-    apiKey: "AIzaSyBHKyis-dDknrvOuojryQnIsVcRkEPR5bQ",
-    authDomain: "adairway-golf.firebaseapp.com",
-    projectId: "adairway-golf",
-    storageBucket: "adairway-golf.firebasestorage.app",
-    messagingSenderId: "109030250059",
-    appId: "1:109030250059:web:fb3a3684e4b474cb491fce"
-  };
-
-  const app = initializeApp(firebaseConfig);
-  const auth = getAuth(app);
-
-  const authContainer = document.getElementById('authContainer');
-  const appWrap = document.querySelector('.wrap');
-  const authEmail = document.getElementById('authEmail');
-  const authPassword = document.getElementById('authPassword');
-  const authError = document.getElementById('authError');
-  const userEmailDisplay = document.getElementById('userEmailDisplay');
-
-  document.getElementById('signupBtn').addEventListener('click', async () => {
-    authError.style.display = 'none';
-    try {
-      await createUserWithEmailAndPassword(auth, authEmail.value, authPassword.value);
-    } catch (error) {
-      authError.textContent = error.message;
-      authError.style.display = 'block';
-    }
-  });
-
-  document.getElementById('loginBtn').addEventListener('click', async () => {
-    authError.style.display = 'none';
-    try {
-      await signInWithEmailAndPassword(auth, authEmail.value, authPassword.value);
-    } catch (error) {
-      authError.textContent = error.message;
-      authError.style.display = 'block';
-    }
-  });
-
-  document.getElementById('logoutBtn').addEventListener('click', () => {
-    signOut(auth);
-  });
-
-  onAuthStateChanged(auth, (user) => {
-    if (user) {
-      authContainer.style.display = 'none';
-      appWrap.style.display = 'block';
-      userEmailDisplay.textContent = user.email;
-    } else {
-      authContainer.style.display = 'block';
-      appWrap.style.display = 'none';
-      authEmail.value = '';
-      authPassword.value = '';
-    }
-  });
 </script>
 
 </body>
