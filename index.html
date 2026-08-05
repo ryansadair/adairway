@@ -525,7 +525,7 @@ document.getElementById('apiSearchBtn').addEventListener('click', async () => {
     resultsDiv.innerHTML = courses.map(c => `
       <div class="api-result-item">
         <div>
-          <strong>${c.name}</strong><br>
+          <strong>${c.name || c.course_name || c.courseName || c.club_name || 'Golf Course'}</strong><br>
           <small>${c.city || ''} ${c.state || ''}</small>
         </div>
         <button class="btn small" onclick="applyApiCourse('${c.id}')">Use This</button>
@@ -540,12 +540,17 @@ async function applyApiCourse(courseId) {
   try {
     const res = await fetch(`${OGA_BASE}/api/v1/courses/${courseId}`);
     const course = await res.json();
-    document.getElementById('co-name').value = course.name || '';
-    document.getElementById('co-rating').value = course.rating || 72.0;
-    document.getElementById('co-slope').value = course.slope || 113;
-    document.getElementById('co-api-id').value = course.id;
-    activeCourseApiId = course.id;
-    alert(`Loaded ${course.name}! Fill in any notes and click "Save Course".`);
+    
+    // Fallback to various possible JSON keys returned by the API
+    const courseName = course.name || course.course_name || course.courseName || course.club_name || '';
+    
+    document.getElementById('co-name').value = courseName;
+    document.getElementById('co-rating').value = course.rating || course.course_rating || 72.0;
+    document.getElementById('co-slope').value = course.slope || course.slope_rating || 113;
+    document.getElementById('co-api-id').value = course.id || courseId;
+    activeCourseApiId = course.id || courseId;
+    
+    alert(`Loaded ${courseName || 'Course'}! Fill in any notes and click "Save Course".`);
   } catch(err) {
     alert('Failed to load course details.');
   }
