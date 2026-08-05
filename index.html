@@ -502,6 +502,7 @@
 // ---------- Local Data Store & Setup ----------
 const OGA_BASE = 'https://api.opengolfapi.org';
 let activeCourseApiId = null;
+let currentLoadedPars = [];
 
 let savedCourses = JSON.parse(localStorage.getItem('adairway_courses') || '[]');
 
@@ -512,6 +513,18 @@ document.getElementById('p-date').value = todayISO();
 document.getElementById('n-date').value = todayISO();
 document.getElementById('pl-date').value = todayISO();
 
+// ---------- SCORECARD PAR POPULATION ----------
+function applyScorecardPars(pars) {
+  if (!pars || !pars.length) return;
+  for (let i = 1; i <= 18; i++) {
+    const parInput = document.getElementById(`par_${i}`);
+    if (parInput && pars[i - 1] !== undefined) {
+      parInput.value = pars[i - 1];
+    }
+  }
+  updateTotals();
+}
+
 // ---------- COURSE SAVING & DROPDOWN SYNC ----------
 function updateCourseDropdowns() {
   const rPreset = document.getElementById('r-preset');
@@ -519,7 +532,7 @@ function updateCourseDropdowns() {
   const coursesList = document.getElementById('coursesList');
 
   const optionsHTML = '<option value="">— Select a regular —</option>' + 
-    savedCourses.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+    savedCourses.map((c, idx) => `<option value="${idx}">${c.name}</option>`).join('');
 
   if(rPreset) rPreset.innerHTML = optionsHTML;
   if(plPreset) plPreset.innerHTML = optionsHTML;
@@ -552,7 +565,14 @@ document.getElementById('saveCourseBtn').addEventListener('click', () => {
     return;
   }
 
-  const newCourse = { name, rating, slope, apiId, id: Date.now() };
+  // Get current pars from the scorecard
+  const pars = [];
+  for (let i = 1; i <= 18; i++) {
+    const val = parseInt(document.getElementById(`par_${i}`)?.value, 10);
+    pars.push(isNaN(val) ? 4 : val);
+  }
+
+  const newCourse = { name, rating, slope, apiId, pars, id: Date.now() };
   savedCourses.push(newCourse);
   localStorage.setItem('adairway_courses', JSON.stringify(savedCourses));
 
@@ -574,10 +594,29 @@ window.deleteCourse = function(index) {
 
 // Course Selection Event Listeners for Dropdowns
 document.getElementById('r-preset').addEventListener('change', (e) => {
-  if (e.target.value) document.getElementById('r-course').value = e.target.value;
+  const selectedIndex = e.target.value;
+  if (selectedIndex !== "") {
+    const course = savedCourses[selectedIndex];
+    if (course) {
+      document.getElementById('r-course').value = course.name;
+      if (course.pars && course.pars.length) {
+        applyScorecardPars(course.pars);
+      }
+    }
+  }
 });
+
 document.getElementById('pl-preset').addEventListener('change', (e) => {
-  if (e.target.value) document.getElementById('pl-course').value = e.target.value;
+  const selectedIndex = e.target.value;
+  if (selectedIndex !== "") {
+    const course = savedCourses[selectedIndex];
+    if (course) {
+      document.getElementById('pl-course').value = course.name;
+      if (course.pars && course.pars.length) {
+        applyScorecardPars(course.pars);
+      }
+    }
+  }
 });
 
 // ---------- OPENGOLFAPI INTEGRATION ----------
@@ -623,8 +662,32 @@ async function applyApiCourse(courseId) {
     document.getElementById('co-slope').value = course.slope || course.slope_rating || 113;
     document.getElementById('co-api-id').value = course.id || courseId;
     activeCourseApiId = course.id || courseId;
+
+    // Fetch hole details for pars if available
+    let pars = [];
+    if (course.holes && Array.isArray(course.holes)) {
+      pars = course.holes.map(h => h.par || h.par_number || 4);
+    } else if (course.pars && Array.isArray(course.pars)) {
+      pars = course.pars;
+    } else {
+      // Attempt hole API query for pars
+      try {
+        const holesRes = await fetch(`${OGA_BASE}/api/v1/holes?course=${courseId}`);
+        const holesData = await holesRes.json();
+        const holeList = holesData.holes || holesData;
+        if (Array.isArray(holeList) && holeList.length > 0) {
+          holeList.sort((a,b) => (a.number || a.hole_number) - (b.number || b.hole_number));
+          pars = holeList.map(h => h.par || 4);
+        }
+      } catch(e) {}
+    }
+
+    if (pars.length > 0) {
+      currentLoadedPars = pars;
+      applyScorecardPars(pars);
+    }
     
-    alert(`Loaded ${courseName || 'Course'}! Click "Save Course" below to store it.`);
+    alert(`Loaded ${courseName || 'Course'}! Hole pars and ratings updated.`);
   } catch(err) {
     alert('Failed to load course details.');
   }
