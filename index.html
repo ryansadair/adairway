@@ -471,6 +471,11 @@
       <input type="hidden" id="co-api-id">
       <button class="btn" id="saveCourseBtn">Save course</button>
     </div>
+
+    <div class="card">
+      <h2>Saved Courses</h2>
+      <div id="coursesList"></div>
+    </div>
   </section>
 
   <!-- NOTES -->
@@ -494,9 +499,11 @@
 </div>
 
 <script>
-// ---------- Utilities & Setup ----------
+// ---------- Local Data Store & Setup ----------
 const OGA_BASE = 'https://api.opengolfapi.org';
 let activeCourseApiId = null;
+
+let savedCourses = JSON.parse(localStorage.getItem('adairway_courses') || '[]');
 
 const todayISO = () => new Date().toISOString().slice(0,10);
 document.getElementById('todayDate').textContent = new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'});
@@ -504,6 +511,74 @@ document.getElementById('r-date').value = todayISO();
 document.getElementById('p-date').value = todayISO();
 document.getElementById('n-date').value = todayISO();
 document.getElementById('pl-date').value = todayISO();
+
+// ---------- COURSE SAVING & DROPDOWN SYNC ----------
+function updateCourseDropdowns() {
+  const rPreset = document.getElementById('r-preset');
+  const plPreset = document.getElementById('pl-preset');
+  const coursesList = document.getElementById('coursesList');
+
+  const optionsHTML = '<option value="">— Select a regular —</option>' + 
+    savedCourses.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+
+  if(rPreset) rPreset.innerHTML = optionsHTML;
+  if(plPreset) plPreset.innerHTML = optionsHTML;
+
+  if(coursesList) {
+    if(savedCourses.length === 0) {
+      coursesList.innerHTML = '<div class="empty">No courses saved yet.</div>';
+    } else {
+      coursesList.innerHTML = savedCourses.map((c, index) => `
+        <div class="list-item">
+          <div>
+            <strong>${c.name}</strong><br>
+            <small style="color:var(--turf);">Rating: ${c.rating || '--'} | Slope: ${c.slope || '--'}</small>
+          </div>
+          <button class="del" onclick="deleteCourse(${index})">Delete</button>
+        </div>
+      `).join('');
+    }
+  }
+}
+
+document.getElementById('saveCourseBtn').addEventListener('click', () => {
+  const name = document.getElementById('co-name').value.trim();
+  const rating = document.getElementById('co-rating').value;
+  const slope = document.getElementById('co-slope').value;
+  const apiId = document.getElementById('co-api-id').value;
+
+  if (!name) {
+    alert('Please enter a course name.');
+    return;
+  }
+
+  const newCourse = { name, rating, slope, apiId, id: Date.now() };
+  savedCourses.push(newCourse);
+  localStorage.setItem('adairway_courses', JSON.stringify(savedCourses));
+
+  // Clear inputs
+  document.getElementById('co-name').value = '';
+  document.getElementById('co-rating').value = '';
+  document.getElementById('co-slope').value = '';
+  document.getElementById('co-api-id').value = '';
+
+  updateCourseDropdowns();
+  alert('Course saved successfully!');
+});
+
+window.deleteCourse = function(index) {
+  savedCourses.splice(index, 1);
+  localStorage.setItem('adairway_courses', JSON.stringify(savedCourses));
+  updateCourseDropdowns();
+};
+
+// Course Selection Event Listeners for Dropdowns
+document.getElementById('r-preset').addEventListener('change', (e) => {
+  if (e.target.value) document.getElementById('r-course').value = e.target.value;
+});
+document.getElementById('pl-preset').addEventListener('change', (e) => {
+  if (e.target.value) document.getElementById('pl-course').value = e.target.value;
+});
 
 // ---------- OPENGOLFAPI INTEGRATION ----------
 document.getElementById('apiSearchBtn').addEventListener('click', async () => {
@@ -541,7 +616,6 @@ async function applyApiCourse(courseId) {
     const res = await fetch(`${OGA_BASE}/api/v1/courses/${courseId}`);
     const course = await res.json();
     
-    // Fallback to various possible JSON keys returned by the API
     const courseName = course.name || course.course_name || course.courseName || course.club_name || '';
     
     document.getElementById('co-name').value = courseName;
@@ -550,7 +624,7 @@ async function applyApiCourse(courseId) {
     document.getElementById('co-api-id').value = course.id || courseId;
     activeCourseApiId = course.id || courseId;
     
-    alert(`Loaded ${courseName || 'Course'}! Fill in any notes and click "Save Course".`);
+    alert(`Loaded ${courseName || 'Course'}! Click "Save Course" below to store it.`);
   } catch(err) {
     alert('Failed to load course details.');
   }
@@ -585,7 +659,6 @@ document.getElementById('gpsBtn').addEventListener('click', () => {
     const userLat = pos.coords.latitude;
     const userLon = pos.coords.longitude;
     
-    // Default to active course API ID or fallback search
     if (activeCourseApiId) {
       try {
         const currentHole = document.getElementById('playHoleNum').textContent.replace('Hole ', '');
@@ -614,7 +687,6 @@ const holesSelect = document.getElementById('r-holes');
 function renderScorecard(numHoles) {
   const is18 = numHoles === 18;
   
-  // Build Header
   let headerHTML = '<thead><tr><th style="width:64px;">HOLE</th>';
   for (let i = 1; i <= 9; i++) headerHTML += `<th>${i}</th>`;
   headerHTML += '<th>OUT</th>';
@@ -624,10 +696,8 @@ function renderScorecard(numHoles) {
   }
   headerHTML += '<th>TOT</th></tr></thead>';
 
-  // Build Body Rows
   let bodyHTML = '<tbody>';
   
-  // Par Row
   bodyHTML += '<tr><td class="rowlabel">PAR</td>';
   for (let i = 1; i <= 9; i++) bodyHTML += `<td class="front9"><input type="number" id="par_${i}" value="4" min="3" max="5"></td>`;
   bodyHTML += '<td class="total" id="par_out">36</td>';
@@ -637,7 +707,6 @@ function renderScorecard(numHoles) {
   }
   bodyHTML += '<td class="total" id="par_tot">' + (is18 ? '72' : '36') + '</td></tr>';
 
-  // Score Row
   bodyHTML += '<tr><td class="rowlabel">SCORE</td>';
   for (let i = 1; i <= 9; i++) bodyHTML += `<td class="front9"><input type="number" id="score_${i}" min="1"></td>`;
   bodyHTML += '<td class="total" id="score_out">0</td>';
@@ -647,7 +716,6 @@ function renderScorecard(numHoles) {
   }
   bodyHTML += '<td class="total" id="score_tot">0</td></tr>';
 
-  // Putts Row
   bodyHTML += '<tr><td class="rowlabel">PUTTS</td>';
   for (let i = 1; i <= 9; i++) bodyHTML += `<td class="front9"><input type="number" id="putts_${i}" min="0"></td>`;
   bodyHTML += '<td class="total" id="putts_out">0</td>';
@@ -657,7 +725,6 @@ function renderScorecard(numHoles) {
   }
   bodyHTML += '<td class="total" id="putts_tot">0</td></tr>';
 
-  // FIR Row
   bodyHTML += '<tr><td class="rowlabel">FIR</td>';
   for (let i = 1; i <= 9; i++) bodyHTML += `<td class="front9"><input type="checkbox" id="fir_${i}"></td>`;
   bodyHTML += '<td class="total" id="fir_out">0</td>';
@@ -667,7 +734,6 @@ function renderScorecard(numHoles) {
   }
   bodyHTML += '<td class="total" id="fir_tot">0</td></tr>';
 
-  // GIR Row
   bodyHTML += '<tr><td class="rowlabel">GIR</td>';
   for (let i = 1; i <= 9; i++) bodyHTML += `<td class="front9"><input type="checkbox" id="gir_${i}"></td>`;
   bodyHTML += '<td class="total" id="gir_out">0</td>';
@@ -680,7 +746,6 @@ function renderScorecard(numHoles) {
   bodyHTML += '</tbody>';
   scTable.innerHTML = headerHTML + bodyHTML;
 
-  // Add event listeners for dynamic recalculations
   scTable.querySelectorAll('input').forEach(input => {
     input.addEventListener('input', updateTotals);
   });
@@ -736,8 +801,9 @@ holesSelect.addEventListener('change', (e) => {
   renderScorecard(parseInt(e.target.value, 10));
 });
 
-// Initial Render
+// Initial Renders
 renderScorecard(18);
+updateCourseDropdowns();
 
 // ---------- Navigation Tabs ----------
 document.getElementById('tabs').addEventListener('click', e=>{
