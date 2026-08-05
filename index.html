@@ -559,157 +559,223 @@ document.getElementById('pl-preset').addEventListener('change', (e) => {
   }
 });
 
-// ---------- OPENGOLFAPI INTEGRATION (ROBUST PAR, YARDAGE & GPS FETCHING) ----------
+// ---------- OPENGOLFAPI INTEGRATION ----------
+// API shape (api/v1):
+//   search → { courses: [{ id, course_name, city, state, ... }] }
+//   course → { id, course_name, tees: [{ tee_name, tee_color, course_rating, slope, yardage }],
+//              holes_data: [{ number, par, yardages: { white, blue, ... }, green: { center } }] }
+//   features?course=&hole=&type=green → { features: [{ center: { lat, lng } }] }
+
 document.getElementById('apiSearchBtn').addEventListener('click', async () => {
   const query = document.getElementById('apiSearchInput').value.trim();
   const resultsDiv = document.getElementById('apiSearchResults');
-  if(!query) return;
-  
+  if (!query) return;
+
   resultsDiv.innerHTML = '<div style="font-size:12px; color:var(--turf);">Searching courses...</div>';
   try {
     const res = await fetch(`${OGA_BASE}/api/v1/courses/search?q=${encodeURIComponent(query)}`);
+    if (!res.ok) throw new Error('search failed');
     const data = await res.json();
     const courses = data.courses || data.results || (Array.isArray(data) ? data : []);
 
-    if(!courses || courses.length === 0) {
+    if (!courses.length) {
       resultsDiv.innerHTML = '<div style="font-size:12px; color:var(--flag);">No courses found.</div>';
       return;
     }
 
     resultsDiv.innerHTML = courses.map(c => {
       const id = c.id || c.course_id;
-      const cName = c.name || c.course_name || c.club_name || 'Golf Course';
+      const cName = c.course_name || c.name || c.club_name || 'Golf Course';
       const loc = [c.city, c.state].filter(Boolean).join(', ');
+      const parInfo = c.par ? ` · Par ${c.par}` : '';
       return `
         <div class="api-result-item">
           <div>
             <strong>${cName}</strong><br>
-            <small>${loc}</small>
+            <small>${loc}${parInfo}</small>
           </div>
           <button class="btn small" onclick="applyApiCourse('${id}')">Use This</button>
         </div>
       `;
     }).join('');
-  } catch(err) {
+  } catch (err) {
     resultsDiv.innerHTML = '<div style="font-size:12px; color:var(--flag);">Error connecting to OpenGolfAPI.</div>';
   }
 });
 
-// Helper function to extract hole data dynamically
-function extractHoleData(hole, index, extractedPars, extractedYards, extractedCoords) {
-  if (hole.par) extractedPars[index] = parseInt(hole.par, 10);
-  
-  // Try finding yardage/distance
-  const distance = hole.length || hole.yardage || hole.yards || hole.distance;
-  if (distance) extractedYards[index] = parseInt(distance, 10);
-
-  // Extract Coordinates for GPS
-  if (hole.latitude && hole.longitude) {
-    extractedCoords[index] = { lat: parseFloat(hole.latitude), lon: parseFloat(hole.longitude) };
-  } else if (hole.center_lat && hole.center_lng) {
-    extractedCoords[index] = { lat: parseFloat(hole.center_lat), lon: parseFloat(hole.center_lng) };
-  } else if (hole.green_lat && hole.green_lng) {
-    extractedCoords[index] = { lat: parseFloat(hole.green_lat), lon: parseFloat(hole.green_lng) };
-  } else if (hole.coordinates && Array.isArray(hole.coordinates)) {
-    // GeoJSON [lon, lat] format
-    extractedCoords[index] = { lat: parseFloat(hole.coordinates[1]), lon: parseFloat(hole.coordinates[0]) };
+/** Pick a representative yardage from the per-color yardages object. Prefer white, then blue, gold, then first numeric. */
+function pickYardage(yardages, preferredColor) {
+  if (!yardages || typeof yardages !== 'object') return 0;
+  const prefer = (preferredColor || 'white').toLowerCase();
+  const order = [prefer, 'white', 'blue', 'gold', 'black', 'championship', 'green', 'red', 'yellow', 'web'];
+  for (const key of order) {
+    const v = yardages[key];
+    if (v != null && !isNaN(parseInt(v, 10)) && parseInt(v, 10) > 0) return parseInt(v, 10);
   }
+  for (const v of Object.values(yardages)) {
+    const n = parseInt(v, 10);
+    if (!isNaN(n) && n > 0) return n;
+  }
+  return 0;
 }
 
-async function applyApiCourse(courseId) {
+/** Extract green center {lat, lon} from a holes_data entry if present. */
+function greenCoordsFromHole(h) {
+  if (!h) return null;
+  if (h.green && h.green.center && h.green.center.lat != null && (h.green.center.lng != null || h.green.center.lon != null)) {
+    return { lat: parseFloat(h.green.center.lat), lon: parseFloat(h.green.center.lng ?? h.green.center.lon) };
+  }
+  if (h.green && h.green.lat != null && (h.green.lng != null || h.green.lon != null)) {
+    return { lat: parseFloat(h.green.lat), lon: parseFloat(h.green.lng ?? h.green.lon) };
+  }
+  if (h.latitude != null && h.longitude != null) {
+    return { lat: parseFloat(h.latitude), lon: parseFloat(h.longitude) };
+  }
+  return null;
+}
+
+async function fetchGreenCoordsForCourse(courseId) {
+  const coords = Array(18).fill(null);
+  // Batch: try features for each hole in parallel (rate-limit friendly — 18 is fine)
+  const tasks = [];
+  for (let hole = 1; hole <= 18; hole++) {
+    tasks.push(
+      fetch(`${OGA_BASE}/api/v1/features?course=${encodeURIComponent(courseId)}&hole=${hole}&type=green`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (!data) return;
+          const features = data.features || (Array.isArray(data) ? data : []);
+          const feat = features[0];
+          if (!feat) return;
+          if (feat.center && feat.center.lat != null) {
+            coords[hole - 1] = { lat: parseFloat(feat.center.lat), lon: parseFloat(feat.center.lng ?? feat.center.lon) };
+          } else if (feat.coordinates && Array.isArray(feat.coordinates)) {
+            // GeoJSON point [lon, lat] or nested polygon — prefer center if present
+            const c = feat.coordinates;
+            if (typeof c[0] === 'number') {
+              coords[hole - 1] = { lat: parseFloat(c[1]), lon: parseFloat(c[0]) };
+            }
+          }
+        })
+        .catch(() => {})
+    );
+  }
+  await Promise.all(tasks);
+  return coords;
+}
+
+window.applyApiCourse = async function(courseId) {
   try {
     const res = await fetch(`${OGA_BASE}/api/v1/courses/${courseId}`);
-    const course = await res.json();
-    const courseData = course.course || course;
-    
-    const courseName = courseData.name || courseData.course_name || courseData.club_name || 'Golf Course';
-    
+    if (!res.ok) throw new Error('course fetch failed');
+    const courseData = await res.json();
+
+    const courseName = courseData.course_name || courseData.name || courseData.club_name || 'Golf Course';
+
+    // Prefer White male tee for rating/slope, else first tee
+    const tees = Array.isArray(courseData.tees) ? courseData.tees : [];
+    const preferredTee =
+      tees.find(t => (t.tee_name || t.name || '').toLowerCase() === 'white' && (t.gender || '').toLowerCase() === 'male') ||
+      tees.find(t => (t.tee_name || t.name || '').toLowerCase() === 'white') ||
+      tees.find(t => (t.tee_color || '').toLowerCase() === 'white') ||
+      tees[0];
+    const teeColor = (preferredTee && (preferredTee.tee_color || preferredTee.tee_name || preferredTee.name) || 'white').toLowerCase();
+
     document.getElementById('co-name').value = courseName;
-    document.getElementById('co-rating').value = courseData.rating || courseData.course_rating || 72.0;
-    document.getElementById('co-slope').value = courseData.slope || courseData.slope_rating || 113;
+    document.getElementById('co-rating').value =
+      (preferredTee && (preferredTee.course_rating ?? preferredTee.rating)) ??
+      courseData.rating ?? courseData.course_rating ?? '';
+    document.getElementById('co-slope').value =
+      (preferredTee && preferredTee.slope) ??
+      courseData.slope ?? courseData.slope_rating ?? '';
     document.getElementById('co-api-id').value = courseData.id || courseId;
     activeCourseApiId = courseData.id || courseId;
+
+    // Also fill Play / Rounds course name fields for convenience
+    const rCourse = document.getElementById('r-course');
+    const plCourse = document.getElementById('pl-course');
+    if (rCourse) rCourse.value = courseName;
+    if (plCourse) plCourse.value = courseName;
+    if (preferredTee) {
+      const teeLabel = preferredTee.tee_name || preferredTee.name || preferredTee.tee_color || '';
+      const rTees = document.getElementById('r-tees');
+      const plTees = document.getElementById('pl-tees');
+      if (rTees) rTees.value = teeLabel;
+      if (plTees) plTees.value = teeLabel;
+    }
 
     let extractedPars = Array(18).fill(4);
     let extractedYards = Array(18).fill(0);
     let extractedCoords = Array(18).fill(null);
-    let dataFound = false;
 
-    // Direct course hole array check
-    const rawHoles = courseData.holes || courseData.hole_details || [];
-    if (Array.isArray(rawHoles) && rawHoles.length > 0) {
-      rawHoles.forEach(h => {
-        const num = (h.number || h.hole_number || h.hole) - 1;
-        if (num >= 0 && num < 18) {
-          extractHoleData(h, num, extractedPars, extractedYards, extractedCoords);
-        }
-      });
-      dataFound = true;
-    }
-
-    // Tee Box fetch strategy if top-level course doesn't contain holes
-    if (!dataFound) {
+    // Primary source: holes_data (not "holes", which is just the hole count integer)
+    let rawHoles = courseData.holes_data;
+    if (!Array.isArray(rawHoles) || rawHoles.length === 0) {
+      // Fallback dedicated holes endpoint
       try {
-        const teeRes = await fetch(`${OGA_BASE}/api/v1/courses/${courseId}/tees`);
-        if (teeRes.ok) {
-          const teeData = await teeRes.json();
-          let tees = teeData.tees || teeData;
-          if (!Array.isArray(tees) && tees.tees) tees = tees.tees;
-          
-          if (Array.isArray(tees) && tees.length > 0) {
-            // Pick default white/middle tee or first tee box
-            const selectedTee = tees.find(t => (t.name || '').toLowerCase().includes('white')) || tees[0];
-            const teeHoles = selectedTee.holes || [];
-            teeHoles.forEach(h => {
-              const num = (h.number || h.hole_number || h.hole) - 1;
-              if (num >= 0 && num < 18) {
-                extractHoleData(h, num, extractedPars, extractedYards, extractedCoords);
-              }
-            });
-            if (teeHoles.length > 0) dataFound = true;
-          }
-        }
-      } catch(e) {}
-    }
-
-    // Fallback hole endpoint fetch
-    if (!dataFound) {
-      try {
-        const holeRes = await fetch(`${OGA_BASE}/api/v1/holes?course_id=${courseId}`);
+        const holeRes = await fetch(`${OGA_BASE}/api/v1/courses/${courseId}/holes`);
         if (holeRes.ok) {
           const holeData = await holeRes.json();
-          const holes = holeData.holes || holeData;
-          if (Array.isArray(holes) && holes.length > 0) {
-            holes.forEach(h => {
-              const num = (h.number || h.hole_number || h.hole) - 1;
-              if (num >= 0 && num < 18) {
-                extractHoleData(h, num, extractedPars, extractedYards, extractedCoords);
-              }
-            });
-          }
+          rawHoles = holeData.holes || holeData.holes_data || holeData;
         }
-      } catch(e) {}
+      } catch (e) {}
+    }
+    // Legacy scorecard (par only) from /v1 style
+    if ((!Array.isArray(rawHoles) || rawHoles.length === 0) && Array.isArray(courseData.scorecard)) {
+      rawHoles = courseData.scorecard;
+    }
+
+    if (Array.isArray(rawHoles)) {
+      rawHoles.forEach(h => {
+        const num = (h.number ?? h.hole_number ?? h.hole) - 1;
+        if (num < 0 || num >= 18) return;
+        if (h.par != null) extractedPars[num] = parseInt(h.par, 10) || 4;
+        // yardages is an object keyed by tee color
+        if (h.yardages && typeof h.yardages === 'object') {
+          extractedYards[num] = pickYardage(h.yardages, teeColor);
+        } else {
+          const d = h.length || h.yardage || h.yards || h.distance;
+          if (d) extractedYards[num] = parseInt(d, 10) || 0;
+        }
+        const gc = greenCoordsFromHole(h);
+        if (gc) extractedCoords[num] = gc;
+      });
+    }
+
+    // Fill missing green GPS from OSM features endpoint
+    const missingGps = extractedCoords.some(c => !c);
+    if (missingGps) {
+      try {
+        const featureCoords = await fetchGreenCoordsForCourse(courseId);
+        for (let i = 0; i < 18; i++) {
+          if (!extractedCoords[i] && featureCoords[i]) extractedCoords[i] = featureCoords[i];
+        }
+      } catch (e) {}
     }
 
     applyScorecardData(extractedPars, extractedYards, extractedCoords);
-    alert(`Loaded ${courseName}! Hole pars, distances, and GPS data have been updated.`);
-  } catch(err) {
-    alert('Failed to load course details. Make sure you are connected to the network.');
+
+    const gpsCount = extractedCoords.filter(Boolean).length;
+    const yardCount = extractedYards.filter(y => y > 0).length;
+    alert(`Loaded ${courseName}!\nPars: ${extractedPars.filter(p => p).length} holes\nYardages (${teeColor}): ${yardCount} holes\nGreen GPS: ${gpsCount}/18`);
+  } catch (err) {
+    console.error(err);
+    alert('Failed to load course details. Check your network connection.');
   }
-}
+};
 
 // ---------- GPS DISTANCE CALCULATOR ----------
 function distanceYards(lat1, lon1, lat2, lon2) {
-  const R = 6371e3; 
-  const φ1 = lat1 * Math.PI/180;
-  const φ2 = lat2 * Math.PI/180;
-  const Δφ = (lat2-lat1) * Math.PI/180;
-  const Δλ = (lon2-lon1) * Math.PI/180;
+  const R = 6371e3;
+  const φ1 = lat1 * Math.PI / 180;
+  const φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lon2 - lon1) * Math.PI / 180;
 
-  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-          Math.cos(φ1) * Math.cos(φ2) *
-          Math.sin(Δλ/2) * Math.sin(Δλ/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) *
+    Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   const meters = R * c;
   return Math.round(meters * 1.09361);
 }
@@ -717,46 +783,57 @@ function distanceYards(lat1, lon1, lat2, lon2) {
 document.getElementById('gpsBtn').addEventListener('click', () => {
   const display = document.getElementById('gpsDisplay');
   if (!navigator.geolocation) {
-    display.textContent = "GPS Not Supported";
+    display.textContent = 'GPS Not Supported';
     return;
   }
-  
-  display.textContent = "Locating...";
-  
+
+  display.textContent = 'Locating...';
+
   navigator.geolocation.getCurrentPosition(async (pos) => {
     const userLat = pos.coords.latitude;
     const userLon = pos.coords.longitude;
-    
-    // First, try cached coordinates from the initial robust API fetch
-    const preLoadedCoords = currentLoadedGreenCoords[currentPlayHole - 1];
-    if (preLoadedCoords && preLoadedCoords.lat && preLoadedCoords.lon) {
-       const yds = distanceYards(userLat, userLon, preLoadedCoords.lat, preLoadedCoords.lon);
-       display.textContent = `${yds} yds`;
-       return;
+
+    // 1) Cached green coords from course load / save
+    const preLoaded = currentLoadedGreenCoords[currentPlayHole - 1];
+    if (preLoaded && preLoaded.lat != null && preLoaded.lon != null) {
+      display.textContent = `${distanceYards(userLat, userLon, preLoaded.lat, preLoaded.lon)} yds`;
+      return;
     }
-    
-    // If not cached, fallback to dynamic fetch (for older saved courses)
+
+    // 2) Live fetch from features API
     if (activeCourseApiId) {
       try {
-        const res = await fetch(`${OGA_BASE}/api/v1/features?course=${activeCourseApiId}&hole=${currentPlayHole}&type=green`);
+        const res = await fetch(
+          `${OGA_BASE}/api/v1/features?course=${encodeURIComponent(activeCourseApiId)}&hole=${currentPlayHole}&type=green`
+        );
         if (res.ok) {
           const data = await res.json();
-          if (data && data.length > 0 && data[0].coordinates) {
-            // Usually [longitude, latitude] in standard geojson features
-            const greenLat = parseFloat(data[0].coordinates[1]);
-            const greenLon = parseFloat(data[0].coordinates[0]);
-            const yds = distanceYards(userLat, userLon, greenLat, greenLon);
-            display.textContent = `${yds} yds`;
-            return;
+          const features = data.features || (Array.isArray(data) ? data : []);
+          const feat = features[0];
+          if (feat) {
+            let greenLat, greenLon;
+            if (feat.center && feat.center.lat != null) {
+              greenLat = parseFloat(feat.center.lat);
+              greenLon = parseFloat(feat.center.lng ?? feat.center.lon);
+            } else if (feat.coordinates && typeof feat.coordinates[0] === 'number') {
+              greenLon = parseFloat(feat.coordinates[0]);
+              greenLat = parseFloat(feat.coordinates[1]);
+            }
+            if (greenLat != null && greenLon != null) {
+              // Cache for this session
+              currentLoadedGreenCoords[currentPlayHole - 1] = { lat: greenLat, lon: greenLon };
+              display.textContent = `${distanceYards(userLat, userLon, greenLat, greenLon)} yds`;
+              return;
+            }
           }
         }
-      } catch(e) {}
+      } catch (e) {}
     }
-    
-    display.textContent = "No GPS Data found for this hole.";
-  }, (err) => {
-    display.textContent = "GPS Error";
-  });
+
+    display.textContent = 'No GPS data for this hole';
+  }, () => {
+    display.textContent = 'GPS Error';
+  }, { enableHighAccuracy: true, timeout: 12000 });
 });
 
 // ---------- Dynamic Scorecard Setup ----------
