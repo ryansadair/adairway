@@ -28,9 +28,8 @@
       repeating-linear-gradient(0deg, transparent, transparent 27px, rgba(51,49,44,0.035) 28px),
       repeating-linear-gradient(90deg, transparent, transparent 27px, rgba(51,49,44,0.035) 28px);
   }
-  .wrap{max-width:980px;margin:0 auto;padding:28px 20px 80px;display:none;} /* Hidden by default until authenticated */
+  .wrap{max-width:980px;margin:0 auto;padding:28px 20px 80px;display:none;}
 
-  /* Auth UI Styles */
   .auth-card {
     max-width: 420px;
     margin: 60px auto;
@@ -74,7 +73,7 @@
   .brand{display:flex;align-items:center;gap:12px;}
   .flagmark{width:34px;height:34px;flex-shrink:0;}
   h1{
-    font-family:'Fraunces',serif;font-optical-sizing:auto;font-weight:700;font-size:30px;
+    font-family:'Fraunces',serif;font-weight:700;font-size:30px;
     letter-spacing:-0.01em;margin:0;color:var(--fairway-deep);
   }
   .tag{font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:var(--turf);font-weight:600;}
@@ -114,11 +113,6 @@
     background:#fff;font-family:'Inter',sans-serif;font-size:14px;color:var(--graphite);
   }
   input:focus, textarea:focus, select:focus{outline:2px solid var(--sky);outline-offset:0;border-color:var(--turf);}
-  input[type=date]{
-    -webkit-appearance:none;
-    appearance:none;
-    text-align:left;
-  }
   textarea{resize:vertical;min-height:60px;font-family:'Inter',sans-serif;}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
   .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
@@ -135,49 +129,36 @@
   button.btn.outline:hover{background:var(--fairway-deep);color:var(--paper-light);}
 
   .scorecard{overflow-x:auto;margin-bottom:14px;border:1px solid var(--fairway-deep);border-radius:2px;}
-  table.sc{border-collapse:collapse;width:100%;min-width:600px;font-family:'IBM Plex Mono',monospace;font-size:12px;}
+  table.sc{border-collapse:collapse;width:100%;min-width:650px;font-family:'IBM Plex Mono',monospace;font-size:12px;}
   table.sc th, table.sc td{border:1px solid var(--line);padding:4px 2px;text-align:center;}
   table.sc th{background:var(--fairway-deep);color:var(--paper-light);font-weight:600;font-size:10.5px;}
   table.sc td.rowlabel{background:var(--sand);color:var(--graphite);font-weight:700;text-align:left;padding-left:8px;width:64px;font-size:10.5px;}
   table.sc td.front9{background:rgba(63,107,74,0.06);}
   table.sc td.back9{background:rgba(164,64,47,0.05);}
   table.sc input[type=number]{
-    width:30px;border:none;background:transparent;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:12.5px;padding:3px 0;
+    width:32px;border:none;background:transparent;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:12px;padding:3px 0;
   }
   table.sc input[type=checkbox]{width:15px;height:15px;cursor:pointer;}
-  table.sc input[type=checkbox]:disabled{opacity:0.15;cursor:default;}
   table.sc td.total{background:var(--fairway-deep);color:var(--paper-light);font-weight:700;font-size:11.5px;}
 
   .preset-row{display:flex;gap:10px;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap;}
   .preset-row .field{flex:1;min-width:220px;margin-bottom:0;}
 
-  .round-item, .list-item{
+  .list-item{
     border:1px solid var(--line);border-radius:2px;padding:12px 14px;margin-bottom:8px;background:#fff;
     display:flex;justify-content:space-between;align-items:flex-start;gap:12px;
   }
-  .round-item .meta{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--turf);margin-bottom:3px;}
-  .round-item .title{font-weight:600;font-size:14.5px;}
-  .round-item .score{font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:700;color:var(--fairway-deep);}
-  .round-item .notes{font-size:13px;color:var(--graphite);opacity:0.8;margin-top:6px;}
   .empty{
     text-align:center;padding:34px 20px;color:var(--turf);font-family:'IBM Plex Mono',monospace;font-size:13px;
     border:1px dashed var(--line);border-radius:3px;
   }
 
-  .stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;}
-  .stat-box{background:var(--fairway-deep);color:var(--paper-light);border-radius:3px;padding:14px 12px;text-align:center;}
-  .stat-box .num{font-family:'Fraunces',serif;font-weight:700;font-size:26px;display:block;}
-  .stat-box .lbl{font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.06em;opacity:0.8;}
-
   .del{background:none;border:none;color:var(--flag);cursor:pointer;font-size:12px;font-family:'IBM Plex Mono',monospace;padding:2px 6px;}
   .del:hover{text-decoration:underline;}
-  .savepill{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--turf);opacity:0;transition:opacity .3s;}
-  .savepill.show{opacity:1;}
 
-  .dots{display:flex;gap:5px;flex-wrap:wrap;justify-content:center;margin-bottom:16px;}
   .hole-card{text-align:center;padding:8px 0 4px;}
-  .hole-card .holenum{font-family:'Fraunces',serif;font-weight:700;font-size:15px;text-transform:uppercase;letter-spacing:0.08em;color:var(--turf);margin-bottom:2px;}
-  .hole-card .holepar{font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:var(--graphite);opacity:0.7;margin-bottom:18px;}
+  .hole-card .holenum{font-family:'Fraunces',serif;font-weight:700;font-size:18px;text-transform:uppercase;letter-spacing:0.08em;color:var(--turf);margin-bottom:2px;}
+  .hole-card .holepar{font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--graphite);opacity:0.8;margin-bottom:14px;}
   .stat-block{margin-bottom:22px;}
   .stat-block .stat-name{font-family:'IBM Plex Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--turf);font-weight:600;margin-bottom:8px;}
   .stepper{display:flex;align-items:center;justify-content:center;gap:22px;}
@@ -198,7 +179,6 @@
   .play-nav{display:flex;gap:10px;margin-top:18px;}
   .play-nav button{flex:1;}
 
-  /* GPS & Search Styles */
   .gps-box {
     background: var(--fairway-deep);
     color: var(--paper-light);
@@ -229,8 +209,6 @@
     .today{text-align:left;}
     h1{font-size:26px;}
     .grid3, .grid2{grid-template-columns:1fr;}
-    .stat-row{grid-template-columns:1fr 1fr;}
-    .preset-row .field{min-width:0;}
     nav{gap:0;margin-bottom:16px;}
     nav button{padding:8px 10px;font-size:11.5px;}
     .stepper{gap:14px;}
@@ -334,10 +312,9 @@
     </div>
 
     <div class="card">
-      <div class="dots" id="playDots"></div>
       <div class="hole-card">
         <div class="holenum" id="playHoleNum">Hole 1</div>
-        <div class="holepar" id="playHolePar">Par 4</div>
+        <div class="holepar" id="playHolePar">Par 4 &bull; <span id="playHoleYards">-- yds</span></div>
       </div>
 
       <div class="stat-block">
@@ -380,7 +357,7 @@
   <!-- ROUNDS -->
   <section id="tab-rounds" class="active">
     <div class="card">
-      <h2>New round <small id="roundSavePill" class="savepill">saved</small></h2>
+      <h2>New round</h2>
       <div class="preset-row">
         <div class="field">
           <label>Quick-load a course</label>
@@ -399,7 +376,7 @@
       <div class="grid3">
         <div class="field"><label>Date</label><input type="date" id="r-date"></div>
         <div class="field"><label>Course</label><input type="text" id="r-course" placeholder="e.g. Pine Ridge Golf Club"></div>
-        <div class="field"><label>Tees</label><input type="text" id="r-tees" placeholder="e.g. White, 5,695 yds"></div>
+        <div class="field"><label>Tees</label><input type="text" id="r-tees" placeholder="e.g. White"></div>
       </div>
       <div class="scorecard">
         <table class="sc" id="scorecardTable"></table>
@@ -455,7 +432,7 @@
     <div class="card">
       <h2>Search OpenGolfAPI</h2>
       <div style="display: flex; gap: 10px; margin-top: 10px;">
-        <input type="text" id="apiSearchInput" placeholder="Search course name or state...">
+        <input type="text" id="apiSearchInput" placeholder="Search course name or city/state...">
         <button class="btn" id="apiSearchBtn">Search</button>
       </div>
       <div id="apiSearchResults" style="margin-top: 12px;"></div>
@@ -502,7 +479,9 @@
 // ---------- Local Data Store & Setup ----------
 const OGA_BASE = 'https://api.opengolfapi.org';
 let activeCourseApiId = null;
-let currentLoadedPars = [];
+let currentLoadedPars = Array(18).fill(4);
+let currentLoadedYards = Array(18).fill(0);
+let currentPlayHole = 1;
 
 let savedCourses = JSON.parse(localStorage.getItem('adairway_courses') || '[]');
 
@@ -513,16 +492,33 @@ document.getElementById('p-date').value = todayISO();
 document.getElementById('n-date').value = todayISO();
 document.getElementById('pl-date').value = todayISO();
 
-// ---------- SCORECARD PAR POPULATION ----------
-function applyScorecardPars(pars) {
-  if (!pars || !pars.length) return;
-  for (let i = 1; i <= 18; i++) {
-    const parInput = document.getElementById(`par_${i}`);
-    if (parInput && pars[i - 1] !== undefined) {
-      parInput.value = pars[i - 1];
+// ---------- SCORECARD PAR & YARDAGE POPULATION ----------
+function applyScorecardData(pars, yards) {
+  if (pars && pars.length) {
+    currentLoadedPars = pars;
+    for (let i = 1; i <= 18; i++) {
+      const parInput = document.getElementById(`par_${i}`);
+      if (parInput && pars[i - 1] !== undefined) {
+        parInput.value = pars[i - 1];
+      }
+    }
+  }
+  if (yards && yards.length) {
+    currentLoadedYards = yards;
+    for (let i = 1; i <= 18; i++) {
+      const ydInput = document.getElementById(`yd_${i}`);
+      if (ydInput && yards[i - 1] !== undefined) {
+        ydInput.value = yards[i - 1];
+      }
     }
   }
   updateTotals();
+  updatePlayHoleUI();
+}
+
+function updatePlayHoleUI() {
+  document.getElementById('playHoleNum').textContent = `Hole ${currentPlayHole}`;
+  document.getElementById('playHolePar').innerHTML = `Par ${currentLoadedPars[currentPlayHole - 1] || 4} &bull; <span>${currentLoadedYards[currentPlayHole - 1] || '--'} yds</span>`;
 }
 
 // ---------- COURSE SAVING & DROPDOWN SYNC ----------
@@ -541,15 +537,18 @@ function updateCourseDropdowns() {
     if(savedCourses.length === 0) {
       coursesList.innerHTML = '<div class="empty">No courses saved yet.</div>';
     } else {
-      coursesList.innerHTML = savedCourses.map((c, index) => `
-        <div class="list-item">
-          <div>
-            <strong>${c.name}</strong><br>
-            <small style="color:var(--turf);">Rating: ${c.rating || '--'} | Slope: ${c.slope || '--'}</small>
+      coursesList.innerHTML = savedCourses.map((c, index) => {
+        const totalYds = c.yards ? c.yards.reduce((a, b) => a + (parseInt(b)||0), 0) : 0;
+        return `
+          <div class="list-item">
+            <div>
+              <strong>${c.name}</strong><br>
+              <small style="color:var(--turf);">Rating: ${c.rating || '--'} | Slope: ${c.slope || '--'} ${totalYds ? '| Total Yards: ' + totalYds : ''}</small>
+            </div>
+            <button class="del" onclick="deleteCourse(${index})">Delete</button>
           </div>
-          <button class="del" onclick="deleteCourse(${index})">Delete</button>
-        </div>
-      `).join('');
+        `;
+      }).join('');
     }
   }
 }
@@ -565,14 +564,17 @@ document.getElementById('saveCourseBtn').addEventListener('click', () => {
     return;
   }
 
-  // Get current pars from the scorecard
+  // Read pars and yards from the active scorecard inputs
   const pars = [];
+  const yards = [];
   for (let i = 1; i <= 18; i++) {
-    const val = parseInt(document.getElementById(`par_${i}`)?.value, 10);
-    pars.push(isNaN(val) ? 4 : val);
+    const parVal = parseInt(document.getElementById(`par_${i}`)?.value, 10);
+    const ydVal = parseInt(document.getElementById(`yd_${i}`)?.value, 10);
+    pars.push(isNaN(parVal) ? 4 : parVal);
+    yards.push(isNaN(ydVal) ? 0 : ydVal);
   }
 
-  const newCourse = { name, rating, slope, apiId, pars, id: Date.now() };
+  const newCourse = { name, rating, slope, apiId, pars, yards, id: Date.now() };
   savedCourses.push(newCourse);
   localStorage.setItem('adairway_courses', JSON.stringify(savedCourses));
 
@@ -583,7 +585,7 @@ document.getElementById('saveCourseBtn').addEventListener('click', () => {
   document.getElementById('co-api-id').value = '';
 
   updateCourseDropdowns();
-  alert('Course saved successfully!');
+  alert('Course saved successfully with hole pars and distances!');
 });
 
 window.deleteCourse = function(index) {
@@ -592,16 +594,14 @@ window.deleteCourse = function(index) {
   updateCourseDropdowns();
 };
 
-// Course Selection Event Listeners for Dropdowns
+// Dropdown Change Listeners
 document.getElementById('r-preset').addEventListener('change', (e) => {
   const selectedIndex = e.target.value;
   if (selectedIndex !== "") {
     const course = savedCourses[selectedIndex];
     if (course) {
       document.getElementById('r-course').value = course.name;
-      if (course.pars && course.pars.length) {
-        applyScorecardPars(course.pars);
-      }
+      applyScorecardData(course.pars, course.yards);
     }
   }
 });
@@ -612,14 +612,12 @@ document.getElementById('pl-preset').addEventListener('change', (e) => {
     const course = savedCourses[selectedIndex];
     if (course) {
       document.getElementById('pl-course').value = course.name;
-      if (course.pars && course.pars.length) {
-        applyScorecardPars(course.pars);
-      }
+      applyScorecardData(course.pars, course.yards);
     }
   }
 });
 
-// ---------- OPENGOLFAPI INTEGRATION ----------
+// ---------- OPENGOLFAPI INTEGRATION (ROBUST PAR & YARDAGE FETCHING) ----------
 document.getElementById('apiSearchBtn').addEventListener('click', async () => {
   const query = document.getElementById('apiSearchInput').value.trim();
   const resultsDiv = document.getElementById('apiSearchResults');
@@ -629,22 +627,27 @@ document.getElementById('apiSearchBtn').addEventListener('click', async () => {
   try {
     const res = await fetch(`${OGA_BASE}/api/v1/courses/search?q=${encodeURIComponent(query)}`);
     const data = await res.json();
-    const courses = data.courses || data;
+    const courses = data.courses || data.results || (Array.isArray(data) ? data : []);
 
     if(!courses || courses.length === 0) {
       resultsDiv.innerHTML = '<div style="font-size:12px; color:var(--flag);">No courses found.</div>';
       return;
     }
 
-    resultsDiv.innerHTML = courses.map(c => `
-      <div class="api-result-item">
-        <div>
-          <strong>${c.name || c.course_name || c.courseName || c.club_name || 'Golf Course'}</strong><br>
-          <small>${c.city || ''} ${c.state || ''}</small>
+    resultsDiv.innerHTML = courses.map(c => {
+      const id = c.id || c.course_id;
+      const cName = c.name || c.course_name || c.club_name || 'Golf Course';
+      const loc = [c.city, c.state].filter(Boolean).join(', ');
+      return `
+        <div class="api-result-item">
+          <div>
+            <strong>${cName}</strong><br>
+            <small>${loc}</small>
+          </div>
+          <button class="btn small" onclick="applyApiCourse('${id}')">Use This</button>
         </div>
-        <button class="btn small" onclick="applyApiCourse('${c.id}')">Use This</button>
-      </div>
-    `).join('');
+      `;
+    }).join('');
   } catch(err) {
     resultsDiv.innerHTML = '<div style="font-size:12px; color:var(--flag);">Error connecting to OpenGolfAPI.</div>';
   }
@@ -654,40 +657,79 @@ async function applyApiCourse(courseId) {
   try {
     const res = await fetch(`${OGA_BASE}/api/v1/courses/${courseId}`);
     const course = await res.json();
+    const courseData = course.course || course;
     
-    const courseName = course.name || course.course_name || course.courseName || course.club_name || '';
+    const courseName = courseData.name || courseData.course_name || courseData.club_name || 'Golf Course';
     
     document.getElementById('co-name').value = courseName;
-    document.getElementById('co-rating').value = course.rating || course.course_rating || 72.0;
-    document.getElementById('co-slope').value = course.slope || course.slope_rating || 113;
-    document.getElementById('co-api-id').value = course.id || courseId;
-    activeCourseApiId = course.id || courseId;
+    document.getElementById('co-rating').value = courseData.rating || courseData.course_rating || 72.0;
+    document.getElementById('co-slope').value = courseData.slope || courseData.slope_rating || 113;
+    document.getElementById('co-api-id').value = courseData.id || courseId;
+    activeCourseApiId = courseData.id || courseId;
 
-    // Fetch hole details for pars if available
-    let pars = [];
-    if (course.holes && Array.isArray(course.holes)) {
-      pars = course.holes.map(h => h.par || h.par_number || 4);
-    } else if (course.pars && Array.isArray(course.pars)) {
-      pars = course.pars;
-    } else {
-      // Attempt hole API query for pars
+    let extractedPars = Array(18).fill(4);
+    let extractedYards = Array(18).fill(0);
+    let dataFound = false;
+
+    // Direct course hole array check
+    const rawHoles = courseData.holes || courseData.hole_details || [];
+    if (Array.isArray(rawHoles) && rawHoles.length > 0) {
+      rawHoles.forEach(h => {
+        const num = (h.number || h.hole_number || h.hole) - 1;
+        if (num >= 0 && num < 18) {
+          if (h.par) extractedPars[num] = parseInt(h.par, 10);
+          if (h.length || h.yardage || h.yards) extractedYards[num] = parseInt(h.length || h.yardage || h.yards, 10);
+        }
+      });
+      dataFound = true;
+    }
+
+    // Tee Box fetch strategy if top-level course doesn't contain holes
+    if (!dataFound) {
       try {
-        const holesRes = await fetch(`${OGA_BASE}/api/v1/holes?course=${courseId}`);
-        const holesData = await holesRes.json();
-        const holeList = holesData.holes || holesData;
-        if (Array.isArray(holeList) && holeList.length > 0) {
-          holeList.sort((a,b) => (a.number || a.hole_number) - (b.number || b.hole_number));
-          pars = holeList.map(h => h.par || 4);
+        const teeRes = await fetch(`${OGA_BASE}/api/v1/courses/${courseId}/tees`);
+        if (teeRes.ok) {
+          const teeData = await teeRes.json();
+          const tees = teeData.tees || teeData;
+          if (Array.isArray(tees) && tees.length > 0) {
+            // Pick default white/middle tee or first tee box
+            const selectedTee = tees.find(t => (t.name || '').toLowerCase().includes('white')) || tees[0];
+            const teeHoles = selectedTee.holes || [];
+            teeHoles.forEach(h => {
+              const num = (h.number || h.hole_number) - 1;
+              if (num >= 0 && num < 18) {
+                if (h.par) extractedPars[num] = parseInt(h.par, 10);
+                if (h.length || h.yardage || h.yards) extractedYards[num] = parseInt(h.length || h.yardage || h.yards, 10);
+              }
+            });
+            if (teeHoles.length > 0) dataFound = true;
+          }
         }
       } catch(e) {}
     }
 
-    if (pars.length > 0) {
-      currentLoadedPars = pars;
-      applyScorecardPars(pars);
+    // Fallback hole endpoint fetch
+    if (!dataFound) {
+      try {
+        const holeRes = await fetch(`${OGA_BASE}/api/v1/holes?course_id=${courseId}`);
+        if (holeRes.ok) {
+          const holeData = await holeRes.json();
+          const holes = holeData.holes || holeData;
+          if (Array.isArray(holes) && holes.length > 0) {
+            holes.forEach(h => {
+              const num = (h.number || h.hole_number) - 1;
+              if (num >= 0 && num < 18) {
+                if (h.par) extractedPars[num] = parseInt(h.par, 10);
+                if (h.length || h.yardage || h.yards) extractedYards[num] = parseInt(h.length || h.yardage || h.yards, 10);
+              }
+            });
+          }
+        }
+      } catch(e) {}
     }
-    
-    alert(`Loaded ${courseName || 'Course'}! Hole pars and ratings updated.`);
+
+    applyScorecardData(extractedPars, extractedYards);
+    alert(`Loaded ${courseName}! Hole pars and distances have been updated on the scorecard.`);
   } catch(err) {
     alert('Failed to load course details.');
   }
@@ -724,8 +766,7 @@ document.getElementById('gpsBtn').addEventListener('click', () => {
     
     if (activeCourseApiId) {
       try {
-        const currentHole = document.getElementById('playHoleNum').textContent.replace('Hole ', '');
-        const res = await fetch(`${OGA_BASE}/api/v1/features?course=${activeCourseApiId}&hole=${currentHole}&type=green`);
+        const res = await fetch(`${OGA_BASE}/api/v1/features?course=${activeCourseApiId}&hole=${currentPlayHole}&type=green`);
         const data = await res.json();
         
         if (data && data.length > 0 && data[0].coordinates) {
@@ -737,7 +778,7 @@ document.getElementById('gpsBtn').addEventListener('click', () => {
         }
       } catch(e) {}
     }
-    display.textContent = "No Green Data";
+    display.textContent = "No GPS Data";
   }, (err) => {
     display.textContent = "GPS Error";
   });
@@ -761,15 +802,27 @@ function renderScorecard(numHoles) {
 
   let bodyHTML = '<tbody>';
   
+  // PAR ROW
   bodyHTML += '<tr><td class="rowlabel">PAR</td>';
-  for (let i = 1; i <= 9; i++) bodyHTML += `<td class="front9"><input type="number" id="par_${i}" value="4" min="3" max="5"></td>`;
+  for (let i = 1; i <= 9; i++) bodyHTML += `<td class="front9"><input type="number" id="par_${i}" value="${currentLoadedPars[i-1] || 4}" min="3" max="5"></td>`;
   bodyHTML += '<td class="total" id="par_out">36</td>';
   if (is18) {
-    for (let i = 10; i <= 18; i++) bodyHTML += `<td class="back9"><input type="number" id="par_${i}" value="4" min="3" max="5"></td>`;
+    for (let i = 10; i <= 18; i++) bodyHTML += `<td class="back9"><input type="number" id="par_${i}" value="${currentLoadedPars[i-1] || 4}" min="3" max="5"></td>`;
     bodyHTML += '<td class="total" id="par_in">36</td>';
   }
   bodyHTML += '<td class="total" id="par_tot">' + (is18 ? '72' : '36') + '</td></tr>';
 
+  // YARDS ROW
+  bodyHTML += '<tr><td class="rowlabel">YARDS</td>';
+  for (let i = 1; i <= 9; i++) bodyHTML += `<td class="front9"><input type="number" id="yd_${i}" value="${currentLoadedYards[i-1] || 0}" min="0"></td>`;
+  bodyHTML += '<td class="total" id="yd_out">0</td>';
+  if (is18) {
+    for (let i = 10; i <= 18; i++) bodyHTML += `<td class="back9"><input type="number" id="yd_${i}" value="${currentLoadedYards[i-1] || 0}" min="0"></td>`;
+    bodyHTML += '<td class="total" id="yd_in">0</td>';
+  }
+  bodyHTML += '<td class="total" id="yd_tot">0</td></tr>';
+
+  // SCORE ROW
   bodyHTML += '<tr><td class="rowlabel">SCORE</td>';
   for (let i = 1; i <= 9; i++) bodyHTML += `<td class="front9"><input type="number" id="score_${i}" min="1"></td>`;
   bodyHTML += '<td class="total" id="score_out">0</td>';
@@ -779,6 +832,7 @@ function renderScorecard(numHoles) {
   }
   bodyHTML += '<td class="total" id="score_tot">0</td></tr>';
 
+  // PUTTS ROW
   bodyHTML += '<tr><td class="rowlabel">PUTTS</td>';
   for (let i = 1; i <= 9; i++) bodyHTML += `<td class="front9"><input type="number" id="putts_${i}" min="0"></td>`;
   bodyHTML += '<td class="total" id="putts_out">0</td>';
@@ -788,6 +842,7 @@ function renderScorecard(numHoles) {
   }
   bodyHTML += '<td class="total" id="putts_tot">0</td></tr>';
 
+  // FIR ROW
   bodyHTML += '<tr><td class="rowlabel">FIR</td>';
   for (let i = 1; i <= 9; i++) bodyHTML += `<td class="front9"><input type="checkbox" id="fir_${i}"></td>`;
   bodyHTML += '<td class="total" id="fir_out">0</td>';
@@ -797,6 +852,7 @@ function renderScorecard(numHoles) {
   }
   bodyHTML += '<td class="total" id="fir_tot">0</td></tr>';
 
+  // GIR ROW
   bodyHTML += '<tr><td class="rowlabel">GIR</td>';
   for (let i = 1; i <= 9; i++) bodyHTML += `<td class="front9"><input type="checkbox" id="gir_${i}"></td>`;
   bodyHTML += '<td class="total" id="gir_out">0</td>';
@@ -820,6 +876,7 @@ function updateTotals() {
   const count = is18 ? 18 : 9;
 
   let parOut = 0, parIn = 0;
+  let ydOut = 0, ydIn = 0;
   let scoreOut = 0, scoreIn = 0;
   let puttsOut = 0, puttsIn = 0;
   let firOut = 0, firIn = 0;
@@ -827,19 +884,21 @@ function updateTotals() {
 
   for (let i = 1; i <= count; i++) {
     const p = parseInt(document.getElementById(`par_${i}`)?.value) || 0;
+    const y = parseInt(document.getElementById(`yd_${i}`)?.value) || 0;
     const s = parseInt(document.getElementById(`score_${i}`)?.value) || 0;
     const pt = parseInt(document.getElementById(`putts_${i}`)?.value) || 0;
     const f = document.getElementById(`fir_${i}`)?.checked ? 1 : 0;
     const g = document.getElementById(`gir_${i}`)?.checked ? 1 : 0;
 
     if (i <= 9) {
-      parOut += p; scoreOut += s; puttsOut += pt; firOut += f; girOut += g;
+      parOut += p; ydOut += y; scoreOut += s; puttsOut += pt; firOut += f; girOut += g;
     } else {
-      parIn += p; scoreIn += s; puttsIn += pt; firIn += f; girIn += g;
+      parIn += p; ydIn += y; scoreIn += s; puttsIn += pt; firIn += f; girIn += g;
     }
   }
 
   document.getElementById('par_out').textContent = parOut;
+  document.getElementById('yd_out').textContent = ydOut;
   document.getElementById('score_out').textContent = scoreOut;
   document.getElementById('putts_out').textContent = puttsOut;
   document.getElementById('fir_out').textContent = firOut;
@@ -847,6 +906,7 @@ function updateTotals() {
 
   if (is18) {
     document.getElementById('par_in').textContent = parIn;
+    document.getElementById('yd_in').textContent = ydIn;
     document.getElementById('score_in').textContent = scoreIn;
     document.getElementById('putts_in').textContent = puttsIn;
     document.getElementById('fir_in').textContent = firIn;
@@ -854,6 +914,7 @@ function updateTotals() {
   }
 
   document.getElementById('par_tot').textContent = parOut + parIn;
+  document.getElementById('yd_tot').textContent = ydOut + ydIn;
   document.getElementById('score_tot').textContent = scoreOut + scoreIn;
   document.getElementById('putts_tot').textContent = puttsOut + puttsIn;
   document.getElementById('fir_tot').textContent = firOut + firIn;
@@ -862,6 +923,20 @@ function updateTotals() {
 
 holesSelect.addEventListener('change', (e) => {
   renderScorecard(parseInt(e.target.value, 10));
+});
+
+// Play tab navigation controls
+document.getElementById('playPrev').addEventListener('click', () => {
+  if (currentPlayHole > 1) {
+    currentPlayHole--;
+    updatePlayHoleUI();
+  }
+});
+document.getElementById('playNext').addEventListener('click', () => {
+  if (currentPlayHole < 18) {
+    currentPlayHole++;
+    updatePlayHoleUI();
+  }
 });
 
 // Initial Renders
