@@ -135,7 +135,7 @@
   button.btn.outline:hover{background:var(--fairway-deep);color:var(--paper-light);}
 
   .scorecard{overflow-x:auto;margin-bottom:14px;border:1px solid var(--fairway-deep);border-radius:2px;}
-  table.sc{border-collapse:collapse;width:100%;min-width:900px;font-family:'IBM Plex Mono',monospace;font-size:12px;}
+  table.sc{border-collapse:collapse;width:100%;min-width:600px;font-family:'IBM Plex Mono',monospace;font-size:12px;}
   table.sc th, table.sc td{border:1px solid var(--line);padding:4px 2px;text-align:center;}
   table.sc th{background:var(--fairway-deep);color:var(--paper-light);font-weight:600;font-size:10.5px;}
   table.sc td.rowlabel{background:var(--sand);color:var(--graphite);font-weight:700;text-align:left;padding-left:8px;width:64px;font-size:10.5px;}
@@ -355,6 +355,13 @@
             <option value="">— Select a regular —</option>
           </select>
         </div>
+        <div class="field" style="max-width: 140px;">
+          <label>Holes</label>
+          <select id="r-holes">
+            <option value="18" selected>18 Holes</option>
+            <option value="9">9 Holes</option>
+          </select>
+        </div>
       </div>
       <div class="grid3">
         <div class="field"><label>Date</label><input type="date" id="r-date"></div>
@@ -447,6 +454,138 @@ document.getElementById('p-date').value = todayISO();
 document.getElementById('n-date').value = todayISO();
 document.getElementById('pl-date').value = todayISO();
 
+// ---------- Dynamic Scorecard Setup ----------
+const scTable = document.getElementById('scorecardTable');
+const holesSelect = document.getElementById('r-holes');
+
+function renderScorecard(numHoles) {
+  const is18 = numHoles === 18;
+  
+  // Build Header
+  let headerHTML = '<thead><tr><th style="width:64px;">HOLE</th>';
+  for (let i = 1; i <= 9; i++) headerHTML += `<th>${i}</th>`;
+  headerHTML += '<th>OUT</th>';
+  if (is18) {
+    for (let i = 10; i <= 18; i++) headerHTML += `<th>${i}</th>`;
+    headerHTML += '<th>IN</th>';
+  }
+  headerHTML += '<th>TOT</th></tr></thead>';
+
+  // Build Body Rows
+  let bodyHTML = '<tbody>';
+  
+  // Par Row
+  bodyHTML += '<tr><td class="rowlabel">PAR</td>';
+  for (let i = 1; i <= 9; i++) bodyHTML += `<td class="front9"><input type="number" id="par_${i}" value="4" min="3" max="5"></td>`;
+  bodyHTML += '<td class="total" id="par_out">36</td>';
+  if (is18) {
+    for (let i = 10; i <= 18; i++) bodyHTML += `<td class="back9"><input type="number" id="par_${i}" value="4" min="3" max="5"></td>`;
+    bodyHTML += '<td class="total" id="par_in">36</td>';
+  }
+  bodyHTML += '<td class="total" id="par_tot">' + (is18 ? '72' : '36') + '</td></tr>';
+
+  // Score Row
+  bodyHTML += '<tr><td class="rowlabel">SCORE</td>';
+  for (let i = 1; i <= 9; i++) bodyHTML += `<td class="front9"><input type="number" id="score_${i}" min="1"></td>`;
+  bodyHTML += '<td class="total" id="score_out">0</td>';
+  if (is18) {
+    for (let i = 10; i <= 18; i++) bodyHTML += `<td class="back9"><input type="number" id="score_${i}" min="1"></td>`;
+    bodyHTML += '<td class="total" id="score_in">0</td>';
+  }
+  bodyHTML += '<td class="total" id="score_tot">0</td></tr>';
+
+  // Putts Row
+  bodyHTML += '<tr><td class="rowlabel">PUTTS</td>';
+  for (let i = 1; i <= 9; i++) bodyHTML += `<td class="front9"><input type="number" id="putts_${i}" min="0"></td>`;
+  bodyHTML += '<td class="total" id="putts_out">0</td>';
+  if (is18) {
+    for (let i = 10; i <= 18; i++) bodyHTML += `<td class="back9"><input type="number" id="putts_${i}" min="0"></td>`;
+    bodyHTML += '<td class="total" id="putts_in">0</td>';
+  }
+  bodyHTML += '<td class="total" id="putts_tot">0</td></tr>';
+
+  // FIR Row
+  bodyHTML += '<tr><td class="rowlabel">FIR</td>';
+  for (let i = 1; i <= 9; i++) bodyHTML += `<td class="front9"><input type="checkbox" id="fir_${i}"></td>`;
+  bodyHTML += '<td class="total" id="fir_out">0</td>';
+  if (is18) {
+    for (let i = 10; i <= 18; i++) bodyHTML += `<td class="back9"><input type="checkbox" id="fir_${i}"></td>`;
+    bodyHTML += '<td class="total" id="fir_in">0</td>';
+  }
+  bodyHTML += '<td class="total" id="fir_tot">0</td></tr>';
+
+  // GIR Row
+  bodyHTML += '<tr><td class="rowlabel">GIR</td>';
+  for (let i = 1; i <= 9; i++) bodyHTML += `<td class="front9"><input type="checkbox" id="gir_${i}"></td>`;
+  bodyHTML += '<td class="total" id="gir_out">0</td>';
+  if (is18) {
+    for (let i = 10; i <= 18; i++) bodyHTML += `<td class="back9"><input type="checkbox" id="gir_${i}"></td>`;
+    bodyHTML += '<td class="total" id="gir_in">0</td>';
+  }
+  bodyHTML += '<td class="total" id="gir_tot">0</td></tr>';
+
+  bodyHTML += '</tbody>';
+  scTable.innerHTML = headerHTML + bodyHTML;
+
+  // Add event listeners for dynamic recalculations
+  scTable.querySelectorAll('input').forEach(input => {
+    input.addEventListener('input', updateTotals);
+  });
+  updateTotals();
+}
+
+function updateTotals() {
+  const is18 = parseInt(holesSelect.value, 10) === 18;
+  const count = is18 ? 18 : 9;
+
+  let parOut = 0, parIn = 0;
+  let scoreOut = 0, scoreIn = 0;
+  let puttsOut = 0, puttsIn = 0;
+  let firOut = 0, firIn = 0;
+  let girOut = 0, girIn = 0;
+
+  for (let i = 1; i <= count; i++) {
+    const p = parseInt(document.getElementById(`par_${i}`)?.value) || 0;
+    const s = parseInt(document.getElementById(`score_${i}`)?.value) || 0;
+    const pt = parseInt(document.getElementById(`putts_${i}`)?.value) || 0;
+    const f = document.getElementById(`fir_${i}`)?.checked ? 1 : 0;
+    const g = document.getElementById(`gir_${i}`)?.checked ? 1 : 0;
+
+    if (i <= 9) {
+      parOut += p; scoreOut += s; puttsOut += pt; firOut += f; girOut += g;
+    } else {
+      parIn += p; scoreIn += s; puttsIn += pt; firIn += f; girIn += g;
+    }
+  }
+
+  document.getElementById('par_out').textContent = parOut;
+  document.getElementById('score_out').textContent = scoreOut;
+  document.getElementById('putts_out').textContent = puttsOut;
+  document.getElementById('fir_out').textContent = firOut;
+  document.getElementById('gir_out').textContent = girOut;
+
+  if (is18) {
+    document.getElementById('par_in').textContent = parIn;
+    document.getElementById('score_in').textContent = scoreIn;
+    document.getElementById('putts_in').textContent = puttsIn;
+    document.getElementById('fir_in').textContent = firIn;
+    document.getElementById('gir_in').textContent = girIn;
+  }
+
+  document.getElementById('par_tot').textContent = parOut + parIn;
+  document.getElementById('score_tot').textContent = scoreOut + scoreIn;
+  document.getElementById('putts_tot').textContent = puttsOut + puttsIn;
+  document.getElementById('fir_tot').textContent = firOut + firIn;
+  document.getElementById('gir_tot').textContent = girOut + girIn;
+}
+
+holesSelect.addEventListener('change', (e) => {
+  renderScorecard(parseInt(e.target.value, 10));
+});
+
+// Initial Render
+renderScorecard(18);
+
 // ---------- Navigation Tabs ----------
 document.getElementById('tabs').addEventListener('click', e=>{
   const btn = e.target.closest('button[data-tab]');
@@ -476,7 +615,7 @@ document.getElementById('tabs').addEventListener('click', e=>{
     projectId: "adairway-golf",
     storageBucket: "adairway-golf.firebasestorage.app",
     messagingSenderId: "109030250059",
-    appId: "1:109030250059:web:fb3a3684e4b474cb491fce",
+    appId: "1:109030250059:web:fb3a3684e4b474cb491fce"
   };
 
   // Initialize Firebase
