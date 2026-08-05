@@ -169,12 +169,10 @@
   .stat-box .num{font-family:'Fraunces',serif;font-weight:700;font-size:26px;display:block;}
   .stat-box .lbl{font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.06em;opacity:0.8;}
 
-  svg.chart{width:100%;height:180px;display:block;}
   .del{background:none;border:none;color:var(--flag);cursor:pointer;font-size:12px;font-family:'IBM Plex Mono',monospace;padding:2px 6px;}
   .del:hover{text-decoration:underline;}
   .savepill{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--turf);opacity:0;transition:opacity .3s;}
   .savepill.show{opacity:1;}
-  .hint{font-size:12px;color:var(--turf);opacity:0.8;margin:-6px 0 14px;font-family:'IBM Plex Mono',monospace;}
 
   .dots{display:flex;gap:5px;flex-wrap:wrap;justify-content:center;margin-bottom:16px;}
   .hole-card{text-align:center;padding:8px 0 4px;}
@@ -200,6 +198,31 @@
   .play-nav{display:flex;gap:10px;margin-top:18px;}
   .play-nav button{flex:1;}
 
+  /* GPS & Search Styles */
+  .gps-box {
+    background: var(--fairway-deep);
+    color: var(--paper-light);
+    padding: 12px;
+    border-radius: 3px;
+    text-align: center;
+    margin-bottom: 16px;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .gps-dist {
+    font-size: 28px;
+    font-weight: 700;
+    color: #fff;
+  }
+  .api-result-item {
+    border: 1px solid var(--line);
+    padding: 10px;
+    margin-top: 8px;
+    background: #fff;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
   @media (max-width: 520px){
     .wrap{padding:16px 14px 70px;}
     header{flex-direction:column;align-items:flex-start;gap:6px;padding-bottom:10px;}
@@ -217,7 +240,7 @@
 </head>
 <body>
 
-<!-- AUTH CONTAINER (Shown when logged out) -->
+<!-- AUTH CONTAINER -->
 <div id="authContainer" class="auth-card">
   <div class="auth-header">
     <svg class="flagmark" viewBox="0 0 40 40" fill="none" style="margin:0 auto; display:block;">
@@ -247,7 +270,7 @@
   </div>
 </div>
 
-<!-- MAIN APP CONTAINER (Shown when logged in) -->
+<!-- MAIN APP CONTAINER -->
 <div class="wrap">
 
   <div class="user-bar">
@@ -297,6 +320,16 @@
         <div class="field"><label>Date</label><input type="date" id="pl-date"></div>
         <div class="field"><label>Course</label><input type="text" id="pl-course" placeholder="e.g. Pine Ridge Golf Club"></div>
         <div class="field"><label>Tees</label><input type="text" id="pl-tees" placeholder="e.g. White"></div>
+      </div>
+    </div>
+
+    <!-- GPS RANGEFINDER -->
+    <div class="card">
+      <h2>Live Green GPS</h2>
+      <div class="gps-box">
+        <div style="font-size: 11px; text-transform: uppercase; opacity:0.8;">Distance to Center</div>
+        <div class="gps-dist" id="gpsDisplay">-- yds</div>
+        <button class="btn outline small" id="gpsBtn" style="margin-top: 8px; color: #fff; border-color: #fff;">Get Distance</button>
       </div>
     </div>
 
@@ -418,9 +451,24 @@
 
   <!-- COURSES -->
   <section id="tab-courses">
+    <!-- OPENGOLFAPI SEARCH CARD -->
+    <div class="card">
+      <h2>Search OpenGolfAPI</h2>
+      <div style="display: flex; gap: 10px; margin-top: 10px;">
+        <input type="text" id="apiSearchInput" placeholder="Search course name or state...">
+        <button class="btn" id="apiSearchBtn">Search</button>
+      </div>
+      <div id="apiSearchResults" style="margin-top: 12px;"></div>
+    </div>
+
     <div class="card">
       <h2>Add course notes</h2>
       <div class="field"><label>Course name</label><input type="text" id="co-name"></div>
+      <div class="grid2">
+        <div class="field"><label>Course Rating</label><input type="number" step="0.1" id="co-rating" placeholder="72.0"></div>
+        <div class="field"><label>Slope Rating</label><input type="number" id="co-slope" placeholder="113"></div>
+      </div>
+      <input type="hidden" id="co-api-id">
       <button class="btn" id="saveCourseBtn">Save course</button>
     </div>
   </section>
@@ -447,12 +495,112 @@
 
 <script>
 // ---------- Utilities & Setup ----------
+const OGA_BASE = 'https://api.opengolfapi.org';
+let activeCourseApiId = null;
+
 const todayISO = () => new Date().toISOString().slice(0,10);
 document.getElementById('todayDate').textContent = new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'});
 document.getElementById('r-date').value = todayISO();
 document.getElementById('p-date').value = todayISO();
 document.getElementById('n-date').value = todayISO();
 document.getElementById('pl-date').value = todayISO();
+
+// ---------- OPENGOLFAPI INTEGRATION ----------
+document.getElementById('apiSearchBtn').addEventListener('click', async () => {
+  const query = document.getElementById('apiSearchInput').value.trim();
+  const resultsDiv = document.getElementById('apiSearchResults');
+  if(!query) return;
+  
+  resultsDiv.innerHTML = '<div style="font-size:12px; color:var(--turf);">Searching courses...</div>';
+  try {
+    const res = await fetch(`${OGA_BASE}/api/v1/courses/search?q=${encodeURIComponent(query)}`);
+    const data = await res.json();
+    const courses = data.courses || data;
+
+    if(!courses || courses.length === 0) {
+      resultsDiv.innerHTML = '<div style="font-size:12px; color:var(--flag);">No courses found.</div>';
+      return;
+    }
+
+    resultsDiv.innerHTML = courses.map(c => `
+      <div class="api-result-item">
+        <div>
+          <strong>${c.name}</strong><br>
+          <small>${c.city || ''} ${c.state || ''}</small>
+        </div>
+        <button class="btn small" onclick="applyApiCourse('${c.id}')">Use This</button>
+      </div>
+    `).join('');
+  } catch(err) {
+    resultsDiv.innerHTML = '<div style="font-size:12px; color:var(--flag);">Error connecting to OpenGolfAPI.</div>';
+  }
+});
+
+async function applyApiCourse(courseId) {
+  try {
+    const res = await fetch(`${OGA_BASE}/api/v1/courses/${courseId}`);
+    const course = await res.json();
+    document.getElementById('co-name').value = course.name || '';
+    document.getElementById('co-rating').value = course.rating || 72.0;
+    document.getElementById('co-slope').value = course.slope || 113;
+    document.getElementById('co-api-id').value = course.id;
+    activeCourseApiId = course.id;
+    alert(`Loaded ${course.name}! Fill in any notes and click "Save Course".`);
+  } catch(err) {
+    alert('Failed to load course details.');
+  }
+}
+
+// ---------- GPS DISTANCE CALCULATOR ----------
+function distanceYards(lat1, lon1, lat2, lon2) {
+  const R = 6371e3; 
+  const φ1 = lat1 * Math.PI/180;
+  const φ2 = lat2 * Math.PI/180;
+  const Δφ = (lat2-lat1) * Math.PI/180;
+  const Δλ = (lon2-lon1) * Math.PI/180;
+
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+          Math.cos(φ1) * Math.cos(φ2) *
+          Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const meters = R * c;
+  return Math.round(meters * 1.09361);
+}
+
+document.getElementById('gpsBtn').addEventListener('click', () => {
+  const display = document.getElementById('gpsDisplay');
+  if (!navigator.geolocation) {
+    display.textContent = "GPS Not Supported";
+    return;
+  }
+  
+  display.textContent = "Locating...";
+  
+  navigator.geolocation.getCurrentPosition(async (pos) => {
+    const userLat = pos.coords.latitude;
+    const userLon = pos.coords.longitude;
+    
+    // Default to active course API ID or fallback search
+    if (activeCourseApiId) {
+      try {
+        const currentHole = document.getElementById('playHoleNum').textContent.replace('Hole ', '');
+        const res = await fetch(`${OGA_BASE}/api/v1/features?course=${activeCourseApiId}&hole=${currentHole}&type=green`);
+        const data = await res.json();
+        
+        if (data && data.length > 0 && data[0].coordinates) {
+          const greenLat = data[0].coordinates[1];
+          const greenLon = data[0].coordinates[0];
+          const yds = distanceYards(userLat, userLon, greenLat, greenLon);
+          display.textContent = `${yds} yds`;
+          return;
+        }
+      } catch(e) {}
+    }
+    display.textContent = "No Green Data";
+  }, (err) => {
+    display.textContent = "GPS Error";
+  });
+});
 
 // ---------- Dynamic Scorecard Setup ----------
 const scTable = document.getElementById('scorecardTable');
@@ -608,7 +756,6 @@ document.getElementById('tabs').addEventListener('click', e=>{
     signOut 
   } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
-  // Replace these credentials with your actual project details from Firebase Console
   const firebaseConfig = {
     apiKey: "AIzaSyBHKyis-dDknrvOuojryQnIsVcRkEPR5bQ",
     authDomain: "adairway-golf.firebaseapp.com",
@@ -618,11 +765,9 @@ document.getElementById('tabs').addEventListener('click', e=>{
     appId: "1:109030250059:web:fb3a3684e4b474cb491fce"
   };
 
-  // Initialize Firebase
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
 
-  // UI Elements
   const authContainer = document.getElementById('authContainer');
   const appWrap = document.querySelector('.wrap');
   const authEmail = document.getElementById('authEmail');
@@ -630,7 +775,6 @@ document.getElementById('tabs').addEventListener('click', e=>{
   const authError = document.getElementById('authError');
   const userEmailDisplay = document.getElementById('userEmailDisplay');
 
-  // CREATE ACCOUNT
   document.getElementById('signupBtn').addEventListener('click', async () => {
     authError.style.display = 'none';
     try {
@@ -641,7 +785,6 @@ document.getElementById('tabs').addEventListener('click', e=>{
     }
   });
 
-  // LOG IN
   document.getElementById('loginBtn').addEventListener('click', async () => {
     authError.style.display = 'none';
     try {
@@ -652,12 +795,10 @@ document.getElementById('tabs').addEventListener('click', e=>{
     }
   });
 
-  // LOG OUT
   document.getElementById('logoutBtn').addEventListener('click', () => {
     signOut(auth);
   });
 
-  // AUTH STATE MONITOR
   onAuthStateChanged(auth, (user) => {
     if (user) {
       authContainer.style.display = 'none';
