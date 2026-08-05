@@ -643,11 +643,22 @@ function buildScorecardTable(){
 }
 
 function recalcScorecard(){
+  // Check which halves have scores entered
+  let frontHasScores = false, backHasScores = false;
+  document.querySelectorAll('.score').forEach(s=>{
+    const h = +s.dataset.hole, v = +s.value || 0;
+    if(v > 0){
+      if(h <= 9) frontHasScores = true;
+      else backHasScores = true;
+    }
+  });
+
   // Par + disable FIR on par-3s
   let outPar=0, inPar=0;
   document.querySelectorAll('.par').forEach(p=>{
     const h = +p.dataset.hole, v = +p.value || 0;
-    if(h<=9) outPar += v; else inPar += v;
+    if(h<=9) { if(frontHasScores || !backHasScores) outPar += v; }
+    else { if(backHasScores || !frontHasScores) inPar += v; }
     const firBox = document.querySelector(`.fir[data-hole="${h}"]`);
     if(firBox){
       if(v===3){ firBox.checked=false; firBox.disabled=true; }
@@ -722,16 +733,11 @@ function resetScorecard(){
 
 // ---------- PLAY MODE (one hole at a time) ----------
 // ---------- OpenGolfAPI (read-only course lookups + local-only GPS) ----------
-// We only ever call the free, keyless read endpoints below: course search,
-// course detail, tees, and green geometry. We never sign in, never mint a
-// key, and never send shots/moments/location data to them — GPS distance
-// is computed entirely in this browser using your live position plus a
-// green coordinate we look up once.
 const OGA_BASE = 'https://api.opengolfapi.org';
 let pendingApiCourse = null;
 let currentApiCourseId = null;
 
-let playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, fir:false, gir:false}));
+let playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:0, putts:2, fir:false, gir:false}));
 let currentHole = 0;
 
 function renderPlayHole(){
@@ -739,7 +745,7 @@ function renderPlayHole(){
   const h = playHoles[currentHole];
   document.getElementById('playHoleNum').textContent = 'Hole ' + h.hole;
   document.getElementById('playHolePar').textContent = 'Par ' + h.par;
-  document.getElementById('scoreVal').textContent = h.score;
+  document.getElementById('scoreVal').textContent = h.score || h.par;
   document.getElementById('puttsVal').textContent = h.putts;
 
   const firBtn = document.getElementById('firToggle');
@@ -755,7 +761,6 @@ function renderPlayHole(){
   dots.innerHTML = playHoles.map((ph,i)=>{
     let cls = 'dot';
     if(i===currentHole) cls += ' current';
-    else if(ph.score>0 && ph.score!==ph.par) cls += ' done';
     else if(ph.score>0) cls += ' done';
     return `<div class="${cls}" data-idx="${i}"></div>`;
   }).join('');
@@ -768,12 +773,14 @@ document.getElementById('playDots').addEventListener('click', e=>{
 });
 document.getElementById('scoreMinus').addEventListener('click', ()=>{
   const h = playHoles[currentHole];
-  h.score = Math.max(1, h.score-1);
+  const cur = h.score || h.par;
+  h.score = Math.max(1, cur-1);
   renderPlayHole();
 });
 document.getElementById('scorePlus').addEventListener('click', ()=>{
   const h = playHoles[currentHole];
-  h.score = Math.min(12, h.score+1);
+  const cur = h.score || h.par;
+  h.score = Math.min(12, cur+1);
   renderPlayHole();
 });
 document.getElementById('puttsMinus').addEventListener('click', ()=>{
@@ -801,11 +808,19 @@ document.getElementById('playPrev').addEventListener('click', ()=>{
   if(currentHole>0){ currentHole--; renderPlayHole(); }
 });
 document.getElementById('playNext').addEventListener('click', ()=>{
-  if(currentHole<17){ currentHole++; renderPlayHole(); }
+  if(currentHole<17){
+    const h = playHoles[currentHole];
+    if(h.score === 0) h.score = h.par;
+    currentHole++;
+    renderPlayHole();
+  }
 });
 document.getElementById('finishRoundBtn').addEventListener('click', async ()=>{
-  const totalScore = playHoles.reduce((s,h)=>s+h.score,0);
-  if(totalScore===0){ alert('Enter at least one hole score.'); return; }
+  const hLast = playHoles[currentHole];
+  if(hLast.score === 0) hLast.score = hLast.par;
+  
+  const playedHoles = playHoles.filter(h => h.score > 0);
+  if(playedHoles.length===0){ alert('Enter at least one hole score.'); return; }
   await commitRound(
     playHoles.map(h=>({...h})),
     document.getElementById('pl-course').value,
@@ -814,7 +829,7 @@ document.getElementById('finishRoundBtn').addEventListener('click', async ()=>{
     document.getElementById('pl-notes').value
   );
   // reset play state for next round
-  playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, fir:false, gir:false}));
+  playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:0, putts:2, fir:false, gir:false}));
   currentHole = 0;
   document.getElementById('pl-course').value='';
   document.getElementById('pl-tees').value='';
@@ -833,19 +848,22 @@ function renderRounds(){
   if(rounds.length===0){ list.innerHTML = '<div class="empty">No rounds logged yet — play one and log it above.</div>'; return; }
   const sorted = [...rounds].sort((a,b)=> b.date.localeCompare(a.date));
   list.innerHTML = sorted.map(r=>{
-    const totalScore = r.holes.reduce((s,h)=>s+h.score,0);
-    const totalPar = r.holes.reduce((s,h)=>s+h.par,0);
+    const played = r.holes.filter(h=>h.score>0);
+    const totalScore = played.reduce((s,h)=>s+h.score,0);
+    const totalPar = played.reduce((s,h)=>s+h.par,0);
     const toPar = totalScore - totalPar;
     const toParStr = totalScore ? (toPar===0?'E':(toPar>0?'+'+toPar:toPar)) : '—';
-    const totalPutts = r.holes.reduce((s,h)=>s+(h.putts||0),0);
-    const nonPar3 = r.holes.filter(h=>h.par!==3 && h.par>0).length;
-    const firCount = r.holes.filter(h=>h.fir).length;
-    const girCount = r.holes.filter(h=>h.gir).length;
+    const totalPutts = played.reduce((s,h)=>s+(h.putts||0),0);
+    const nonPar3 = played.filter(h=>h.par!==3 && h.par>0).length;
+    const firCount = played.filter(h=>h.fir).length;
+    const girCount = played.filter(h=>h.gir).length;
+    const is9Hole = played.length <= 9;
+    const label9 = is9Hole ? ' (9 holes)' : '';
     return `<div class="round-item">
       <div style="flex:1">
-        <div class="meta">${r.date} · ${r.tees||'—'}</div>
+        <div class="meta">${r.date} · ${r.tees||'—'}${label9}</div>
         <div class="title">${escapeHtml(r.course||'Unnamed course')}</div>
-        <div class="meta" style="margin-top:4px;">Putts: ${totalPutts||'—'} · FIR: ${firCount}/${nonPar3||14} · GIR: ${girCount}/18</div>
+        <div class="meta" style="margin-top:4px;">Putts: ${totalPutts||'—'} · FIR: ${firCount}/${nonPar3||0} · GIR: ${girCount}/${played.length||18}</div>
         ${r.notes ? `<div class="notes">${escapeHtml(r.notes)}</div>` : ''}
       </div>
       <div style="text-align:right;">
@@ -867,8 +885,8 @@ async function commitRound(holes, course, tees, date, notes){
 
 document.getElementById('saveRoundBtn').addEventListener('click', async ()=>{
   const holes = readScorecard();
-  const totalScore = holes.reduce((s,h)=>s+h.score,0);
-  if(totalScore===0){ alert('Enter at least one hole score.'); return; }
+  const played = holes.filter(h=>h.score>0);
+  if(played.length===0){ alert('Enter at least one hole score.'); return; }
   await commitRound(
     holes,
     document.getElementById('r-course').value,
@@ -919,9 +937,16 @@ function courseLookup(name){
 function computeDifferential(round){
   const c = courseLookup(round.course);
   if(!c) return null;
-  const totalScore = round.holes.reduce((s,h)=>s+h.score,0);
+  const played = round.holes.filter(h=>h.score>0);
+  const totalScore = played.reduce((s,h)=>s+h.score,0);
   if(totalScore===0) return null;
-  return (totalScore - c.rating) * 113 / c.slope;
+  if(played.length === 18){
+    return (totalScore - c.rating) * 113 / c.slope;
+  }
+  if(played.length === 9){
+    return ((totalScore * 2) - c.rating) * 113 / c.slope;
+  }
+  return null;
 }
 function computeHandicapIndex(withScores){
   const withDiff = [...withScores].sort((a,b)=> b.date.localeCompare(a.date))
@@ -1049,31 +1074,39 @@ function parTypeStats(){
 
 function renderStats(){
   const sorted = [...rounds].sort((a,b)=>a.date.localeCompare(b.date));
-  const withScores = sorted.filter(r=> r.holes.reduce((s,h)=>s+h.score,0)>0);
+  const withScores = sorted.filter(r=> r.holes.some(h=>h.score>0));
   const dates = withScores.map(r=>r.date);
 
   const scoreCount = withScores.length;
   const scoreToPar = withScores.map(r=>{
-    const ts=r.holes.reduce((a,h)=>a+h.score,0), tp=r.holes.reduce((a,h)=>a+h.par,0);
+    const played = r.holes.filter(h=>h.score>0);
+    const ts=played.reduce((a,h)=>a+h.score,0), tp=played.reduce((a,h)=>a+h.par,0);
     return ts-tp;
   });
   const avgToPar = scoreCount ? (scoreToPar.reduce((s,v)=>s+v,0)/scoreCount) : null;
 
-  const puttsRounds = withScores.map(r=> r.holes.reduce((s,h)=>s+(h.putts||0),0));
+  const puttsRounds = withScores.map(r=>{
+    const played = r.holes.filter(h=>h.score>0);
+    return played.reduce((s,h)=>s+(h.putts||0),0);
+  });
   const puttsHave = puttsRounds.filter(v=>v>0);
   const avgPutts = puttsHave.length ? (puttsHave.reduce((s,v)=>s+v,0)/puttsHave.length) : null;
 
   const firRounds = withScores.map(r=>{
-    const eligible = r.holes.filter(h=>h.par!==3 && h.par>0).length || 14;
-    const hit = r.holes.filter(h=>h.fir).length;
-    return {pct: hit/eligible*100, hit, any: r.holes.some(h=>h.fir)};
+    const played = r.holes.filter(h=>h.score>0);
+    const eligible = played.filter(h=>h.par!==3 && h.par>0).length;
+    if(!eligible) return {pct:0, hit:0, any:false};
+    const hit = played.filter(h=>h.fir).length;
+    return {pct: hit/eligible*100, hit, any: played.some(h=>h.fir)};
   });
   const firHave = firRounds.filter(x=>x.hit>0 || x.any);
   const avgFir = firHave.length ? (firHave.reduce((s,x)=>s+x.pct,0)/firHave.length) : null;
 
   const girRounds = withScores.map(r=>{
-    const hit = r.holes.filter(h=>h.gir).length;
-    return {pct: hit/18*100, hit};
+    const played = r.holes.filter(h=>h.score>0);
+    if(!played.length) return {pct:0, hit:0};
+    const hit = played.filter(h=>h.gir).length;
+    return {pct: hit/played.length*100, hit};
   });
   const girHave = girRounds.filter(x=>x.hit>0);
   const avgGir = girHave.length ? (girHave.reduce((s,x)=>s+x.pct,0)/girHave.length) : null;
