@@ -406,13 +406,25 @@ window.importApiCourse = function(idx) {
   const pars = [];
   const coords = {};
 
-  // Find where hole details live
-  const rawHoles = c.holes || c.hole_data || c.holes_attributes || [];
+  // Extract hole array (check tees, top-level holes, or scorecard)
+  let rawHoles = c.holes || c.hole_data || c.holes_attributes || [];
+  if ((!rawHoles || rawHoles.length === 0) && Array.isArray(c.tees) && c.tees.length > 0) {
+    // Search tee sets for hole information
+    for (const tee of c.tees) {
+      const teeHoles = tee.holes || tee.hole_data || tee.scorecard || [];
+      if (teeHoles.length > 0) {
+        rawHoles = teeHoles;
+        break;
+      }
+    }
+  }
 
   if (Array.isArray(rawHoles) && rawHoles.length > 0) {
     rawHoles.slice(0, 18).forEach((h, index) => {
-      const hNum = h.hole_number || h.number || (index + 1);
-      const parVal = parseInt(h.par, 10) || 4;
+      const hNum = h.hole_number || h.number || h.hole || (index + 1);
+      
+      // Pull par from any standard key location
+      const parVal = parseInt(h.par || h.par_value || h.par_val, 10) || 4;
       pars.push(parVal);
 
       // Extract latitude & longitude from any possible key location
@@ -428,7 +440,7 @@ window.importApiCourse = function(idx) {
       }
     });
   } else {
-    // Fallback: If hole array is missing, use course-level coordinates
+    // Fallback: If hole details are missing entirely, default pars to 4 and use center coords
     const fallbackLat = parseFloat(c.latitude || c.lat || c.location?.lat);
     const fallbackLng = parseFloat(c.longitude || c.lng || c.location?.lng);
 
@@ -444,8 +456,10 @@ window.importApiCourse = function(idx) {
     }
   }
 
+  // Ensure 18 pars exist
   while (pars.length < 18) pars.push(4);
 
+  // Render to UI
   renderBuilderTable({ pars, coords });
   alert(`Imported "${c.name}"! Par values and coordinates have been filled in below.`);
 };
