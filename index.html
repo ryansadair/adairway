@@ -286,6 +286,14 @@
         </div>
       </div>
 
+      <div class="stat-block">
+        <div class="stat-name" style="text-align:center;">Distance to green</div>
+        <div style="text-align:center;">
+          <button class="btn outline" id="gpsBtn" type="button">📍 Get distance</button>
+          <div id="gpsResult" class="hint" style="margin-top:8px;margin-bottom:0;"></div>
+        </div>
+      </div>
+
       <div class="play-nav">
         <button class="btn outline" id="playPrev" type="button">← Prev</button>
         <button class="btn outline" id="playNext" type="button">Next →</button>
@@ -422,6 +430,21 @@
   <!-- COURSES -->
   <section id="tab-courses">
     <div class="card">
+      <h2>Look up a course</h2>
+      <p class="hint" style="margin-top:0;">
+        Pulls par, yardage, rating &amp; slope from OpenGolfAPI's free public course
+        database — a plain data lookup, no account, nothing sent about you. It's
+        community-maintained (like a wiki), so double-check anything that looks off.
+      </p>
+      <div class="grid2">
+        <div class="field"><label>Course name</label><input type="text" id="api-search-q" placeholder="e.g. Bandon Dunes"></div>
+        <div class="field"><label>State (optional)</label><input type="text" id="api-search-state" placeholder="e.g. OR" maxlength="2"></div>
+      </div>
+      <button class="btn" id="apiSearchBtn">Search</button>
+      <div id="apiSearchResults" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="card">
       <h2>Add course notes</h2>
       <div class="field"><label>Course name</label><input type="text" id="co-name"></div>
       <div class="grid2">
@@ -527,33 +550,50 @@ document.getElementById('tabs').addEventListener('click', e=>{
 });
 
 // ---------- preset dropdown ----------
+function getCoursePresetMap(){
+  const map = {};
+  Object.entries(COURSE_PRESETS).forEach(([name,p])=>{ map[name] = p; });
+  courses.forEach(c=>{
+    if(Array.isArray(c.par) && c.par.length===18){
+      map[c.name] = {par: c.par, rating: c.rating, slope: c.slope, apiCourseId: c.apiCourseId || null};
+    }
+  });
+  return map;
+}
 function populatePresetDropdown(){
   ['r-preset','pl-preset'].forEach(id=>{
     const sel = document.getElementById(id);
-    Object.keys(COURSE_PRESETS).forEach(name=>{
+    const current = sel.value;
+    while(sel.options.length>1) sel.remove(1);
+    Object.keys(getCoursePresetMap()).forEach(name=>{
       const opt = document.createElement('option');
       opt.value = name; opt.textContent = name;
       sel.appendChild(opt);
     });
+    if([...sel.options].some(o=>o.value===current)) sel.value = current;
   });
 }
 document.getElementById('r-preset').addEventListener('change', e=>{
   const name = e.target.value;
   if(!name) return;
   document.getElementById('r-course').value = name;
-  const preset = COURSE_PRESETS[name];
-  preset.par.forEach((p,i)=>{
-    const el = document.querySelector(`.par[data-hole="${i+1}"]`);
-    if(el) el.value = p;
-  });
-  recalcScorecard();
+  const preset = getCoursePresetMap()[name];
+  if(preset && preset.par){
+    preset.par.forEach((p,i)=>{
+      const el = document.querySelector(`.par[data-hole="${i+1}"]`);
+      if(el) el.value = p;
+    });
+    recalcScorecard();
+  }
 });
 document.getElementById('pl-preset').addEventListener('change', e=>{
   const name = e.target.value;
   if(!name) return;
   document.getElementById('pl-course').value = name;
-  const preset = COURSE_PRESETS[name];
-  preset.par.forEach((p,i)=>{ playHoles[i].par = p; playHoles[i].score = p; });
+  const preset = getCoursePresetMap()[name];
+  if(preset && preset.par){
+    preset.par.forEach((p,i)=>{ playHoles[i].par = p; playHoles[i].score = p; });
+  }
   renderPlayHole();
 });
 
@@ -681,10 +721,21 @@ function resetScorecard(){
 }
 
 // ---------- PLAY MODE (one hole at a time) ----------
+// ---------- OpenGolfAPI (read-only course lookups + local-only GPS) ----------
+// We only ever call the free, keyless read endpoints below: course search,
+// course detail, tees, and green geometry. We never sign in, never mint a
+// key, and never send shots/moments/location data to them — GPS distance
+// is computed entirely in this browser using your live position plus a
+// green coordinate we look up once.
+const OGA_BASE = 'https://api.opengolfapi.org';
+let pendingApiCourse = null;
+let currentApiCourseId = null;
+
 let playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, fir:false, gir:false}));
 let currentHole = 0;
 
 function renderPlayHole(){
+  updateGpsAvailability();
   const h = playHoles[currentHole];
   document.getElementById('playHoleNum').textContent = 'Hole ' + h.hole;
   document.getElementById('playHolePar').textContent = 'Par ' + h.par;
@@ -1203,22 +1254,178 @@ function renderCourses(){
     </div>
   `).join('');
 }
+// ---------- OpenGolfAPI: course search + apply ----------
+function pick(obj, keys, fallback=null){
+  for(const k of keys){ if(obj && obj[k]!=null) return obj[k]; }
+  return fallback;
+}
+document.getElementById('apiSearchBtn').addEventListener('click', async ()=>{
+  const q = document.getElementById('api-search-q').value.trim();
+  const resultsEl = document.getElementById('apiSearchResults');
+  if(!q){ resultsEl.innerHTML = '<div class="empty">Type a course name first.</div>'; return; }
+  const state = document.getElementById('api-search-state').value.trim().toUpperCase();
+  resultsEl.innerHTML = '<div class="empty">Searching…</div>';
+  try{
+    const params = new URLSearchParams({q, limit:'8'});
+    if(state) params.set('state', state);
+    const res = await fetch(`${OGA_BASE}/api/v1/courses/search?${params.toString()}`);
+    if(!res.ok) throw new Error('status '+res.status);
+    const data = await res.json();
+    const list = data.courses || [];
+    if(list.length===0){
+      resultsEl.innerHTML = '<div class="empty">No matches — try a different spelling, or add the course manually below.</div>';
+      return;
+    }
+    resultsEl.innerHTML = list.map(c=>`
+      <div class="round-item">
+        <div style="flex:1">
+          <div class="title">${escapeHtml(c.course_name||'Unnamed')}</div>
+          <div class="meta">${escapeHtml(c.city||'')}${c.state?', '+escapeHtml(c.state):''}${c.par_total?(' · Par '+c.par_total):''}${c.total_yardage?(' · '+c.total_yardage+' yds'):''}</div>
+        </div>
+        <button class="btn small" data-id="${escapeHtml(c.id)}" type="button">Use this</button>
+      </div>
+    `).join('');
+  }catch(err){
+    resultsEl.innerHTML = `<div class="empty">Couldn't reach OpenGolfAPI (${escapeHtml(err.message)}). This only works on the GitHub-hosted version with an internet connection — you can still add the course manually below.</div>`;
+  }
+});
+
+document.getElementById('apiSearchResults').addEventListener('click', async e=>{
+  const btn = e.target.closest('button[data-id]');
+  if(!btn) return;
+  const id = btn.dataset.id;
+  const originalText = btn.textContent;
+  btn.textContent = 'Loading…'; btn.disabled = true;
+  try{
+    const res = await fetch(`${OGA_BASE}/api/v1/courses/${encodeURIComponent(id)}`);
+    if(!res.ok) throw new Error('status '+res.status);
+    const detail = await res.json();
+    applyApiCourseDetail(detail);
+  }catch(err){
+    alert("Couldn't load full course details from OpenGolfAPI: "+err.message+". You can add the course manually instead.");
+    btn.textContent = originalText; btn.disabled = false;
+  }
+});
+
+function applyApiCourseDetail(detail){
+  const name = detail.course_name || 'Unnamed course';
+  let parArr = null;
+  if(Array.isArray(detail.holes) && detail.holes.length>=9){
+    const sortedHoles = [...detail.holes].sort((a,b)=>
+      (pick(a,['hole','hole_number','number'],0) - pick(b,['hole','hole_number','number'],0)));
+    parArr = sortedHoles.slice(0,18).map(h=> pick(h,['par','hole_par','par_value'],4));
+    while(parArr.length<18) parArr.push(4);
+  }
+  let rating=null, slope=null;
+  if(Array.isArray(detail.tees) && detail.tees.length){
+    const preferred = detail.tees.find(t=>{
+      const n = (pick(t,['tee_name','name','color'],'')||'').toLowerCase();
+      return n.includes('white') || n.includes('men');
+    }) || detail.tees[0];
+    rating = pick(preferred, ['course_rating','rating'], null);
+    slope = pick(preferred, ['slope_rating','slope'], null);
+  }
+
+  document.getElementById('co-name').value = name;
+  if(rating!=null) document.getElementById('co-rating').value = rating;
+  if(slope!=null) document.getElementById('co-slope').value = slope;
+  document.getElementById('co-notes').value = detail.architect
+    ? `Designed by ${detail.architect}${detail.year_built?(', '+detail.year_built):''}.` : '';
+
+  pendingApiCourse = { name, par: parArr, rating, slope, apiCourseId: detail.id };
+
+  document.getElementById('apiSearchResults').innerHTML = `<div class="empty">
+    Loaded ${escapeHtml(name)} — rating/slope filled in below${parArr?' along with full 18-hole par':' (par data was not available — you can set it manually after saving)'}.
+    Review, add notes if you like, then hit "Save course" below. GPS distance-to-pin will also work for this course once saved.
+  </div>`;
+}
+
+// ---------- OpenGolfAPI: local-only GPS distance to green ----------
+function distanceYards(lat1, lon1, lat2, lon2){
+  const R = 6371000;
+  const toRad = d => d*Math.PI/180;
+  const dLat = toRad(lat2-lat1), dLon = toRad(lon2-lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  const c = 2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R*c*1.09361;
+}
+function geoJsonCenter(geom){
+  if(!geom) return null;
+  if(geom.type==='Point'){ const [lng,lat]=geom.coordinates; return {lat,lng}; }
+  if(geom.type==='Polygon'){
+    const ring = geom.coordinates[0];
+    let sLat=0,sLng=0;
+    ring.forEach(([lng,lat])=>{ sLat+=lat; sLng+=lng; });
+    return {lat:sLat/ring.length, lng:sLng/ring.length};
+  }
+  if(geom.type==='MultiPolygon'){
+    const ring = geom.coordinates[0][0];
+    let sLat=0,sLng=0;
+    ring.forEach(([lng,lat])=>{ sLat+=lat; sLng+=lng; });
+    return {lat:sLat/ring.length, lng:sLng/ring.length};
+  }
+  return null;
+}
+function updateGpsAvailability(){
+  const name = document.getElementById('pl-course').value;
+  const c = courses.find(x=>x.name.trim().toLowerCase()===String(name).trim().toLowerCase());
+  currentApiCourseId = (c && c.apiCourseId) ? c.apiCourseId : null;
+  const btn = document.getElementById('gpsBtn');
+  const result = document.getElementById('gpsResult');
+  if(!btn) return;
+  if(currentApiCourseId){ btn.disabled = false; result.textContent = ''; }
+  else { btn.disabled = true; result.textContent = 'Look this course up via OpenGolfAPI (Courses tab) to enable GPS.'; }
+}
+document.getElementById('gpsBtn').addEventListener('click', ()=>{
+  if(!currentApiCourseId) return;
+  const resultEl = document.getElementById('gpsResult');
+  if(!navigator.geolocation){ resultEl.textContent = 'Geolocation not supported in this browser.'; return; }
+  resultEl.textContent = 'Getting your location…';
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    const {latitude, longitude} = pos.coords;
+    const holeNum = playHoles[currentHole].hole;
+    try{
+      resultEl.textContent = 'Looking up the green…';
+      const res = await fetch(`${OGA_BASE}/api/v1/features?course=${encodeURIComponent(currentApiCourseId)}&hole=${holeNum}&type=green`);
+      if(!res.ok) throw new Error('status '+res.status);
+      const geo = await res.json();
+      const feats = geo.features || [];
+      if(!feats.length) throw new Error('no green data for this hole');
+      const center = geoJsonCenter(feats[0].geometry);
+      if(!center) throw new Error('unreadable geometry');
+      const yds = distanceYards(latitude, longitude, center.lat, center.lng);
+      resultEl.textContent = `≈ ${Math.round(yds)} yds to green center`;
+    }catch(err){
+      resultEl.textContent = `Couldn't get green data for this hole (${err.message}). Coverage varies by course.`;
+    }
+  }, ()=>{
+    resultEl.textContent = 'Location permission denied or unavailable.';
+  }, {enableHighAccuracy:true, timeout:8000});
+});
+
 document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
   const name = document.getElementById('co-name').value.trim();
   if(!name){ alert('Name the course.'); return; }
+  const extra = (pendingApiCourse && pendingApiCourse.name===name)
+    ? { par: pendingApiCourse.par, apiCourseId: pendingApiCourse.apiCourseId } : {};
   courses.push({
     id: uid(),
     name,
     rating: document.getElementById('co-rating').value ? +document.getElementById('co-rating').value : null,
     slope: document.getElementById('co-slope').value ? +document.getElementById('co-slope').value : null,
-    notes: document.getElementById('co-notes').value.trim()
+    notes: document.getElementById('co-notes').value.trim(),
+    ...extra
   });
   await saveList('courses', courses);
+  pendingApiCourse = null;
   document.getElementById('co-name').value='';
   document.getElementById('co-rating').value='';
   document.getElementById('co-slope').value='';
   document.getElementById('co-notes').value='';
+  document.getElementById('apiSearchResults').innerHTML='';
+  document.getElementById('api-search-q').value='';
   renderCourses();
+  populatePresetDropdown();
 });
 document.getElementById('coursesList').addEventListener('click', async e=>{
   const btn = e.target.closest('button.del[data-kind="course"]');
@@ -1226,6 +1433,7 @@ document.getElementById('coursesList').addEventListener('click', async e=>{
   courses = courses.filter(c=>c.id!==btn.dataset.id);
   await saveList('courses', courses);
   renderCourses();
+  populatePresetDropdown();
 });
 
 // ---------- NOTES ----------
