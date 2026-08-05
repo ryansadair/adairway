@@ -144,6 +144,21 @@
   .savepill.show{opacity:1;}
   .hint{font-size:12px;color:var(--turf);opacity:0.8;margin:-6px 0 14px;font-family:'IBM Plex Mono',monospace;}
 
+  .hc-wrap{display:flex;align-items:center;gap:22px;flex-wrap:wrap;}
+  .hc-number{font-family:'Fraunces',serif;font-weight:700;font-size:48px;color:var(--fairway-deep);line-height:1;}
+  .hc-detail{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--graphite);opacity:0.75;max-width:360px;}
+
+  .partype-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px;}
+  .partype-box{border:1px solid var(--line);border-radius:3px;padding:12px;text-align:center;background:#fff;}
+  .partype-box .pt-label{font-family:'IBM Plex Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:var(--turf);font-weight:600;}
+  .partype-box .pt-num{font-family:'Fraunces',serif;font-weight:700;font-size:24px;color:var(--graphite);display:block;margin-top:4px;}
+  .partype-box .pt-sub{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--graphite);opacity:0.6;}
+
+  .distbar{display:flex;width:100%;height:26px;border-radius:2px;overflow:hidden;border:1px solid var(--line);margin-bottom:8px;}
+  .distbar .seg{display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:#fff;font-weight:600;}
+  .dist-legend{display:flex;gap:14px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--graphite);opacity:0.75;}
+  .dist-legend span.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:middle;}
+
   /* Play mode — on-course, one hole at a time */
   .dots{display:flex;gap:5px;flex-wrap:wrap;justify-content:center;margin-bottom:16px;}
   .dot{width:9px;height:9px;border-radius:50%;background:var(--line);flex-shrink:0;}
@@ -319,25 +334,45 @@
     <div class="card">
       <h2>Season at a glance</h2>
       <div class="stat-row" id="statBoxes"></div>
-      <div class="grid2">
-        <div>
-          <div class="chart-label" style="margin-bottom:6px;">SCORE TREND (vs par)</div>
-          <svg class="chart" id="scoreChart"></svg>
-        </div>
-        <div>
-          <div class="chart-label" style="margin-bottom:6px;">PUTTS PER ROUND</div>
-          <svg class="chart" id="puttsChart"></svg>
-        </div>
+    </div>
+
+    <div class="card">
+      <h2>Handicap index <small>best differentials, last 20 rounds</small></h2>
+      <div id="handicapBlock"></div>
+    </div>
+
+    <div class="card">
+      <h2>Score trend <small>dots = round, line = 5-round rolling avg · ▲ gear · ● practice</small></h2>
+      <svg class="chart" id="scoreChart"></svg>
+    </div>
+    <div class="card">
+      <h2>Putts per round <small>dots = round, line = 5-round rolling avg</small></h2>
+      <svg class="chart" id="puttsChart"></svg>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h2>Fairways hit %</h2>
+        <svg class="chart" id="firChart"></svg>
       </div>
-      <div class="grid2" style="margin-top:14px;">
-        <div>
-          <div class="chart-label" style="margin-bottom:6px;">FAIRWAYS HIT %</div>
-          <svg class="chart" id="firChart"></svg>
-        </div>
-        <div>
-          <div class="chart-label" style="margin-bottom:6px;">GREENS IN REGULATION %</div>
-          <svg class="chart" id="girChart"></svg>
-        </div>
+      <div class="card">
+        <h2>Greens in regulation %</h2>
+        <svg class="chart" id="girChart"></svg>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Scoring by par type</h2>
+      <div id="parTypeBlock"></div>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <h2>FIR% vs score</h2>
+        <svg class="chart" id="firScatter"></svg>
+      </div>
+      <div class="card">
+        <h2>GIR% vs score</h2>
+        <svg class="chart" id="girScatter"></svg>
       </div>
     </div>
   </section>
@@ -369,10 +404,11 @@
         <div class="field"><label>Brand / Model</label><input type="text" id="c-model"></div>
         <div class="field"><label>Shaft</label><input type="text" id="c-shaft" placeholder="e.g. Stiff"></div>
       </div>
-      <div class="grid2">
+      <div class="grid3">
         <div class="field"><label>Status</label>
           <select id="c-status"><option value="active">In the bag</option><option value="retired">Retired / replaced</option></select>
         </div>
+        <div class="field"><label>Avg distance (yds)</label><input type="number" id="c-distance" placeholder="e.g. 150"></div>
         <div class="field"><label>Notes</label><input type="text" id="c-notes" placeholder="e.g. black dot, owned ~10-15 yrs"></div>
       </div>
       <button class="btn" id="saveClubBtn">Add club</button>
@@ -388,6 +424,10 @@
     <div class="card">
       <h2>Add course notes</h2>
       <div class="field"><label>Course name</label><input type="text" id="co-name"></div>
+      <div class="grid2">
+        <div class="field"><label>Course rating (optional — powers handicap index)</label><input type="number" step="0.1" id="co-rating" placeholder="e.g. 70.2"></div>
+        <div class="field"><label>Slope rating (optional)</label><input type="number" id="co-slope" placeholder="e.g. 121"></div>
+      </div>
       <div class="field"><label>Strategy / quirks / holes to remember</label><textarea id="co-notes" placeholder="e.g. #7 plays long, favor left off the tee on #12, greens break toward the river..."></textarea></div>
       <button class="btn" id="saveCourseBtn">Save course</button>
     </div>
@@ -439,13 +479,13 @@
 <script>
 // ---------- course presets (real par data, hole 1-18) ----------
 const COURSE_PRESETS = {
-  "Pine Ridge Golf Club": [5,4,4,3,4,4,4,5,4, 3,5,4,4,4,3,4,3,5],
-  "Laurelwood Golf Course": [5,4,3,4,4,3,4,3,5, 5,4,3,4,4,3,4,3,5],
-  "Oakway Golf Course": [4,3,3,3,3,4,3,4,3, 4,3,4,3,3,4,3,4,3],
-  "Eugene Country Club": [4,3,4,4,3,5,3,5,4, 4,4,3,5,4,4,5,4,4],
-  "Tokatee Golf Club": [4,4,5,3,4,5,4,3,4, 4,3,5,4,4,4,5,3,4],
-  "Sandpines Golf Links": [4,4,5,4,3,4,5,3,4, 4,3,5,4,4,4,4,3,5],
-  "Emerald Valley Golf Club": [4,3,5,4,3,4,5,4,4, 4,3,4,5,4,4,4,3,5]
+  "Pine Ridge Golf Club": {par:[5,4,4,3,4,4,4,5,4, 3,5,4,4,4,3,4,3,5], rating:70.2, slope:121},
+  "Laurelwood Golf Course": {par:[5,4,3,4,4,3,4,3,5, 5,4,3,4,4,3,4,3,5], rating:66.2, slope:117},
+  "Oakway Golf Course": {par:[4,3,3,3,3,4,3,4,3, 4,3,4,3,3,4,3,4,3], rating:58.6, slope:91},
+  "Eugene Country Club": {par:[4,3,4,4,3,5,3,5,4, 4,4,3,5,4,4,5,4,4], rating:71.3, slope:136},
+  "Tokatee Golf Club": {par:[4,4,5,3,4,5,4,3,4, 4,3,5,4,4,4,5,3,4], rating:68.3, slope:116},
+  "Sandpines Golf Links": {par:[4,4,5,4,3,4,5,3,4, 4,3,5,4,4,4,4,3,5], rating:70.4, slope:122},
+  "Emerald Valley Golf Club": {par:[4,3,5,4,3,4,5,4,4, 4,3,4,5,4,4,4,3,5], rating:65.6, slope:115}
 };
 
 // ---------- utilities ----------
@@ -501,8 +541,8 @@ document.getElementById('r-preset').addEventListener('change', e=>{
   const name = e.target.value;
   if(!name) return;
   document.getElementById('r-course').value = name;
-  const pars = COURSE_PRESETS[name];
-  pars.forEach((p,i)=>{
+  const preset = COURSE_PRESETS[name];
+  preset.par.forEach((p,i)=>{
     const el = document.querySelector(`.par[data-hole="${i+1}"]`);
     if(el) el.value = p;
   });
@@ -512,8 +552,8 @@ document.getElementById('pl-preset').addEventListener('change', e=>{
   const name = e.target.value;
   if(!name) return;
   document.getElementById('pl-course').value = name;
-  const pars = COURSE_PRESETS[name];
-  pars.forEach((p,i)=>{ playHoles[i].par = p; playHoles[i].score = p; });
+  const preset = COURSE_PRESETS[name];
+  preset.par.forEach((p,i)=>{ playHoles[i].par = p; playHoles[i].score = p; });
   renderPlayHole();
 });
 
@@ -808,6 +848,87 @@ document.getElementById('roundsList').addEventListener('click', async e=>{
 });
 
 // ---------- STATS ----------
+function rollingAvg(values, window=5){
+  return values.map((v,i)=>{
+    if(i < window-1) return null;
+    const slice = values.slice(i-window+1, i+1);
+    return slice.reduce((s,x)=>s+x,0)/slice.length;
+  });
+}
+function mapDateToIndex(dateStr, dates){
+  if(dates.length===0) return null;
+  for(let i=0;i<dates.length;i++){ if(dates[i] >= dateStr) return i; }
+  return dates.length-1;
+}
+function courseLookup(name){
+  if(!name) return null;
+  const n = name.trim().toLowerCase();
+  return courses.find(c=>c.name.trim().toLowerCase()===n && c.rating && c.slope) || null;
+}
+function computeDifferential(round){
+  const c = courseLookup(round.course);
+  if(!c) return null;
+  const totalScore = round.holes.reduce((s,h)=>s+h.score,0);
+  if(totalScore===0) return null;
+  return (totalScore - c.rating) * 113 / c.slope;
+}
+function computeHandicapIndex(withScores){
+  const withDiff = [...withScores].sort((a,b)=> b.date.localeCompare(a.date))
+    .map(r=>({r, diff: computeDifferential(r)})).filter(x=>x.diff!=null).slice(0,20);
+  const n = withDiff.length;
+  if(n < 3) return {index:null, n, used:0};
+  const useCount = n>=20?8 : n>=19?7 : n>=17?6 : n>=15?5 : n>=12?4 : n>=9?3 : n>=6?2 : 1;
+  const best = withDiff.map(x=>x.diff).sort((a,b)=>a-b).slice(0,useCount);
+  const avg = best.reduce((s,v)=>s+v,0)/best.length;
+  return {index: avg*0.96, n, used: useCount};
+}
+
+// trend chart with raw dots + rolling-avg line + optional gear/practice markers along the bottom
+function trendChart(svgEl, values, dates, opts={}){
+  const w=380,h=190,pad=28,markerY=h-10;
+  svgEl.setAttribute('viewBox',`0 0 ${w} ${h}`);
+  if(values.length===0){ svgEl.innerHTML = `<text x="${w/2}" y="${h/2}" text-anchor="middle" class="chart-label">No data yet</text>`; return; }
+  const rolling = rollingAvg(values, opts.window||5);
+  const allVals = values.concat(rolling.filter(v=>v!=null));
+  const min = Math.min(...allVals, opts.min ?? Math.min(...allVals));
+  const max = Math.max(...allVals, opts.max ?? Math.max(...allVals));
+  const range = (max-min)||1;
+  const plotH = h-2*pad-14;
+  const stepX = values.length>1 ? (w-2*pad)/(values.length-1) : 0;
+  const xAt = i => pad + i*stepX;
+  const yAt = v => pad + plotH - ((v-min)/range)*plotH;
+
+  const dots = values.map((v,i)=>`<circle cx="${xAt(i).toFixed(1)}" cy="${yAt(v).toFixed(1)}" r="2.5" fill="#C7A876"/>`).join('');
+  const rollPts = rolling.map((v,i)=> v==null ? null : {x:xAt(i), y:yAt(v)}).filter(Boolean);
+  const rollPath = rollPts.map((c,i)=>(i===0?'M':'L')+c.x.toFixed(1)+','+c.y.toFixed(1)).join(' ');
+
+  let refLine = '';
+  if(opts.zero!==undefined){
+    const zy = yAt(opts.zero);
+    refLine = `<line x1="${pad}" y1="${zy}" x2="${w-pad}" y2="${zy}" stroke="#8FA89A" stroke-dasharray="3,3" stroke-width="1"/>`;
+  }
+
+  let markers = '';
+  if(opts.markers && opts.markers.length){
+    markers = opts.markers.map(m=>{
+      const idx = mapDateToIndex(m.date, dates);
+      if(idx==null) return '';
+      const x = xAt(idx);
+      return `<g><title>${m.label.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</title><circle cx="${x.toFixed(1)}" cy="${markerY}" r="4" fill="${m.color}" stroke="#F5F0E6" stroke-width="1"/></g>`;
+    }).join('');
+  }
+
+  svgEl.innerHTML = `
+    <line x1="${pad}" y1="${pad+plotH}" x2="${w-pad}" y2="${pad+plotH}" stroke="#D7CCB0" stroke-width="1"/>
+    ${refLine}
+    ${dots}
+    ${rollPts.length>1 ? `<path d="${rollPath}" fill="none" stroke="#1F3A2E" stroke-width="2.5"/>` : ''}
+    ${markers}
+    <text x="${pad}" y="14" class="chart-label">${max.toFixed(0)}</text>
+    <text x="${pad}" y="${pad+plotH-4}" class="chart-label">${min.toFixed(0)}</text>
+  `;
+}
+
 function lineChart(svgEl, points, opts={}){
   const w=380,h=170,pad=28;
   svgEl.setAttribute('viewBox',`0 0 ${w} ${h}`);
@@ -839,31 +960,72 @@ function lineChart(svgEl, points, opts={}){
   `;
 }
 
+function scatterChart(svgEl, points, opts={}){
+  const w=380,h=190,pad=32;
+  svgEl.setAttribute('viewBox',`0 0 ${w} ${h}`);
+  if(points.length<2){ svgEl.innerHTML = `<text x="${w/2}" y="${h/2}" text-anchor="middle" class="chart-label">Not enough data yet</text>`; return; }
+  const xs = points.map(p=>p.x), ys = points.map(p=>p.y);
+  const xMin = opts.xMin ?? Math.min(...xs), xMax = opts.xMax ?? Math.max(...xs);
+  const yMin = Math.min(...ys), yMax = Math.max(...ys);
+  const xRange=(xMax-xMin)||1, yRange=(yMax-yMin)||1;
+  const xAt = x => pad + ((x-xMin)/xRange)*(w-2*pad);
+  const yAt = y => h-pad - ((y-yMin)/yRange)*(h-2*pad);
+  const dots = points.map(p=>`<circle cx="${xAt(p.x).toFixed(1)}" cy="${yAt(p.y).toFixed(1)}" r="4" fill="#A4402F" fill-opacity="0.75"/>`).join('');
+  svgEl.innerHTML = `
+    <line x1="${pad}" y1="${h-pad}" x2="${w-pad}" y2="${h-pad}" stroke="#D7CCB0" stroke-width="1"/>
+    <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${h-pad}" stroke="#D7CCB0" stroke-width="1"/>
+    ${dots}
+    <text x="${pad}" y="${h-10}" class="chart-label">${xMin.toFixed(0)}%</text>
+    <text x="${w-pad-24}" y="${h-10}" class="chart-label">${xMax.toFixed(0)}%</text>
+    <text x="4" y="${pad+4}" class="chart-label">+${yMax.toFixed(0)}</text>
+    <text x="4" y="${h-pad}" class="chart-label">${yMin.toFixed(0)}</text>
+  `;
+}
+
+function parTypeStats(){
+  const buckets = {3:{n:0,sum:0}, 4:{n:0,sum:0}, 5:{n:0,sum:0}};
+  let birdie=0, par=0, bogey=0, dbl=0, total=0;
+  rounds.forEach(r=>r.holes.forEach(h=>{
+    if(h.score>0 && h.par>0){
+      if(buckets[h.par]){ buckets[h.par].n++; buckets[h.par].sum += (h.score-h.par); }
+      const rel = h.score-h.par;
+      if(rel<=-1) birdie++; else if(rel===0) par++; else if(rel===1) bogey++; else dbl++;
+      total++;
+    }
+  }));
+  return {buckets, dist:{birdie,par,bogey,dbl,total}};
+}
+
 function renderStats(){
   const sorted = [...rounds].sort((a,b)=>a.date.localeCompare(b.date));
   const withScores = sorted.filter(r=> r.holes.reduce((s,h)=>s+h.score,0)>0);
+  const dates = withScores.map(r=>r.date);
 
   const scoreCount = withScores.length;
-  const avgToPar = scoreCount ? (withScores.reduce((s,r)=>{
+  const scoreToPar = withScores.map(r=>{
     const ts=r.holes.reduce((a,h)=>a+h.score,0), tp=r.holes.reduce((a,h)=>a+h.par,0);
-    return s+(ts-tp);
-  },0)/scoreCount) : null;
+    return ts-tp;
+  });
+  const avgToPar = scoreCount ? (scoreToPar.reduce((s,v)=>s+v,0)/scoreCount) : null;
 
-  const puttsRounds = withScores.map(r=>({r, total: r.holes.reduce((s,h)=>s+(h.putts||0),0)})).filter(x=>x.total>0);
-  const avgPutts = puttsRounds.length ? (puttsRounds.reduce((s,x)=>s+x.total,0)/puttsRounds.length) : null;
+  const puttsRounds = withScores.map(r=> r.holes.reduce((s,h)=>s+(h.putts||0),0));
+  const puttsHave = puttsRounds.filter(v=>v>0);
+  const avgPutts = puttsHave.length ? (puttsHave.reduce((s,v)=>s+v,0)/puttsHave.length) : null;
 
   const firRounds = withScores.map(r=>{
     const eligible = r.holes.filter(h=>h.par!==3 && h.par>0).length || 14;
     const hit = r.holes.filter(h=>h.fir).length;
-    return {r, pct: hit/eligible*100, hit};
-  }).filter(x=>x.hit>0 || x.r.holes.some(h=>h.fir));
-  const avgFir = firRounds.length ? (firRounds.reduce((s,x)=>s+x.pct,0)/firRounds.length) : null;
+    return {pct: hit/eligible*100, hit, any: r.holes.some(h=>h.fir)};
+  });
+  const firHave = firRounds.filter(x=>x.hit>0 || x.any);
+  const avgFir = firHave.length ? (firHave.reduce((s,x)=>s+x.pct,0)/firHave.length) : null;
 
   const girRounds = withScores.map(r=>{
     const hit = r.holes.filter(h=>h.gir).length;
-    return {r, pct: hit/18*100, hit};
-  }).filter(x=>x.hit>0);
-  const avgGir = girRounds.length ? (girRounds.reduce((s,x)=>s+x.pct,0)/girRounds.length) : null;
+    return {pct: hit/18*100, hit};
+  });
+  const girHave = girRounds.filter(x=>x.hit>0);
+  const avgGir = girHave.length ? (girHave.reduce((s,x)=>s+x.pct,0)/girHave.length) : null;
 
   document.getElementById('statBoxes').innerHTML = `
     <div class="stat-box"><span class="num">${scoreCount}</span><span class="lbl">Rounds logged</span></div>
@@ -872,13 +1034,72 @@ function renderStats(){
     <div class="stat-box"><span class="num">${avgGir==null?'—':avgGir.toFixed(0)+'%'}</span><span class="lbl">Avg GIR</span></div>
   `;
 
-  lineChart(document.getElementById('scoreChart'), withScores.map(r=>{
-    const ts=r.holes.reduce((a,h)=>a+h.score,0), tp=r.holes.reduce((a,h)=>a+h.par,0);
-    return {v: ts-tp};
-  }), {zero:0});
-  lineChart(document.getElementById('puttsChart'), puttsRounds.map(x=>({v:x.total})));
-  lineChart(document.getElementById('firChart'), firRounds.map(x=>({v:x.pct})), {min:0,max:100});
-  lineChart(document.getElementById('girChart'), girRounds.map(x=>({v:x.pct})), {min:0,max:100});
+  // Handicap index
+  const hc = computeHandicapIndex(withScores);
+  const hcBlock = document.getElementById('handicapBlock');
+  if(hc.index==null){
+    hcBlock.innerHTML = `<p style="font-size:13px;color:var(--turf);margin:0;">Need at least 3 rounds at courses with rating &amp; slope set (see the Courses tab) to compute an index. You have ${hc.n} so far.</p>`;
+  }else{
+    hcBlock.innerHTML = `
+      <div class="hc-wrap">
+        <div class="hc-number">${hc.index.toFixed(1)}</div>
+        <div class="hc-detail">Best ${hc.used} of your last ${hc.n} scoring differentials (score − course rating) × 113 / slope, averaged and shaved 4% per USGA convention. Only rounds at courses with rating/slope set count.</div>
+      </div>`;
+  }
+
+  // Score trend with rolling avg + gear/practice markers
+  const gearMarkers = bag.filter(c=>c.dateAdded).map(c=>({
+    date: c.dateAdded, color:'#C7A876',
+    label: `${c.status==='retired'?'Retired':'Added'} ${c.name}${c.model?' ('+c.model+')':''}`
+  }));
+  const practiceMarkers = practice.map(p=>({
+    date: p.date, color:'#3F6B4A',
+    label: `Practice: ${p.focus}${p.duration?' ('+p.duration+' min)':''}`
+  }));
+  trendChart(document.getElementById('scoreChart'), scoreToPar, dates, {zero:0, markers: gearMarkers.concat(practiceMarkers)});
+  trendChart(document.getElementById('puttsChart'), puttsRounds, dates, {});
+  lineChart(document.getElementById('firChart'), firRounds.filter(x=>x.hit>0||x.any).map(x=>({v:x.pct})), {min:0,max:100});
+  lineChart(document.getElementById('girChart'), girHave.map(x=>({v:x.pct})), {min:0,max:100});
+
+  // Par-type breakdown
+  const pt = parTypeStats();
+  const ptBlock = document.getElementById('parTypeBlock');
+  const ptRow = [3,4,5].map(p=>{
+    const b = pt.buckets[p];
+    const avg = b.n ? (b.sum/b.n) : null;
+    return `<div class="partype-box">
+      <div class="pt-label">Par ${p}s</div>
+      <span class="pt-num">${avg==null?'—':(avg>=0?'+':'')+avg.toFixed(2)}</span>
+      <div class="pt-sub">${b.n} holes played</div>
+    </div>`;
+  }).join('');
+  const d = pt.dist;
+  let barHtml = '<div class="empty">No holes logged yet.</div>', legendHtml='';
+  if(d.total>0){
+    const segs = [
+      {n:d.birdie, color:'#3F6B4A', label:'Birdie or better'},
+      {n:d.par, color:'#8FA89A', label:'Par'},
+      {n:d.bogey, color:'#C7A876', label:'Bogey'},
+      {n:d.dbl, color:'#A4402F', label:'Double+'}
+    ];
+    barHtml = `<div class="distbar">${segs.map(s=> s.n>0 ? `<div class="seg" style="width:${(s.n/d.total*100).toFixed(1)}%;background:${s.color};">${s.n}</div>` : '').join('')}</div>`;
+    legendHtml = `<div class="dist-legend">${segs.map(s=>`<span><span class="sw" style="background:${s.color};"></span>${s.label}</span>`).join('')}</div>`;
+  }
+  ptBlock.innerHTML = `<div class="partype-row">${ptRow}</div>${barHtml}${legendHtml}`;
+
+  // Correlation scatters
+  const firScatterPts = withScores.map((r,i)=>{
+    const fr = firRounds[i];
+    if(!(fr.hit>0||fr.any)) return null;
+    return {x: fr.pct, y: scoreToPar[i]};
+  }).filter(Boolean);
+  const girScatterPts = withScores.map((r,i)=>{
+    const gr = girRounds[i];
+    if(gr.hit<=0) return null;
+    return {x: gr.pct, y: scoreToPar[i]};
+  }).filter(Boolean);
+  scatterChart(document.getElementById('firScatter'), firScatterPts, {xMin:0,xMax:100});
+  scatterChart(document.getElementById('girScatter'), girScatterPts, {xMin:0,xMax:100});
 }
 
 // ---------- PRACTICE ----------
@@ -925,12 +1146,13 @@ document.getElementById('practiceList').addEventListener('click', async e=>{
 function renderBag(){
   const list = document.getElementById('bagList');
   if(bag.length===0){ list.innerHTML = '<div class="empty">No clubs logged yet.</div>'; return; }
-  list.innerHTML = bag.map(c=>`
+  const sorted = [...bag].sort((a,b)=> (b.distance||0) - (a.distance||0));
+  list.innerHTML = sorted.map(c=>`
     <div class="round-item">
       <div style="flex:1">
         <span class="club-tag ${c.status==='retired'?'retired':'active'}">${c.status==='retired'?'RETIRED':'IN BAG'}</span>
         <div class="title" style="margin-top:6px;">${escapeHtml(c.name)} — ${escapeHtml(c.model||'')}</div>
-        <div class="meta">${c.shaft?('Shaft: '+escapeHtml(c.shaft)):''}</div>
+        <div class="meta">${c.shaft?('Shaft: '+escapeHtml(c.shaft)+' · '):''}${c.distance?('Avg '+c.distance+' yds'):'Distance not set'}</div>
         ${c.notes?`<div class="notes">${escapeHtml(c.notes)}</div>`:''}
       </div>
       <button class="del" data-id="${c.id}" data-kind="club">delete</button>
@@ -946,12 +1168,15 @@ document.getElementById('saveClubBtn').addEventListener('click', async ()=>{
     model: document.getElementById('c-model').value.trim(),
     shaft: document.getElementById('c-shaft').value.trim(),
     status: document.getElementById('c-status').value,
+    distance: document.getElementById('c-distance').value ? +document.getElementById('c-distance').value : null,
+    dateAdded: todayISO(),
     notes: document.getElementById('c-notes').value.trim()
   });
   await saveList('bag', bag);
   document.getElementById('c-name').value='';
   document.getElementById('c-model').value='';
   document.getElementById('c-shaft').value='';
+  document.getElementById('c-distance').value='';
   document.getElementById('c-notes').value='';
   renderBag();
 });
@@ -971,6 +1196,7 @@ function renderCourses(){
     <div class="round-item">
       <div style="flex:1">
         <div class="title">${escapeHtml(c.name)}</div>
+        <div class="meta">${(c.rating&&c.slope) ? `Rating ${c.rating} / Slope ${c.slope}` : 'Rating/slope not set — handicap index will skip this course'}</div>
         ${c.notes?`<div class="notes">${escapeHtml(c.notes)}</div>`:''}
       </div>
       <button class="del" data-id="${c.id}" data-kind="course">delete</button>
@@ -980,9 +1206,17 @@ function renderCourses(){
 document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
   const name = document.getElementById('co-name').value.trim();
   if(!name){ alert('Name the course.'); return; }
-  courses.push({ id: uid(), name, notes: document.getElementById('co-notes').value.trim() });
+  courses.push({
+    id: uid(),
+    name,
+    rating: document.getElementById('co-rating').value ? +document.getElementById('co-rating').value : null,
+    slope: document.getElementById('co-slope').value ? +document.getElementById('co-slope').value : null,
+    notes: document.getElementById('co-notes').value.trim()
+  });
   await saveList('courses', courses);
   document.getElementById('co-name').value='';
+  document.getElementById('co-rating').value='';
+  document.getElementById('co-slope').value='';
   document.getElementById('co-notes').value='';
   renderCourses();
 });
@@ -1093,6 +1327,8 @@ async function init(){
       model: 'Ping i15',
       shaft: 'Stiff',
       status: 'active',
+      distance: null,
+      dateAdded: todayISO(),
       notes: 'Black dot · owned roughly 10–15 years'
     }));
     await saveList('bag', bag);
@@ -1100,7 +1336,9 @@ async function init(){
 
   // Seed course book with the regulars on first run only (empty notes to fill in later)
   if(courses.length===0){
-    courses = Object.keys(COURSE_PRESETS).map(name=>({ id: uid(), name, notes: '' }));
+    courses = Object.entries(COURSE_PRESETS).map(([name,preset])=>({
+      id: uid(), name, rating: preset.rating, slope: preset.slope, notes: ''
+    }));
     await saveList('courses', courses);
   }
 
