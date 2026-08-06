@@ -517,17 +517,6 @@
 </div>
 
 <script>
-// ---------- course presets (real par data, hole 1-18) ----------
-const COURSE_PRESETS = {
-  "Pine Ridge Golf Club": {par:[5,4,4,3,4,4,4,5,4, 3,5,4,4,4,3,4,3,5], rating:70.2, slope:121},
-  "Laurelwood Golf Course": {par:[5,4,3,4,4,3,4,3,5, 5,4,3,4,4,3,4,3,5], rating:66.2, slope:117},
-  "Oakway Golf Course": {par:[4,3,3,3,3,4,3,4,3, 4,3,4,3,3,4,3,4,3], rating:58.6, slope:91},
-  "Eugene Country Club": {par:[4,3,4,4,3,5,3,5,4, 4,4,3,5,4,4,5,4,4], rating:71.3, slope:136},
-  "Tokatee Golf Club": {par:[4,4,5,3,4,5,4,3,4, 4,3,5,4,4,4,5,3,4], rating:68.3, slope:116},
-  "Sandpines Golf Links": {par:[4,4,5,4,3,4,5,3,4, 4,3,5,4,4,4,4,3,5], rating:70.4, slope:122},
-  "Emerald Valley Golf Club": {par:[4,3,5,4,3,4,5,4,4, 4,3,4,5,4,4,4,3,5], rating:65.6, slope:115}
-};
-
 // ---------- utilities ----------
 const todayISO = () => new Date().toISOString().slice(0,10);
 document.getElementById('todayDate').textContent = new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'});
@@ -567,9 +556,7 @@ document.getElementById('tabs').addEventListener('click', e=>{
 });
 
 // ---------- preset dropdown ----------
-// Source of truth is the Course book (localStorage "courses").
-// COURSE_PRESETS is only used once on first run to seed that book — deleting a
-// course from the Course book removes it from Play/Rounds dropdowns too.
+// Source of truth is ONLY the Course book (localStorage key backnine:courses).
 function getCoursePresetMap(){
   const map = {};
   courses.forEach(c=>{
@@ -1751,22 +1738,8 @@ async function init(){
     loadList('rounds'), loadList('practice'), loadList('bag'), loadList('courses'), loadList('notes')
   ]);
 
-  // Courses are NEVER auto-seeded. Empty course book stays empty after delete
-  // or after clearing localStorage. Add courses via OpenGolfAPI or the form.
-  // COURSE_PRESETS is only used to fill missing par on already-saved regulars.
-  if(courses.length > 0){
-    let repaired = false;
-    courses = courses.map(c=>{
-      if(Array.isArray(c.par) && c.par.length===18) return c;
-      const preset = COURSE_PRESETS[c.name];
-      if(preset && Array.isArray(preset.par)){
-        repaired = true;
-        return { ...c, par: preset.par, rating: c.rating ?? preset.rating, slope: c.slope ?? preset.slope };
-      }
-      return c;
-    });
-    if(repaired) await saveList('courses', courses);
-  }
+  // Courses are never auto-seeded. Dropdowns only show what you saved in Course book.
+  console.info('[Adairway] courses in storage:', courses.length, courses.map(c=>c.name));
 
   renderRounds();
   renderPractice();
