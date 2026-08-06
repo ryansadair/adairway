@@ -567,12 +567,20 @@ document.getElementById('tabs').addEventListener('click', e=>{
 });
 
 // ---------- preset dropdown ----------
+// Source of truth is the Course book (localStorage "courses").
+// COURSE_PRESETS is only used once on first run to seed that book — deleting a
+// course from the Course book removes it from Play/Rounds dropdowns too.
 function getCoursePresetMap(){
   const map = {};
-  Object.entries(COURSE_PRESETS).forEach(([name,p])=>{ map[name] = p; });
   courses.forEach(c=>{
     if(Array.isArray(c.par) && c.par.length===18){
-      map[c.name] = {par: c.par, yardage: c.yardage||null, rating: c.rating, slope: c.slope, apiCourseId: c.apiCourseId || null};
+      map[c.name] = {
+        par: c.par,
+        yardage: c.yardage || null,
+        rating: c.rating,
+        slope: c.slope,
+        apiCourseId: c.apiCourseId || null
+      };
     }
   });
   return map;
@@ -580,14 +588,17 @@ function getCoursePresetMap(){
 function populatePresetDropdown(){
   ['r-preset','pl-preset'].forEach(id=>{
     const sel = document.getElementById(id);
+    if(!sel) return;
     const current = sel.value;
     while(sel.options.length>1) sel.remove(1);
-    Object.keys(getCoursePresetMap()).forEach(name=>{
+    // Alphabetical, Course-book only
+    Object.keys(getCoursePresetMap()).sort((a,b)=>a.localeCompare(b)).forEach(name=>{
       const opt = document.createElement('option');
       opt.value = name; opt.textContent = name;
       sel.appendChild(opt);
     });
     if([...sel.options].some(o=>o.value===current)) sel.value = current;
+    else sel.value = '';
   });
 }
 document.getElementById('r-preset').addEventListener('change', e=>{
@@ -1346,17 +1357,28 @@ document.getElementById('bagList').addEventListener('click', async e=>{
 // ---------- COURSES ----------
 function renderCourses(){
   const list = document.getElementById('coursesList');
-  if(courses.length===0){ list.innerHTML = '<div class="empty">No course notes yet.</div>'; return; }
-  list.innerHTML = courses.map(c=>`
+  if(courses.length===0){ list.innerHTML = '<div class="empty">No course notes yet. Search OpenGolfAPI above or add one manually.</div>'; return; }
+  list.innerHTML = courses.map(c=>{
+    const hasPar = Array.isArray(c.par) && c.par.length===18;
+    const hasYd = Array.isArray(c.yardage) && c.yardage.some(y=>y>0);
+    const totalYd = hasYd ? c.yardage.reduce((a,b)=>a+(+b||0),0) : 0;
+    const bits = [];
+    if(c.rating && c.slope) bits.push(`Rating ${c.rating} / Slope ${c.slope}`);
+    else bits.push('Rating/slope not set');
+    if(hasPar) bits.push('18-hole par ✓');
+    else bits.push('no par data — won\'t appear in Play/Rounds dropdown');
+    if(hasYd) bits.push(totalYd + ' yds');
+    if(c.apiCourseId) bits.push('GPS ready');
+    return `
     <div class="round-item">
       <div style="flex:1">
         <div class="title">${escapeHtml(c.name)}</div>
-        <div class="meta">${(c.rating&&c.slope) ? `Rating ${c.rating} / Slope ${c.slope}` : 'Rating/slope not set — handicap index will skip this course'}</div>
+        <div class="meta">${bits.join(' · ')}</div>
         ${c.notes?`<div class="notes">${escapeHtml(c.notes)}</div>`:''}
       </div>
       <button class="del" data-id="${c.id}" data-kind="course">delete</button>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 // ---------- OpenGolfAPI: course search + apply ----------
 function pick(obj, keys, fallback=null){
@@ -1594,16 +1616,27 @@ document.getElementById('gpsBtn').addEventListener('click', ()=>{
 document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
   const name = document.getElementById('co-name').value.trim();
   if(!name){ alert('Name the course.'); return; }
-  const extra = (pendingApiCourse && pendingApiCourse.name===name)
-    ? { par: pendingApiCourse.par, yardage: pendingApiCourse.yardage, apiCourseId: pendingApiCourse.apiCourseId } : {};
-  courses.push({
-    id: uid(),
+  const rating = document.getElementById('co-rating').value ? +document.getElementById('co-rating').value : null;
+  const slope = document.getElementById('co-slope').value ? +document.getElementById('co-slope').value : null;
+  const notes = document.getElementById('co-notes').value.trim();
+  const fromApi = (pendingApiCourse && pendingApiCourse.name===name) ? pendingApiCourse : null;
+
+  // Upsert by name so re-importing from OpenGolfAPI replaces the old entry
+  const existingIdx = courses.findIndex(c=>c.name.trim().toLowerCase()===name.toLowerCase());
+  const base = existingIdx >= 0 ? { ...courses[existingIdx] } : { id: uid() };
+  const updated = {
+    ...base,
     name,
-    rating: document.getElementById('co-rating').value ? +document.getElementById('co-rating').value : null,
-    slope: document.getElementById('co-slope').value ? +document.getElementById('co-slope').value : null,
-    notes: document.getElementById('co-notes').value.trim(),
-    ...extra
-  });
+    rating: rating ?? base.rating ?? null,
+    slope: slope ?? base.slope ?? null,
+    notes: notes || base.notes || '',
+    par: (fromApi && fromApi.par) ? fromApi.par : (base.par || null),
+    yardage: (fromApi && fromApi.yardage) ? fromApi.yardage : (base.yardage || null),
+    apiCourseId: (fromApi && fromApi.apiCourseId) ? fromApi.apiCourseId : (base.apiCourseId || null)
+  };
+  if(existingIdx >= 0) courses[existingIdx] = updated;
+  else courses.push(updated);
+
   await saveList('courses', courses);
   pendingApiCourse = null;
   document.getElementById('co-name').value='';
@@ -1614,6 +1647,10 @@ document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
   document.getElementById('api-search-q').value='';
   renderCourses();
   populatePresetDropdown();
+  const inDropdown = Array.isArray(updated.par) && updated.par.length===18;
+  alert(inDropdown
+    ? `"${name}" saved — available in Play & Rounds dropdowns${updated.yardage ? ' with yardages' : ''}.`
+    : `"${name}" saved, but without 18-hole par data it won't appear in Play/Rounds. Re-import from OpenGolfAPI or add par manually.`);
 });
 document.getElementById('coursesList').addEventListener('click', async e=>{
   const btn = e.target.closest('button.del[data-kind="course"]');
@@ -1730,12 +1767,33 @@ async function init(){
     await saveList('bag', bag);
   }
 
-  // Seed course book with the regulars on first run only (empty notes to fill in later)
+  // Seed course book with the regulars on first run only (includes par so they
+  // show up in Play/Rounds). After that, Course book is the only source of truth.
   if(courses.length===0){
     courses = Object.entries(COURSE_PRESETS).map(([name,preset])=>({
-      id: uid(), name, rating: preset.rating, slope: preset.slope, notes: ''
+      id: uid(),
+      name,
+      par: preset.par,
+      yardage: null,
+      rating: preset.rating,
+      slope: preset.slope,
+      notes: ''
     }));
     await saveList('courses', courses);
+  } else {
+    // One-time repair: older seeds stored regulars without a par array.
+    // Copy par from COURSE_PRESETS when the saved entry is missing it.
+    let repaired = false;
+    courses = courses.map(c=>{
+      if(Array.isArray(c.par) && c.par.length===18) return c;
+      const preset = COURSE_PRESETS[c.name];
+      if(preset && Array.isArray(preset.par)){
+        repaired = true;
+        return { ...c, par: preset.par, rating: c.rating ?? preset.rating, slope: c.slope ?? preset.slope };
+      }
+      return c;
+    });
+    if(repaired) await saveList('courses', courses);
   }
 
   renderRounds();
@@ -1743,6 +1801,7 @@ async function init(){
   renderBag();
   renderCourses();
   renderNotes();
+  populatePresetDropdown();
 }
 init();
 </script>
