@@ -1751,8 +1751,13 @@ async function init(){
     loadList('rounds'), loadList('practice'), loadList('bag'), loadList('courses'), loadList('notes')
   ]);
 
-  // Seed the bag with the current Ping i15 set on first run only
-  if(bag.length===0){
+  // First-run seeds only when this browser has NEVER stored that key.
+  // Important: an empty list is stored as "[]", which is not null — so deleting
+  // everything and refreshing must NOT re-seed. (That was the ghost-courses bug.)
+  const bagRaw = localStorage.getItem(STORAGE_PREFIX + 'bag');
+  const coursesRaw = localStorage.getItem(STORAGE_PREFIX + 'courses');
+
+  if(bagRaw === null && bag.length===0){
     const clubs = ['3-iron','4-iron','5-iron','6-iron','7-iron','8-iron','9-iron','PW'];
     bag = clubs.map(name=>({
       id: uid(),
@@ -1767,9 +1772,8 @@ async function init(){
     await saveList('bag', bag);
   }
 
-  // Seed course book with the regulars on first run only (includes par so they
-  // show up in Play/Rounds). After that, Course book is the only source of truth.
-  if(courses.length===0){
+  if(coursesRaw === null && courses.length===0){
+    // Brand-new install only — starter regulars with par data.
     courses = Object.entries(COURSE_PRESETS).map(([name,preset])=>({
       id: uid(),
       name,
@@ -1780,9 +1784,8 @@ async function init(){
       notes: ''
     }));
     await saveList('courses', courses);
-  } else {
-    // One-time repair: older seeds stored regulars without a par array.
-    // Copy par from COURSE_PRESETS when the saved entry is missing it.
+  } else if(courses.length > 0){
+    // Repair older seeds that stored regulars without a par array
     let repaired = false;
     courses = courses.map(c=>{
       if(Array.isArray(c.par) && c.par.length===18) return c;
