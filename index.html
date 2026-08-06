@@ -600,11 +600,12 @@ document.getElementById('r-preset').addEventListener('change', e=>{
       const el = document.querySelector(`.par[data-hole="${i+1}"]`);
       if(el) el.value = p;
     });
-    if(Array.isArray(preset.yardage)){
-      preset.yardage.forEach((y,i)=>{
-        const el = document.querySelector(`.yardage[data-hole="${i+1}"]`);
-        if(el && y) el.value = y;
-      });
+    // Always refresh yardage row (clear if this course has none)
+    for(let i=1;i<=18;i++){
+      const el = document.querySelector(`.yardage[data-hole="${i}"]`);
+      if(!el) continue;
+      const y = Array.isArray(preset.yardage) ? preset.yardage[i-1] : null;
+      el.value = (y != null && y > 0) ? y : '';
     }
     recalcScorecard();
   }
@@ -616,6 +617,11 @@ document.getElementById('pl-preset').addEventListener('change', e=>{
   const preset = getCoursePresetMap()[name];
   if(preset && preset.par){
     preset.par.forEach((p,i)=>{ playHoles[i].par = p; playHoles[i].score = p; });
+  }
+  if(preset && Array.isArray(preset.yardage)){
+    preset.yardage.forEach((y,i)=>{ playHoles[i].yardage = y || null; });
+  } else {
+    playHoles.forEach(h=>{ h.yardage = null; });
   }
   renderPlayHole();
 });
@@ -814,7 +820,8 @@ function renderPlayHole(){
   updateGpsAvailability();
   const h = playHoles[currentHole];
   document.getElementById('playHoleNum').textContent = 'Hole ' + h.hole;
-  document.getElementById('playHolePar').textContent = 'Par ' + h.par;
+  const ydLabel = (h.yardage && h.yardage > 0) ? ` · ${h.yardage} yds` : '';
+  document.getElementById('playHolePar').textContent = 'Par ' + h.par + ydLabel;
   document.getElementById('scoreVal').textContent = h.score;
   document.getElementById('puttsVal').textContent = h.putts;
 
@@ -1403,27 +1410,69 @@ document.getElementById('apiSearchResults').addEventListener('click', async e=>{
     btn.textContent = originalText; btn.disabled = false;
   }
 });
+// (Success path replaces the results HTML via applyApiCourseDetail, so the button is gone.)
+
+/** Prefer white tee yardage from the per-color yardages object OpenGolfAPI returns. */
+function pickYardageFromHole(h, preferredColor){
+  const flat = pick(h, ['yardage','yards','length','distance'], null);
+  if(flat != null && !isNaN(+flat) && +flat > 0) return +flat;
+  // OpenGolfAPI: hole.yardages = { white: 337, blue: 378, ... }
+  const yds = h && h.yardages;
+  if(!yds || typeof yds !== 'object') return null;
+  const prefer = (preferredColor || 'white').toLowerCase();
+  const order = [prefer, 'white', 'blue', 'gold', 'black', 'championship', 'green', 'red', 'yellow', 'web'];
+  for(const key of order){
+    const v = yds[key];
+    if(v != null && !isNaN(+v) && +v > 0) return +v;
+  }
+  for(const v of Object.values(yds)){
+    if(v != null && !isNaN(+v) && +v > 0) return +v;
+  }
+  return null;
+}
 
 function applyApiCourseDetail(detail){
-  const name = detail.course_name || 'Unnamed course';
-  let parArr = null, yardageArr = null;
-  if(Array.isArray(detail.holes) && detail.holes.length>=9){
-    const sortedHoles = [...detail.holes].sort((a,b)=>
-      (pick(a,['hole','hole_number','number'],0) - pick(b,['hole','hole_number','number'],0)));
-    parArr = sortedHoles.slice(0,18).map(h=> pick(h,['par','hole_par','par_value'],4));
-    while(parArr.length<18) parArr.push(4);
-    yardageArr = sortedHoles.slice(0,18).map(h=> pick(h,['yardage','yards','length','distance'],null));
-    if(yardageArr.every(y=>y==null)) yardageArr = null;
-    else { while(yardageArr.length<18) yardageArr.push(null); }
-  }
-  let rating=null, slope=null;
+  const name = detail.course_name || detail.name || 'Unnamed course';
+
+  // Tee preference for rating / slope / yardage color
+  let rating=null, slope=null, teeColor='white';
   if(Array.isArray(detail.tees) && detail.tees.length){
     const preferred = detail.tees.find(t=>{
-      const n = (pick(t,['tee_name','name','color'],'')||'').toLowerCase();
-      return n.includes('white') || n.includes('men');
+      const n = (pick(t,['tee_name','name','tee_color','color'],'')||'').toLowerCase();
+      const g = (pick(t,['gender'],'')||'').toLowerCase();
+      return n.includes('white') && (g==='' || g.includes('male') || g.includes('men'));
+    }) || detail.tees.find(t=>{
+      const n = (pick(t,['tee_name','name','tee_color','color'],'')||'').toLowerCase();
+      return n.includes('white');
     }) || detail.tees[0];
     rating = pick(preferred, ['course_rating','rating'], null);
-    slope = pick(preferred, ['slope_rating','slope'], null);
+    slope = pick(preferred, ['slope','slope_rating'], null);
+    teeColor = (pick(preferred, ['tee_color','tee_name','name','color'], 'white')||'white').toLowerCase();
+  }
+
+  // Hole data lives in holes_data on /api/v1 (detail.holes is the INTEGER hole count)
+  let rawHoles = null;
+  if(Array.isArray(detail.holes_data) && detail.holes_data.length >= 9){
+    rawHoles = detail.holes_data;
+  } else if(Array.isArray(detail.holes) && detail.holes.length >= 9 && typeof detail.holes[0] === 'object'){
+    rawHoles = detail.holes;
+  } else if(Array.isArray(detail.scorecard) && detail.scorecard.length >= 9){
+    rawHoles = detail.scorecard;
+  }
+
+  let parArr = null, yardageArr = null;
+  if(rawHoles){
+    const sortedHoles = [...rawHoles].sort((a,b)=>
+      (pick(a,['number','hole','hole_number'],0) - pick(b,['number','hole','hole_number'],0)));
+    parArr = sortedHoles.slice(0,18).map(h=>{
+      const p = pick(h,['par','hole_par','par_value'],4);
+      return (p != null && !isNaN(+p)) ? +p : 4;
+    });
+    while(parArr.length<18) parArr.push(4);
+
+    yardageArr = sortedHoles.slice(0,18).map(h=> pickYardageFromHole(h, teeColor));
+    if(yardageArr.every(y=>y==null)) yardageArr = null;
+    else { while(yardageArr.length<18) yardageArr.push(null); }
   }
 
   document.getElementById('co-name').value = name;
@@ -1434,9 +1483,11 @@ function applyApiCourseDetail(detail){
 
   pendingApiCourse = { name, par: parArr, yardage: yardageArr, rating, slope, apiCourseId: detail.id };
 
+  const parNote = parArr ? 'full 18-hole par' : 'par data was not available — set it manually after saving if needed';
+  const ydNote = yardageArr ? ` and yardages (${teeColor})` : '';
   document.getElementById('apiSearchResults').innerHTML = `<div class="empty">
-    Loaded ${escapeHtml(name)} — rating/slope filled in below${parArr?' along with full 18-hole par':' (par data was not available — you can set it manually after saving)'}${yardageArr?' and yardages':''}.
-    Review, add notes if you like, then hit "Save course" below. GPS distance-to-pin will also work for this course once saved.
+    Loaded <strong>${escapeHtml(name)}</strong> — rating/slope filled in below with ${parNote}${ydNote}.
+    Review, add notes if you like, then hit <strong>Save course</strong>. It will appear in the Play &amp; Rounds course dropdowns. GPS distance-to-green works once saved.
   </div>`;
 }
 
@@ -1485,7 +1536,16 @@ function extractFeatureArray(data){
 }
 function isGreenFeature(f){
   const props = f.properties || f.props || {};
-  return JSON.stringify(props).toLowerCase().includes('green');
+  const tags = f.tags || props.tags || [];
+  const blob = (JSON.stringify(props) + JSON.stringify(tags)).toLowerCase();
+  return blob.includes('green') || blob.includes('golf=green');
+}
+function featureCenter(f){
+  // OpenGolfAPI features often expose center: { lat, lng } directly
+  if(f.center && f.center.lat != null && (f.center.lng != null || f.center.lon != null)){
+    return { lat: +f.center.lat, lng: +(f.center.lng ?? f.center.lon) };
+  }
+  return geoJsonCenter(f.geometry || f.geom || f.shape);
 }
 async function fetchGreenCenter(courseId, holeNum){
   const urls = [
@@ -1500,7 +1560,7 @@ async function fetchGreenCenter(courseId, holeNum){
       const feats = extractFeatureArray(data);
       if(!feats.length) continue;
       const greenFeat = feats.find(isGreenFeature) || feats[0];
-      const center = geoJsonCenter(greenFeat.geometry || greenFeat.geom || greenFeat.shape);
+      const center = featureCenter(greenFeat);
       if(center) return center;
     }catch(e){ /* try next url */ }
   }
