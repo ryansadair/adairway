@@ -144,6 +144,21 @@
   .savepill{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--turf);opacity:0;transition:opacity .3s;}
   .savepill.show{opacity:1;}
   .hint{font-size:12px;color:var(--turf);opacity:0.8;margin:-6px 0 14px;font-family:'IBM Plex Mono',monospace;}
+  .edit-btn{background:none;border:none;color:var(--turf);cursor:pointer;font-size:12px;font-family:'IBM Plex Mono',monospace;padding:2px 6px;display:block;margin-left:auto;}
+  .edit-btn:hover{text-decoration:underline;}
+  .auth-bar{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+    background:var(--paper-light);border:1px solid var(--line);border-radius:3px;
+    padding:10px 14px;margin-bottom:16px;font-size:13px;
+  }
+  .auth-bar .auth-status{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--turf);}
+  .auth-bar .auth-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .auth-bar input{
+    width:auto;min-width:140px;padding:6px 8px;border:1px solid var(--line);border-radius:2px;
+    font-size:13px;font-family:'Inter',sans-serif;
+  }
+  .auth-bar button.btn{padding:7px 12px;font-size:11px;}
+  .auth-bar .auth-err{color:var(--flag);font-size:12px;width:100%;margin:0;}
 
   .hc-wrap{display:flex;align-items:center;gap:22px;flex-wrap:wrap;}
   .hc-number{font-family:'Fraunces',serif;font-weight:700;font-size:48px;color:var(--fairway-deep);line-height:1;}
@@ -219,11 +234,16 @@
       </svg>
       <div>
         <h1>Adairway</h1>
-        <div class="tag">Personal course log · saved to this device</div>
+        <div class="tag" id="headerTag">Personal course log</div>
       </div>
     </div>
     <div class="today" id="todayDate"></div>
   </header>
+
+  <div class="auth-bar" id="authBar">
+    <div class="auth-status" id="authStatus">Checking sign-in…</div>
+    <div class="auth-actions" id="authActions"></div>
+  </div>
 
   <nav id="tabs">
     <button data-tab="play"><span class="peg">▶</span>Play</button>
@@ -346,6 +366,7 @@
       </div>
       <div class="field"><label>Notes — what worked, what didn't</label><textarea id="r-notes" placeholder="Ball striking, misses, mental game, club that saved you..."></textarea></div>
       <button class="btn" id="saveRoundBtn">Save round</button>
+      <button class="btn outline" id="cancelEditRoundBtn" type="button" style="display:none;margin-left:8px;">Cancel edit</button>
     </div>
 
     <div class="card">
@@ -437,6 +458,7 @@
         <div class="field"><label>Notes</label><input type="text" id="c-notes" placeholder="e.g. black dot, owned ~10-15 yrs"></div>
       </div>
       <button class="btn" id="saveClubBtn">Add club</button>
+      <button class="btn outline" id="cancelEditClubBtn" type="button" style="display:none;margin-left:8px;">Cancel edit</button>
     </div>
     <div class="card">
       <h2>Current bag</h2>
@@ -516,6 +538,9 @@
 
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script>
 // ---------- utilities ----------
 const todayISO = () => new Date().toISOString().slice(0,10);
@@ -526,23 +551,152 @@ document.getElementById('n-date').value = todayISO();
 document.getElementById('pl-date').value = todayISO();
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 
-// Storage: this build uses the browser's own localStorage, so it works as a
-// plain static site (e.g. on GitHub Pages) with no backend. Data lives in
-// THIS browser on THIS device only — it won't sync across phone/laptop/etc.
+// Storage: localStorage always mirrors data on-device.
+// When signed in, lists also sync to Cloud Firestore under users/{uid}/lists/{key}.
 const STORAGE_PREFIX = 'backnine:';
-async function loadList(key){
+const LIST_KEYS = ['rounds','practice','bag','courses','notes'];
+let currentUser = null;
+let authReady = false;
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBHKyis-dDknrvUuojryQnIsVcRkEPR5bQ",
+  authDomain: "adairway-golf.firebaseapp.com",
+  projectId: "adairway-golf",
+  storageBucket: "adairway-golf.firebasestorage.app",
+  messagingSenderId: "109030250059",
+  appId: "1:109030250059:web:fb3a3684e4b474cb491fce",
+  measurementId: "G-J3LJBBE11R"
+};
+
+let fbApp = null, fbAuth = null, fbDb = null;
+try{
+  fbApp = firebase.initializeApp(firebaseConfig);
+  fbAuth = firebase.auth();
+  fbDb = firebase.firestore();
+}catch(e){ console.error('Firebase init failed', e); }
+
+function cacheListLocal(key, arr){
+  try{ localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(arr)); }
+  catch(e){ console.error('local cache write error', e); }
+}
+function readListLocal(key){
   try{
     const raw = localStorage.getItem(STORAGE_PREFIX + key);
     return raw ? JSON.parse(raw) : [];
-  }catch(e){ console.error('storage read error', e); return []; }
+  }catch(e){ return []; }
 }
+
+async function loadList(key){
+  if(currentUser && fbDb){
+    try{
+      const snap = await fbDb.collection('users').doc(currentUser.uid).collection('lists').doc(key).get();
+      if(snap.exists){
+        const items = snap.data().items || [];
+        cacheListLocal(key, items);
+        return items;
+      }
+      // First cloud read empty — seed cloud from any local cache once
+      const local = readListLocal(key);
+      if(local.length){
+        await fbDb.collection('users').doc(currentUser.uid).collection('lists').doc(key)
+          .set({ items: local, updatedAt: Date.now() }, { merge: true });
+      }
+      return local;
+    }catch(e){
+      console.error('Firestore read error', e);
+      return readListLocal(key);
+    }
+  }
+  return readListLocal(key);
+}
+
 async function saveList(key, arr){
-  try{ localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(arr)); return true; }
-  catch(e){ console.error('storage write error', e); alert('Could not save — your browser storage may be full or disabled.'); return false; }
+  cacheListLocal(key, arr);
+  if(currentUser && fbDb){
+    try{
+      await fbDb.collection('users').doc(currentUser.uid).collection('lists').doc(key)
+        .set({ items: arr, updatedAt: Date.now() }, { merge: true });
+      return true;
+    }catch(e){
+      console.error('Firestore write error', e);
+      alert('Saved on this device, but cloud sync failed. Check your connection / Firestore rules.');
+      return false;
+    }
+  }
+  return true;
+}
+
+async function reloadAllLists(){
+  [rounds, practice, bag, courses, notes] = await Promise.all(LIST_KEYS.map(k => loadList(k)));
+  renderRounds(); renderPractice(); renderBag(); renderCourses(); renderNotes();
+  populatePresetDropdown();
+}
+
+function renderAuthBar(){
+  const status = document.getElementById('authStatus');
+  const actions = document.getElementById('authActions');
+  const tag = document.getElementById('headerTag');
+  if(!status || !actions) return;
+
+  if(!fbAuth){
+    status.textContent = 'Cloud sign-in unavailable — data stays on this device only.';
+    actions.innerHTML = '';
+    if(tag) tag.textContent = 'Personal course log · this device';
+    return;
+  }
+  if(!authReady){
+    status.textContent = 'Checking sign-in…';
+    actions.innerHTML = '';
+    return;
+  }
+  if(currentUser){
+    status.textContent = 'Signed in as ' + (currentUser.email || currentUser.uid);
+    if(tag) tag.textContent = 'Synced to your account · all devices';
+    actions.innerHTML = `<button class="btn outline" type="button" id="signOutBtn">Sign out</button>`;
+    document.getElementById('signOutBtn').onclick = () => fbAuth.signOut();
+  } else {
+    status.textContent = 'Signed out — data is only on this device until you sign in.';
+    if(tag) tag.textContent = 'Personal course log · this device';
+    actions.innerHTML = `
+      <input type="email" id="authEmail" placeholder="Email" autocomplete="email">
+      <input type="password" id="authPass" placeholder="Password" autocomplete="current-password">
+      <button class="btn" type="button" id="signInBtn">Sign in</button>
+      <button class="btn outline" type="button" id="signUpBtn">Create account</button>
+      <button class="btn outline" type="button" id="googleBtn">Google</button>
+      <p class="auth-err" id="authErr" hidden></p>
+    `;
+    const errEl = document.getElementById('authErr');
+    const showErr = (msg)=>{ errEl.hidden=false; errEl.textContent=msg; };
+    document.getElementById('signInBtn').onclick = async ()=>{
+      errEl.hidden=true;
+      try{
+        await fbAuth.signInWithEmailAndPassword(
+          document.getElementById('authEmail').value.trim(),
+          document.getElementById('authPass').value
+        );
+      }catch(e){ showErr(e.message || 'Sign-in failed'); }
+    };
+    document.getElementById('signUpBtn').onclick = async ()=>{
+      errEl.hidden=true;
+      try{
+        await fbAuth.createUserWithEmailAndPassword(
+          document.getElementById('authEmail').value.trim(),
+          document.getElementById('authPass').value
+        );
+      }catch(e){ showErr(e.message || 'Could not create account'); }
+    };
+    document.getElementById('googleBtn').onclick = async ()=>{
+      errEl.hidden=true;
+      try{
+        await fbAuth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+      }catch(e){ showErr(e.message || 'Google sign-in failed'); }
+    };
+  }
 }
 
 let rounds = [], practice = [], bag = [], courses = [], notes = [];
-
+let editingRoundId = null;
+let editingClubId = null;
 // ---------- tabs ----------
 document.getElementById('tabs').addEventListener('click', e=>{
   const btn = e.target.closest('button[data-tab]');
@@ -936,18 +1090,69 @@ function renderRounds(){
       <div style="text-align:right;">
         <div class="score">${totalScore||'—'}</div>
         <div class="meta">${toParStr}</div>
+        <button class="edit-btn" data-id="${r.id}" data-kind="round-edit" type="button">edit</button>
         <button class="del" data-id="${r.id}" data-kind="round">delete</button>
       </div>
     </div>`;
   }).join('');
 }
 
+function setRoundEditorMode(editing){
+  const saveBtn = document.getElementById('saveRoundBtn');
+  const cancelBtn = document.getElementById('cancelEditRoundBtn');
+  if(saveBtn) saveBtn.textContent = editing ? 'Update round' : 'Save round';
+  if(cancelBtn) cancelBtn.style.display = editing ? 'inline-block' : 'none';
+}
+
+function loadRoundIntoForm(r){
+  editingRoundId = r.id;
+  document.getElementById('r-date').value = r.date || todayISO();
+  document.getElementById('r-course').value = r.course || '';
+  document.getElementById('r-tees').value = r.tees || '';
+  document.getElementById('r-notes').value = r.notes || '';
+  document.getElementById('r-holesplayed').value = r.holesPlayed || 'full';
+  applyHolesPlayedToScorecard(r.holesPlayed || 'full');
+  (r.holes || []).forEach(h=>{
+    const n = h.hole;
+    const parEl = document.querySelector(`.par[data-hole="${n}"]`);
+    const ydEl = document.querySelector(`.yardage[data-hole="${n}"]`);
+    const scoreEl = document.querySelector(`.score[data-hole="${n}"]`);
+    const puttsEl = document.querySelector(`.putts[data-hole="${n}"]`);
+    const firEl = document.querySelector(`.fir[data-hole="${n}"]`);
+    const girEl = document.querySelector(`.gir[data-hole="${n}"]`);
+    if(parEl && h.par) parEl.value = h.par;
+    if(ydEl && h.yardage) ydEl.value = h.yardage;
+    if(scoreEl) scoreEl.value = h.score || '';
+    if(puttsEl) puttsEl.value = h.putts || '';
+    if(firEl) firEl.checked = !!h.fir;
+    if(girEl) girEl.checked = !!h.gir;
+  });
+  recalcScorecard();
+  setRoundEditorMode(true);
+  document.getElementById('tab-rounds').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 async function commitRound(holes, course, tees, date, notes, holesPlayed){
-  const round = { id: uid(), date: date || todayISO(), course: (course||'').trim(), tees: (tees||'').trim(), holes, notes: (notes||'').trim(), holesPlayed: holesPlayed || 'full' };
-  rounds.push(round);
+  const payload = {
+    date: date || todayISO(),
+    course: (course||'').trim(),
+    tees: (tees||'').trim(),
+    holes,
+    notes: (notes||'').trim(),
+    holesPlayed: holesPlayed || 'full'
+  };
+  if(editingRoundId){
+    const idx = rounds.findIndex(r=>r.id===editingRoundId);
+    if(idx >= 0) rounds[idx] = { ...rounds[idx], ...payload };
+    else rounds.push({ id: editingRoundId, ...payload });
+    editingRoundId = null;
+  } else {
+    rounds.push({ id: uid(), ...payload });
+  }
   await saveList('rounds', rounds);
   renderRounds();
-  return round;
+  setRoundEditorMode(false);
+  return payload;
 }
 
 document.getElementById('saveRoundBtn').addEventListener('click', async ()=>{
@@ -966,7 +1171,18 @@ document.getElementById('saveRoundBtn').addEventListener('click', async ()=>{
   document.getElementById('r-tees').value='';
   document.getElementById('r-notes').value='';
   resetScorecard();
+  setRoundEditorMode(false);
+  editingRoundId = null;
   flashSave('roundSavePill');
+});
+
+document.getElementById('cancelEditRoundBtn').addEventListener('click', ()=>{
+  editingRoundId = null;
+  document.getElementById('r-course').value='';
+  document.getElementById('r-tees').value='';
+  document.getElementById('r-notes').value='';
+  resetScorecard();
+  setRoundEditorMode(false);
 });
 
 function flashSave(id){
@@ -977,9 +1193,22 @@ function flashSave(id){
 }
 
 document.getElementById('roundsList').addEventListener('click', async e=>{
+  const editBtn = e.target.closest('button[data-kind="round-edit"]');
+  if(editBtn){
+    const r = rounds.find(x=>x.id===editBtn.dataset.id);
+    if(r) loadRoundIntoForm(r);
+    // Switch to Rounds tab (already there) and highlight New round card
+    document.querySelector('nav button[data-tab="rounds"]')?.click();
+    return;
+  }
   const btn = e.target.closest('button.del[data-kind="round"]');
   if(!btn) return;
+  if(!confirm('Delete this round?')) return;
   rounds = rounds.filter(r=>r.id!==btn.dataset.id);
+  if(editingRoundId === btn.dataset.id){
+    editingRoundId = null;
+    setRoundEditorMode(false);
+  }
   await saveList('rounds', rounds);
   renderRounds();
 });
@@ -1296,6 +1525,31 @@ document.getElementById('practiceList').addEventListener('click', async e=>{
 });
 
 // ---------- BAG ----------
+function setClubEditorMode(editing){
+  const saveBtn = document.getElementById('saveClubBtn');
+  const cancelBtn = document.getElementById('cancelEditClubBtn');
+  if(saveBtn) saveBtn.textContent = editing ? 'Update club' : 'Add club';
+  if(cancelBtn) cancelBtn.style.display = editing ? 'inline-block' : 'none';
+}
+function clearClubForm(){
+  document.getElementById('c-name').value='';
+  document.getElementById('c-model').value='';
+  document.getElementById('c-shaft').value='';
+  document.getElementById('c-distance').value='';
+  document.getElementById('c-notes').value='';
+  document.getElementById('c-status').value='active';
+}
+function loadClubIntoForm(c){
+  editingClubId = c.id;
+  document.getElementById('c-name').value = c.name || '';
+  document.getElementById('c-model').value = c.model || '';
+  document.getElementById('c-shaft').value = c.shaft || '';
+  document.getElementById('c-status').value = c.status || 'active';
+  document.getElementById('c-distance').value = c.distance != null ? c.distance : '';
+  document.getElementById('c-notes').value = c.notes || '';
+  setClubEditorMode(true);
+  document.getElementById('tab-bag').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 function renderBag(){
   const list = document.getElementById('bagList');
   if(bag.length===0){ list.innerHTML = '<div class="empty">No clubs logged yet.</div>'; return; }
@@ -1308,35 +1562,61 @@ function renderBag(){
         <div class="meta">${c.shaft?('Shaft: '+escapeHtml(c.shaft)+' · '):''}${c.distance?('Avg '+c.distance+' yds'):'Distance not set'}</div>
         ${c.notes?`<div class="notes">${escapeHtml(c.notes)}</div>`:''}
       </div>
-      <button class="del" data-id="${c.id}" data-kind="club">delete</button>
+      <div>
+        <button class="edit-btn" data-id="${c.id}" data-kind="club-edit" type="button">edit</button>
+        <button class="del" data-id="${c.id}" data-kind="club">delete</button>
+      </div>
     </div>
   `).join('');
 }
 document.getElementById('saveClubBtn').addEventListener('click', async ()=>{
   const name = document.getElementById('c-name').value.trim();
   if(!name){ alert('Name the club.'); return; }
-  bag.push({
-    id: uid(),
+  const payload = {
     name,
     model: document.getElementById('c-model').value.trim(),
     shaft: document.getElementById('c-shaft').value.trim(),
     status: document.getElementById('c-status').value,
     distance: document.getElementById('c-distance').value ? +document.getElementById('c-distance').value : null,
-    dateAdded: todayISO(),
     notes: document.getElementById('c-notes').value.trim()
-  });
+  };
+  if(editingClubId){
+    const idx = bag.findIndex(c=>c.id===editingClubId);
+    if(idx >= 0) bag[idx] = { ...bag[idx], ...payload };
+    else bag.push({ id: editingClubId, dateAdded: todayISO(), ...payload });
+    editingClubId = null;
+  } else {
+    bag.push({ id: uid(), dateAdded: todayISO(), ...payload });
+  }
   await saveList('bag', bag);
-  document.getElementById('c-name').value='';
-  document.getElementById('c-model').value='';
-  document.getElementById('c-shaft').value='';
-  document.getElementById('c-distance').value='';
-  document.getElementById('c-notes').value='';
+  clearClubForm();
+  setClubEditorMode(false);
   renderBag();
 });
+document.getElementById('cancelEditClubBtn').addEventListener('click', ()=>{
+  editingClubId = null;
+  clearClubForm();
+  setClubEditorMode(false);
+});
 document.getElementById('bagList').addEventListener('click', async e=>{
+  const editBtn = e.target.closest('button[data-kind="club-edit"]');
+  if(editBtn){
+    const c = bag.find(x=>x.id===editBtn.dataset.id);
+    if(c){
+      document.querySelector('nav button[data-tab="bag"]')?.click();
+      loadClubIntoForm(c);
+    }
+    return;
+  }
   const btn = e.target.closest('button.del[data-kind="club"]');
   if(!btn) return;
+  if(!confirm('Delete this club?')) return;
   bag = bag.filter(c=>c.id!==btn.dataset.id);
+  if(editingClubId === btn.dataset.id){
+    editingClubId = null;
+    clearClubForm();
+    setClubEditorMode(false);
+  }
   await saveList('bag', bag);
   renderBag();
 });
@@ -1734,19 +2014,30 @@ async function init(){
   populatePresetDropdown();
   buildScorecardTable();
   renderPlayHole();
-  [rounds, practice, bag, courses, notes] = await Promise.all([
-    loadList('rounds'), loadList('practice'), loadList('bag'), loadList('courses'), loadList('notes')
-  ]);
+  renderAuthBar();
 
-  // Courses are never auto-seeded. Dropdowns only show what you saved in Course book.
+  // Load whatever is on-device first so the UI is fast
+  [rounds, practice, bag, courses, notes] = await Promise.all(LIST_KEYS.map(k => loadList(k)));
   console.info('[Adairway] courses in storage:', courses.length, courses.map(c=>c.name));
-
   renderRounds();
   renderPractice();
   renderBag();
   renderCourses();
   renderNotes();
   populatePresetDropdown();
+
+  // Auth: when user signs in/out, reload lists from cloud (or local)
+  if(fbAuth){
+    fbAuth.onAuthStateChanged(async (user)=>{
+      currentUser = user;
+      authReady = true;
+      renderAuthBar();
+      await reloadAllLists();
+    });
+  } else {
+    authReady = true;
+    renderAuthBar();
+  }
 }
 init();
 </script>
