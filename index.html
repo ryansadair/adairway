@@ -144,21 +144,6 @@
   .savepill{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--turf);opacity:0;transition:opacity .3s;}
   .savepill.show{opacity:1;}
   .hint{font-size:12px;color:var(--turf);opacity:0.8;margin:-6px 0 14px;font-family:'IBM Plex Mono',monospace;}
-  .edit-btn{background:none;border:none;color:var(--turf);cursor:pointer;font-size:12px;font-family:'IBM Plex Mono',monospace;padding:2px 6px;display:block;margin-left:auto;}
-  .edit-btn:hover{text-decoration:underline;}
-  .auth-bar{
-    display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
-    background:var(--paper-light);border:1px solid var(--line);border-radius:3px;
-    padding:10px 14px;margin-bottom:16px;font-size:13px;
-  }
-  .auth-bar .auth-status{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--turf);}
-  .auth-bar .auth-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
-  .auth-bar input{
-    width:auto;min-width:140px;padding:6px 8px;border:1px solid var(--line);border-radius:2px;
-    font-size:13px;font-family:'Inter',sans-serif;
-  }
-  .auth-bar button.btn{padding:7px 12px;font-size:11px;}
-  .auth-bar .auth-err{color:var(--flag);font-size:12px;width:100%;margin:0;}
 
   .hc-wrap{display:flex;align-items:center;gap:22px;flex-wrap:wrap;}
   .hc-number{font-family:'Fraunces',serif;font-weight:700;font-size:48px;color:var(--fairway-deep);line-height:1;}
@@ -206,6 +191,8 @@
   button.btn.outline{background:none;color:var(--fairway-deep);border:2px solid var(--fairway-deep);}
   button.btn.outline:hover{background:var(--fairway-deep);color:var(--paper-light);}
   button.btn:disabled{opacity:0.35;cursor:default;}
+  .auth-gate{position:fixed;inset:0;background:var(--paper);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;}
+  .auth-box{max-width:340px;text-align:center;}
 
   @media (max-width: 520px){
     .wrap{padding:16px 14px 70px;}
@@ -223,6 +210,21 @@
 </style>
 </head>
 <body>
+
+<div id="authGate" class="auth-gate">
+  <div class="auth-box">
+    <svg class="flagmark" viewBox="0 0 40 40" fill="none" style="margin:0 auto 10px;display:block;">
+      <line x1="10" y1="4" x2="10" y2="36" stroke="#1F3A2E" stroke-width="2"/>
+      <path d="M10 5 L28 10 L10 15 Z" fill="#A4402F"/>
+      <ellipse cx="10" cy="37" rx="7" ry="2" fill="#8FA89A" opacity="0.5"/>
+    </svg>
+    <h1 style="margin-bottom:6px;">Adairway</h1>
+    <p class="hint" style="margin-bottom:20px;">Sign in to sync your rounds across every device.</p>
+    <button class="btn" id="signInBtn">Sign in with Google</button>
+    <p id="authError" class="hint" style="color:var(--flag);margin-top:14px;"></p>
+  </div>
+</div>
+
 <div class="wrap">
 
   <header>
@@ -234,16 +236,16 @@
       </svg>
       <div>
         <h1>Adairway</h1>
-        <div class="tag" id="headerTag">Personal course log</div>
+        <div class="tag">Personal course log · synced to your account</div>
       </div>
     </div>
-    <div class="today" id="todayDate"></div>
+    <div style="text-align:right;">
+      <div class="today" id="todayDate"></div>
+      <div id="accountRow" style="display:none;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--turf);margin-top:4px;">
+        <span id="accountEmail"></span> · <button id="signOutBtn" class="del" type="button" style="padding:0;">sign out</button>
+      </div>
+    </div>
   </header>
-
-  <div class="auth-bar" id="authBar">
-    <div class="auth-status" id="authStatus">Checking sign-in…</div>
-    <div class="auth-actions" id="authActions"></div>
-  </div>
 
   <nav id="tabs">
     <button data-tab="play"><span class="peg">▶</span>Play</button>
@@ -538,10 +540,70 @@
 
 </div>
 
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
-<script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBHKyis-dDKnrvOuojryQnIsVcRkEPR5bQ",
+  authDomain: "adairway-golf.firebaseapp.com",
+  projectId: "adairway-golf",
+  storageBucket: "adairway-golf.firebasestorage.app",
+  messagingSenderId: "109030250059",
+  appId: "1:109030250059:web:fb3a3684e4b474cb491fce",
+  measurementId: "G-J3LJBBE11R"
+};
+const fbApp = initializeApp(firebaseConfig);
+const auth = getAuth(fbApp);
+const db = getFirestore(fbApp);
+const googleProvider = new GoogleAuthProvider();
+
+let currentUser = null;
+let initializedForUid = null;
+
+function showAuthGate(show){
+  document.getElementById('authGate').style.display = show ? 'flex' : 'none';
+}
+document.getElementById('signInBtn').addEventListener('click', async ()=>{
+  document.getElementById('authError').textContent = '';
+  try{ await signInWithPopup(auth, googleProvider); }
+  catch(e){ document.getElementById('authError').textContent = 'Sign-in failed: ' + e.message; }
+});
+document.getElementById('signOutBtn').addEventListener('click', async ()=>{
+  await signOut(auth);
+});
+onAuthStateChanged(auth, async user=>{
+  if(user){
+    currentUser = user;
+    showAuthGate(false);
+    document.getElementById('accountEmail').textContent = user.email || user.displayName || 'Signed in';
+    document.getElementById('accountRow').style.display = '';
+    if(initializedForUid !== user.uid){
+      initializedForUid = user.uid;
+      await init();
+    }
+  }else{
+    currentUser = null;
+    initializedForUid = null;
+    showAuthGate(true);
+    document.getElementById('accountRow').style.display = 'none';
+  }
+});
+
+// ---------- course presets (real par data, hole 1-18) ----------
+const COURSE_PRESETS = {
+  "Pine Ridge Golf Club": {par:[5,4,4,3,4,4,4,5,4, 3,5,4,4,4,3,4,3,5], rating:70.2, slope:121},
+  "Laurelwood Golf Course": {par:[5,4,3,4,4,3,4,3,5, 5,4,3,4,4,3,4,3,5], rating:66.2, slope:117},
+  "Oakway Golf Course": {par:[4,3,3,3,3,4,3,4,3, 4,3,4,3,3,4,3,4,3], rating:58.6, slope:91},
+  "Eugene Country Club": {par:[4,3,4,4,3,5,3,5,4, 4,4,3,5,4,4,5,4,4], rating:71.3, slope:136},
+  "Tokatee Golf Club": {par:[4,4,5,3,4,5,4,3,4, 4,3,5,4,4,4,5,3,4], rating:68.3, slope:116},
+  "Sandpines Golf Links": {par:[4,4,5,4,3,4,5,3,4, 4,3,5,4,4,4,4,3,5], rating:70.4, slope:122},
+  "Emerald Valley Golf Club": {par:[4,3,5,4,3,4,5,4,4, 4,3,4,5,4,4,4,3,5], rating:65.6, slope:115}
+};
+
 // ---------- utilities ----------
 const todayISO = () => new Date().toISOString().slice(0,10);
 document.getElementById('todayDate').textContent = new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'});
@@ -551,152 +613,26 @@ document.getElementById('n-date').value = todayISO();
 document.getElementById('pl-date').value = todayISO();
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 
-// Storage: localStorage always mirrors data on-device.
-// When signed in, lists also sync to Cloud Firestore under users/{uid}/lists/{key}.
-const STORAGE_PREFIX = 'backnine:';
-const LIST_KEYS = ['rounds','practice','bag','courses','notes'];
-let currentUser = null;
-let authReady = false;
-
-const firebaseConfig = {
-  apiKey: "AIzaSyBHKyis-dDknrvUuojryQnIsVcRkEPR5bQ",
-  authDomain: "adairway-golf.firebaseapp.com",
-  projectId: "adairway-golf",
-  storageBucket: "adairway-golf.firebasestorage.app",
-  messagingSenderId: "109030250059",
-  appId: "1:109030250059:web:fb3a3684e4b474cb491fce",
-  measurementId: "G-J3LJBBE11R"
-};
-
-let fbApp = null, fbAuth = null, fbDb = null;
-try{
-  fbApp = firebase.initializeApp(firebaseConfig);
-  fbAuth = firebase.auth();
-  fbDb = firebase.firestore();
-}catch(e){ console.error('Firebase init failed', e); }
-
-function cacheListLocal(key, arr){
-  try{ localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(arr)); }
-  catch(e){ console.error('local cache write error', e); }
-}
-function readListLocal(key){
-  try{
-    const raw = localStorage.getItem(STORAGE_PREFIX + key);
-    return raw ? JSON.parse(raw) : [];
-  }catch(e){ return []; }
-}
-
+// Storage: synced to your Firebase account via Firestore, under
+// users/{your uid}/store/{key} — the same data shows up on every device
+// you sign into with the same Google account.
 async function loadList(key){
-  if(currentUser && fbDb){
-    try{
-      const snap = await fbDb.collection('users').doc(currentUser.uid).collection('lists').doc(key).get();
-      if(snap.exists){
-        const items = snap.data().items || [];
-        cacheListLocal(key, items);
-        return items;
-      }
-      // First cloud read empty — seed cloud from any local cache once
-      const local = readListLocal(key);
-      if(local.length){
-        await fbDb.collection('users').doc(currentUser.uid).collection('lists').doc(key)
-          .set({ items: local, updatedAt: Date.now() }, { merge: true });
-      }
-      return local;
-    }catch(e){
-      console.error('Firestore read error', e);
-      return readListLocal(key);
-    }
-  }
-  return readListLocal(key);
+  if(!currentUser) return [];
+  try{
+    const snap = await getDoc(doc(db, 'users', currentUser.uid, 'store', key));
+    return snap.exists() ? (snap.data().items || []) : [];
+  }catch(e){ console.error('firestore read error', e); return []; }
 }
-
 async function saveList(key, arr){
-  cacheListLocal(key, arr);
-  if(currentUser && fbDb){
-    try{
-      await fbDb.collection('users').doc(currentUser.uid).collection('lists').doc(key)
-        .set({ items: arr, updatedAt: Date.now() }, { merge: true });
-      return true;
-    }catch(e){
-      console.error('Firestore write error', e);
-      alert('Saved on this device, but cloud sync failed. Check your connection / Firestore rules.');
-      return false;
-    }
-  }
-  return true;
-}
-
-async function reloadAllLists(){
-  [rounds, practice, bag, courses, notes] = await Promise.all(LIST_KEYS.map(k => loadList(k)));
-  renderRounds(); renderPractice(); renderBag(); renderCourses(); renderNotes();
-  populatePresetDropdown();
-}
-
-function renderAuthBar(){
-  const status = document.getElementById('authStatus');
-  const actions = document.getElementById('authActions');
-  const tag = document.getElementById('headerTag');
-  if(!status || !actions) return;
-
-  if(!fbAuth){
-    status.textContent = 'Cloud sign-in unavailable — data stays on this device only.';
-    actions.innerHTML = '';
-    if(tag) tag.textContent = 'Personal course log · this device';
-    return;
-  }
-  if(!authReady){
-    status.textContent = 'Checking sign-in…';
-    actions.innerHTML = '';
-    return;
-  }
-  if(currentUser){
-    status.textContent = 'Signed in as ' + (currentUser.email || currentUser.uid);
-    if(tag) tag.textContent = 'Synced to your account · all devices';
-    actions.innerHTML = `<button class="btn outline" type="button" id="signOutBtn">Sign out</button>`;
-    document.getElementById('signOutBtn').onclick = () => fbAuth.signOut();
-  } else {
-    status.textContent = 'Signed out — data is only on this device until you sign in.';
-    if(tag) tag.textContent = 'Personal course log · this device';
-    actions.innerHTML = `
-      <input type="email" id="authEmail" placeholder="Email" autocomplete="email">
-      <input type="password" id="authPass" placeholder="Password" autocomplete="current-password">
-      <button class="btn" type="button" id="signInBtn">Sign in</button>
-      <button class="btn outline" type="button" id="signUpBtn">Create account</button>
-      <button class="btn outline" type="button" id="googleBtn">Google</button>
-      <p class="auth-err" id="authErr" hidden></p>
-    `;
-    const errEl = document.getElementById('authErr');
-    const showErr = (msg)=>{ errEl.hidden=false; errEl.textContent=msg; };
-    document.getElementById('signInBtn').onclick = async ()=>{
-      errEl.hidden=true;
-      try{
-        await fbAuth.signInWithEmailAndPassword(
-          document.getElementById('authEmail').value.trim(),
-          document.getElementById('authPass').value
-        );
-      }catch(e){ showErr(e.message || 'Sign-in failed'); }
-    };
-    document.getElementById('signUpBtn').onclick = async ()=>{
-      errEl.hidden=true;
-      try{
-        await fbAuth.createUserWithEmailAndPassword(
-          document.getElementById('authEmail').value.trim(),
-          document.getElementById('authPass').value
-        );
-      }catch(e){ showErr(e.message || 'Could not create account'); }
-    };
-    document.getElementById('googleBtn').onclick = async ()=>{
-      errEl.hidden=true;
-      try{
-        await fbAuth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
-      }catch(e){ showErr(e.message || 'Google sign-in failed'); }
-    };
-  }
+  if(!currentUser) return false;
+  try{
+    await setDoc(doc(db, 'users', currentUser.uid, 'store', key), { items: arr, updatedAt: Date.now() });
+    return true;
+  }catch(e){ console.error('firestore write error', e); alert('Could not save to your account — check your connection and try again.'); return false; }
 }
 
 let rounds = [], practice = [], bag = [], courses = [], notes = [];
-let editingRoundId = null;
-let editingClubId = null;
+
 // ---------- tabs ----------
 document.getElementById('tabs').addEventListener('click', e=>{
   const btn = e.target.closest('button[data-tab]');
@@ -710,18 +646,12 @@ document.getElementById('tabs').addEventListener('click', e=>{
 });
 
 // ---------- preset dropdown ----------
-// Source of truth is ONLY the Course book (localStorage key backnine:courses).
 function getCoursePresetMap(){
   const map = {};
+  Object.entries(COURSE_PRESETS).forEach(([name,p])=>{ map[name] = p; });
   courses.forEach(c=>{
     if(Array.isArray(c.par) && c.par.length===18){
-      map[c.name] = {
-        par: c.par,
-        yardage: c.yardage || null,
-        rating: c.rating,
-        slope: c.slope,
-        apiCourseId: c.apiCourseId || null
-      };
+      map[c.name] = {par: c.par, yardage: c.yardage||null, rating: c.rating, slope: c.slope, apiCourseId: c.apiCourseId || null};
     }
   });
   return map;
@@ -729,17 +659,14 @@ function getCoursePresetMap(){
 function populatePresetDropdown(){
   ['r-preset','pl-preset'].forEach(id=>{
     const sel = document.getElementById(id);
-    if(!sel) return;
     const current = sel.value;
     while(sel.options.length>1) sel.remove(1);
-    // Alphabetical, Course-book only
-    Object.keys(getCoursePresetMap()).sort((a,b)=>a.localeCompare(b)).forEach(name=>{
+    Object.keys(getCoursePresetMap()).forEach(name=>{
       const opt = document.createElement('option');
       opt.value = name; opt.textContent = name;
       sel.appendChild(opt);
     });
     if([...sel.options].some(o=>o.value===current)) sel.value = current;
-    else sel.value = '';
   });
 }
 document.getElementById('r-preset').addEventListener('change', e=>{
@@ -752,12 +679,11 @@ document.getElementById('r-preset').addEventListener('change', e=>{
       const el = document.querySelector(`.par[data-hole="${i+1}"]`);
       if(el) el.value = p;
     });
-    // Always refresh yardage row (clear if this course has none)
-    for(let i=1;i<=18;i++){
-      const el = document.querySelector(`.yardage[data-hole="${i}"]`);
-      if(!el) continue;
-      const y = Array.isArray(preset.yardage) ? preset.yardage[i-1] : null;
-      el.value = (y != null && y > 0) ? y : '';
+    if(Array.isArray(preset.yardage)){
+      preset.yardage.forEach((y,i)=>{
+        const el = document.querySelector(`.yardage[data-hole="${i+1}"]`);
+        if(el && y) el.value = y;
+      });
     }
     recalcScorecard();
   }
@@ -769,11 +695,6 @@ document.getElementById('pl-preset').addEventListener('change', e=>{
   const preset = getCoursePresetMap()[name];
   if(preset && preset.par){
     preset.par.forEach((p,i)=>{ playHoles[i].par = p; playHoles[i].score = p; });
-  }
-  if(preset && Array.isArray(preset.yardage)){
-    preset.yardage.forEach((y,i)=>{ playHoles[i].yardage = y || null; });
-  } else {
-    playHoles.forEach(h=>{ h.yardage = null; });
   }
   renderPlayHole();
 });
@@ -972,8 +893,7 @@ function renderPlayHole(){
   updateGpsAvailability();
   const h = playHoles[currentHole];
   document.getElementById('playHoleNum').textContent = 'Hole ' + h.hole;
-  const ydLabel = (h.yardage && h.yardage > 0) ? ` · ${h.yardage} yds` : '';
-  document.getElementById('playHolePar').textContent = 'Par ' + h.par + ydLabel;
+  document.getElementById('playHolePar').textContent = 'Par ' + h.par;
   document.getElementById('scoreVal').textContent = h.score;
   document.getElementById('puttsVal').textContent = h.putts;
 
@@ -1090,99 +1010,82 @@ function renderRounds(){
       <div style="text-align:right;">
         <div class="score">${totalScore||'—'}</div>
         <div class="meta">${toParStr}</div>
-        <button class="edit-btn" data-id="${r.id}" data-kind="round-edit" type="button">edit</button>
+        <button class="del" data-id="${r.id}" data-kind="round-edit" style="color:var(--turf);">edit</button>
         <button class="del" data-id="${r.id}" data-kind="round">delete</button>
       </div>
     </div>`;
   }).join('');
 }
 
-function setRoundEditorMode(editing){
-  const saveBtn = document.getElementById('saveRoundBtn');
-  const cancelBtn = document.getElementById('cancelEditRoundBtn');
-  if(saveBtn) saveBtn.textContent = editing ? 'Update round' : 'Save round';
-  if(cancelBtn) cancelBtn.style.display = editing ? 'inline-block' : 'none';
+let editingRoundId = null;
+function setRoundFormEditMode(on){
+  document.getElementById('saveRoundBtn').textContent = on ? 'Update round' : 'Save round';
+  document.getElementById('cancelEditRoundBtn').style.display = on ? 'inline-block' : 'none';
 }
-
-function loadRoundIntoForm(r){
-  editingRoundId = r.id;
-  document.getElementById('r-date').value = r.date || todayISO();
-  document.getElementById('r-course').value = r.course || '';
-  document.getElementById('r-tees').value = r.tees || '';
-  document.getElementById('r-notes').value = r.notes || '';
-  document.getElementById('r-holesplayed').value = r.holesPlayed || 'full';
-  applyHolesPlayedToScorecard(r.holesPlayed || 'full');
-  (r.holes || []).forEach(h=>{
-    const n = h.hole;
-    const parEl = document.querySelector(`.par[data-hole="${n}"]`);
-    const ydEl = document.querySelector(`.yardage[data-hole="${n}"]`);
-    const scoreEl = document.querySelector(`.score[data-hole="${n}"]`);
-    const puttsEl = document.querySelector(`.putts[data-hole="${n}"]`);
-    const firEl = document.querySelector(`.fir[data-hole="${n}"]`);
-    const girEl = document.querySelector(`.gir[data-hole="${n}"]`);
-    if(parEl && h.par) parEl.value = h.par;
-    if(ydEl && h.yardage) ydEl.value = h.yardage;
-    if(scoreEl) scoreEl.value = h.score || '';
-    if(puttsEl) puttsEl.value = h.putts || '';
-    if(firEl) firEl.checked = !!h.fir;
-    if(girEl) girEl.checked = !!h.gir;
+function startEditRound(round){
+  editingRoundId = round.id;
+  document.getElementById('r-date').value = round.date;
+  document.getElementById('r-course').value = round.course;
+  document.getElementById('r-tees').value = round.tees;
+  document.getElementById('r-holesplayed').value = round.holesPlayed || 'full';
+  round.holes.forEach(h=>{
+    const parEl = document.querySelector(`.par[data-hole="${h.hole}"]`); if(parEl) parEl.value = h.par||4;
+    const ydEl = document.querySelector(`.yardage[data-hole="${h.hole}"]`); if(ydEl) ydEl.value = h.yardage||'';
+    const scoreEl = document.querySelector(`.score[data-hole="${h.hole}"]`); if(scoreEl) scoreEl.value = h.score||'';
+    const puttsEl = document.querySelector(`.putts[data-hole="${h.hole}"]`); if(puttsEl) puttsEl.value = h.putts||'';
+    const firEl = document.querySelector(`.fir[data-hole="${h.hole}"]`); if(firEl) firEl.checked = !!h.fir;
+    const girEl = document.querySelector(`.gir[data-hole="${h.hole}"]`); if(girEl) girEl.checked = !!h.gir;
   });
-  recalcScorecard();
-  setRoundEditorMode(true);
-  document.getElementById('tab-rounds').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  applyHolesPlayedToScorecard(round.holesPlayed || 'full');
+  document.getElementById('r-notes').value = round.notes || '';
+  setRoundFormEditMode(true);
+  document.querySelector('nav button[data-tab="rounds"]').click();
+  document.getElementById('r-course').scrollIntoView({behavior:'smooth', block:'start'});
 }
-
-async function commitRound(holes, course, tees, date, notes, holesPlayed){
-  const payload = {
-    date: date || todayISO(),
-    course: (course||'').trim(),
-    tees: (tees||'').trim(),
-    holes,
-    notes: (notes||'').trim(),
-    holesPlayed: holesPlayed || 'full'
-  };
-  if(editingRoundId){
-    const idx = rounds.findIndex(r=>r.id===editingRoundId);
-    if(idx >= 0) rounds[idx] = { ...rounds[idx], ...payload };
-    else rounds.push({ id: editingRoundId, ...payload });
-    editingRoundId = null;
-  } else {
-    rounds.push({ id: uid(), ...payload });
-  }
-  await saveList('rounds', rounds);
-  renderRounds();
-  setRoundEditorMode(false);
-  return payload;
-}
-
-document.getElementById('saveRoundBtn').addEventListener('click', async ()=>{
-  const holes = readScorecard();
-  const totalScore = holes.reduce((s,h)=>s+h.score,0);
-  if(totalScore===0){ alert('Enter at least one hole score.'); return; }
-  await commitRound(
-    holes,
-    document.getElementById('r-course').value,
-    document.getElementById('r-tees').value,
-    document.getElementById('r-date').value,
-    document.getElementById('r-notes').value,
-    document.getElementById('r-holesplayed').value
-  );
-  document.getElementById('r-course').value='';
-  document.getElementById('r-tees').value='';
-  document.getElementById('r-notes').value='';
-  resetScorecard();
-  setRoundEditorMode(false);
-  editingRoundId = null;
-  flashSave('roundSavePill');
-});
-
 document.getElementById('cancelEditRoundBtn').addEventListener('click', ()=>{
   editingRoundId = null;
   document.getElementById('r-course').value='';
   document.getElementById('r-tees').value='';
   document.getElementById('r-notes').value='';
   resetScorecard();
-  setRoundEditorMode(false);
+  setRoundFormEditMode(false);
+});
+
+async function commitRound(holes, course, tees, date, notes, holesPlayed){
+  const round = { id: uid(), date: date || todayISO(), course: (course||'').trim(), tees: (tees||'').trim(), holes, notes: (notes||'').trim(), holesPlayed: holesPlayed || 'full' };
+  rounds.push(round);
+  await saveList('rounds', rounds);
+  renderRounds();
+  return round;
+}
+
+document.getElementById('saveRoundBtn').addEventListener('click', async ()=>{
+  const holes = readScorecard();
+  const totalScore = holes.reduce((s,h)=>s+h.score,0);
+  if(totalScore===0){ alert('Enter at least one hole score.'); return; }
+  const course = document.getElementById('r-course').value;
+  const tees = document.getElementById('r-tees').value;
+  const date = document.getElementById('r-date').value;
+  const notes = document.getElementById('r-notes').value;
+  const holesPlayed = document.getElementById('r-holesplayed').value;
+
+  if(editingRoundId){
+    const idx = rounds.findIndex(r=>r.id===editingRoundId);
+    if(idx>=0){
+      rounds[idx] = { ...rounds[idx], holes, course: course.trim(), tees: tees.trim(), date: date||todayISO(), notes: notes.trim(), holesPlayed };
+      await saveList('rounds', rounds);
+      renderRounds();
+    }
+    editingRoundId = null;
+    setRoundFormEditMode(false);
+  }else{
+    await commitRound(holes, course, tees, date, notes, holesPlayed);
+  }
+  document.getElementById('r-course').value='';
+  document.getElementById('r-tees').value='';
+  document.getElementById('r-notes').value='';
+  resetScorecard();
+  flashSave('roundSavePill');
 });
 
 function flashSave(id){
@@ -1193,22 +1096,15 @@ function flashSave(id){
 }
 
 document.getElementById('roundsList').addEventListener('click', async e=>{
-  const editBtn = e.target.closest('button[data-kind="round-edit"]');
+  const editBtn = e.target.closest('button.del[data-kind="round-edit"]');
   if(editBtn){
-    const r = rounds.find(x=>x.id===editBtn.dataset.id);
-    if(r) loadRoundIntoForm(r);
-    // Switch to Rounds tab (already there) and highlight New round card
-    document.querySelector('nav button[data-tab="rounds"]')?.click();
+    const round = rounds.find(r=>r.id===editBtn.dataset.id);
+    if(round) startEditRound(round);
     return;
   }
   const btn = e.target.closest('button.del[data-kind="round"]');
   if(!btn) return;
-  if(!confirm('Delete this round?')) return;
   rounds = rounds.filter(r=>r.id!==btn.dataset.id);
-  if(editingRoundId === btn.dataset.id){
-    editingRoundId = null;
-    setRoundEditorMode(false);
-  }
   await saveList('rounds', rounds);
   renderRounds();
 });
@@ -1525,31 +1421,6 @@ document.getElementById('practiceList').addEventListener('click', async e=>{
 });
 
 // ---------- BAG ----------
-function setClubEditorMode(editing){
-  const saveBtn = document.getElementById('saveClubBtn');
-  const cancelBtn = document.getElementById('cancelEditClubBtn');
-  if(saveBtn) saveBtn.textContent = editing ? 'Update club' : 'Add club';
-  if(cancelBtn) cancelBtn.style.display = editing ? 'inline-block' : 'none';
-}
-function clearClubForm(){
-  document.getElementById('c-name').value='';
-  document.getElementById('c-model').value='';
-  document.getElementById('c-shaft').value='';
-  document.getElementById('c-distance').value='';
-  document.getElementById('c-notes').value='';
-  document.getElementById('c-status').value='active';
-}
-function loadClubIntoForm(c){
-  editingClubId = c.id;
-  document.getElementById('c-name').value = c.name || '';
-  document.getElementById('c-model').value = c.model || '';
-  document.getElementById('c-shaft').value = c.shaft || '';
-  document.getElementById('c-status').value = c.status || 'active';
-  document.getElementById('c-distance').value = c.distance != null ? c.distance : '';
-  document.getElementById('c-notes').value = c.notes || '';
-  setClubEditorMode(true);
-  document.getElementById('tab-bag').scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
 function renderBag(){
   const list = document.getElementById('bagList');
   if(bag.length===0){ list.innerHTML = '<div class="empty">No clubs logged yet.</div>'; return; }
@@ -1562,61 +1433,77 @@ function renderBag(){
         <div class="meta">${c.shaft?('Shaft: '+escapeHtml(c.shaft)+' · '):''}${c.distance?('Avg '+c.distance+' yds'):'Distance not set'}</div>
         ${c.notes?`<div class="notes">${escapeHtml(c.notes)}</div>`:''}
       </div>
-      <div>
-        <button class="edit-btn" data-id="${c.id}" data-kind="club-edit" type="button">edit</button>
-        <button class="del" data-id="${c.id}" data-kind="club">delete</button>
-      </div>
+      <button class="del" data-id="${c.id}" data-kind="club-edit" style="color:var(--turf);">edit</button>
+      <button class="del" data-id="${c.id}" data-kind="club">delete</button>
     </div>
   `).join('');
 }
+
+let editingClubId = null;
+function setClubFormEditMode(on){
+  document.getElementById('saveClubBtn').textContent = on ? 'Update club' : 'Add club';
+  document.getElementById('cancelEditClubBtn').style.display = on ? 'inline-block' : 'none';
+}
+function startEditClub(club){
+  editingClubId = club.id;
+  document.getElementById('c-name').value = club.name || '';
+  document.getElementById('c-model').value = club.model || '';
+  document.getElementById('c-shaft').value = club.shaft || '';
+  document.getElementById('c-status').value = club.status || 'active';
+  document.getElementById('c-distance').value = club.distance || '';
+  document.getElementById('c-notes').value = club.notes || '';
+  setClubFormEditMode(true);
+  document.getElementById('c-name').scrollIntoView({behavior:'smooth', block:'start'});
+}
+document.getElementById('cancelEditClubBtn').addEventListener('click', ()=>{
+  editingClubId = null;
+  document.getElementById('c-name').value='';
+  document.getElementById('c-model').value='';
+  document.getElementById('c-shaft').value='';
+  document.getElementById('c-distance').value='';
+  document.getElementById('c-notes').value='';
+  setClubFormEditMode(false);
+});
+
 document.getElementById('saveClubBtn').addEventListener('click', async ()=>{
   const name = document.getElementById('c-name').value.trim();
   if(!name){ alert('Name the club.'); return; }
-  const payload = {
-    name,
-    model: document.getElementById('c-model').value.trim(),
-    shaft: document.getElementById('c-shaft').value.trim(),
-    status: document.getElementById('c-status').value,
-    distance: document.getElementById('c-distance').value ? +document.getElementById('c-distance').value : null,
-    notes: document.getElementById('c-notes').value.trim()
-  };
+  const model = document.getElementById('c-model').value.trim();
+  const shaft = document.getElementById('c-shaft').value.trim();
+  const status = document.getElementById('c-status').value;
+  const distance = document.getElementById('c-distance').value ? +document.getElementById('c-distance').value : null;
+  const notes = document.getElementById('c-notes').value.trim();
+
   if(editingClubId){
     const idx = bag.findIndex(c=>c.id===editingClubId);
-    if(idx >= 0) bag[idx] = { ...bag[idx], ...payload };
-    else bag.push({ id: editingClubId, dateAdded: todayISO(), ...payload });
+    if(idx>=0){
+      bag[idx] = { ...bag[idx], name, model, shaft, status, distance, notes };
+      await saveList('bag', bag);
+      renderBag();
+    }
     editingClubId = null;
-  } else {
-    bag.push({ id: uid(), dateAdded: todayISO(), ...payload });
+    setClubFormEditMode(false);
+  }else{
+    bag.push({ id: uid(), name, model, shaft, status, distance, dateAdded: todayISO(), notes });
+    await saveList('bag', bag);
+    renderBag();
   }
-  await saveList('bag', bag);
-  clearClubForm();
-  setClubEditorMode(false);
-  renderBag();
-});
-document.getElementById('cancelEditClubBtn').addEventListener('click', ()=>{
-  editingClubId = null;
-  clearClubForm();
-  setClubEditorMode(false);
+  document.getElementById('c-name').value='';
+  document.getElementById('c-model').value='';
+  document.getElementById('c-shaft').value='';
+  document.getElementById('c-distance').value='';
+  document.getElementById('c-notes').value='';
 });
 document.getElementById('bagList').addEventListener('click', async e=>{
-  const editBtn = e.target.closest('button[data-kind="club-edit"]');
+  const editBtn = e.target.closest('button.del[data-kind="club-edit"]');
   if(editBtn){
-    const c = bag.find(x=>x.id===editBtn.dataset.id);
-    if(c){
-      document.querySelector('nav button[data-tab="bag"]')?.click();
-      loadClubIntoForm(c);
-    }
+    const club = bag.find(c=>c.id===editBtn.dataset.id);
+    if(club) startEditClub(club);
     return;
   }
   const btn = e.target.closest('button.del[data-kind="club"]');
   if(!btn) return;
-  if(!confirm('Delete this club?')) return;
   bag = bag.filter(c=>c.id!==btn.dataset.id);
-  if(editingClubId === btn.dataset.id){
-    editingClubId = null;
-    clearClubForm();
-    setClubEditorMode(false);
-  }
   await saveList('bag', bag);
   renderBag();
 });
@@ -1624,23 +1511,19 @@ document.getElementById('bagList').addEventListener('click', async e=>{
 // ---------- COURSES ----------
 function renderCourses(){
   const list = document.getElementById('coursesList');
-  if(courses.length===0){ list.innerHTML = '<div class="empty">No course notes yet. Search OpenGolfAPI above or add one manually.</div>'; return; }
+  if(courses.length===0){ list.innerHTML = '<div class="empty">No course notes yet.</div>'; return; }
+  const nameCounts = {};
+  courses.forEach(c=>{ const n=c.name.trim().toLowerCase(); nameCounts[n]=(nameCounts[n]||0)+1; });
   list.innerHTML = courses.map(c=>{
     const hasPar = Array.isArray(c.par) && c.par.length===18;
-    const hasYd = Array.isArray(c.yardage) && c.yardage.some(y=>y>0);
-    const totalYd = hasYd ? c.yardage.reduce((a,b)=>a+(+b||0),0) : 0;
-    const bits = [];
-    if(c.rating && c.slope) bits.push(`Rating ${c.rating} / Slope ${c.slope}`);
-    else bits.push('Rating/slope not set');
-    if(hasPar) bits.push('18-hole par ✓');
-    else bits.push('no par data — won\'t appear in Play/Rounds dropdown');
-    if(hasYd) bits.push(totalYd + ' yds');
-    if(c.apiCourseId) bits.push('GPS ready');
-    return `
-    <div class="round-item">
+    const hasYardage = Array.isArray(c.yardage) && c.yardage.some(y=>y);
+    const hasGps = !!c.apiCourseId;
+    const isDup = nameCounts[c.name.trim().toLowerCase()] > 1;
+    return `<div class="round-item">
       <div style="flex:1">
-        <div class="title">${escapeHtml(c.name)}</div>
-        <div class="meta">${bits.join(' · ')}</div>
+        <div class="title">${escapeHtml(c.name)} ${isDup?'<span style="color:var(--flag);font-family:\'IBM Plex Mono\',monospace;font-size:10.5px;">⚠ duplicate name — delete one</span>':''}</div>
+        <div class="meta">${(c.rating&&c.slope) ? `Rating ${c.rating} / Slope ${c.slope}` : 'Rating/slope not set — handicap index will skip this course'}</div>
+        <div class="meta">Par: ${hasPar?'set':'not set'} · Yardage: ${hasYardage?'set':'not available'} · GPS: ${hasGps?'enabled':'not looked up'}</div>
         ${c.notes?`<div class="notes">${escapeHtml(c.notes)}</div>`:''}
       </div>
       <button class="del" data-id="${c.id}" data-kind="course">delete</button>
@@ -1699,69 +1582,27 @@ document.getElementById('apiSearchResults').addEventListener('click', async e=>{
     btn.textContent = originalText; btn.disabled = false;
   }
 });
-// (Success path replaces the results HTML via applyApiCourseDetail, so the button is gone.)
-
-/** Prefer white tee yardage from the per-color yardages object OpenGolfAPI returns. */
-function pickYardageFromHole(h, preferredColor){
-  const flat = pick(h, ['yardage','yards','length','distance'], null);
-  if(flat != null && !isNaN(+flat) && +flat > 0) return +flat;
-  // OpenGolfAPI: hole.yardages = { white: 337, blue: 378, ... }
-  const yds = h && h.yardages;
-  if(!yds || typeof yds !== 'object') return null;
-  const prefer = (preferredColor || 'white').toLowerCase();
-  const order = [prefer, 'white', 'blue', 'gold', 'black', 'championship', 'green', 'red', 'yellow', 'web'];
-  for(const key of order){
-    const v = yds[key];
-    if(v != null && !isNaN(+v) && +v > 0) return +v;
-  }
-  for(const v of Object.values(yds)){
-    if(v != null && !isNaN(+v) && +v > 0) return +v;
-  }
-  return null;
-}
 
 function applyApiCourseDetail(detail){
-  const name = detail.course_name || detail.name || 'Unnamed course';
-
-  // Tee preference for rating / slope / yardage color
-  let rating=null, slope=null, teeColor='white';
-  if(Array.isArray(detail.tees) && detail.tees.length){
-    const preferred = detail.tees.find(t=>{
-      const n = (pick(t,['tee_name','name','tee_color','color'],'')||'').toLowerCase();
-      const g = (pick(t,['gender'],'')||'').toLowerCase();
-      return n.includes('white') && (g==='' || g.includes('male') || g.includes('men'));
-    }) || detail.tees.find(t=>{
-      const n = (pick(t,['tee_name','name','tee_color','color'],'')||'').toLowerCase();
-      return n.includes('white');
-    }) || detail.tees[0];
-    rating = pick(preferred, ['course_rating','rating'], null);
-    slope = pick(preferred, ['slope','slope_rating'], null);
-    teeColor = (pick(preferred, ['tee_color','tee_name','name','color'], 'white')||'white').toLowerCase();
-  }
-
-  // Hole data lives in holes_data on /api/v1 (detail.holes is the INTEGER hole count)
-  let rawHoles = null;
-  if(Array.isArray(detail.holes_data) && detail.holes_data.length >= 9){
-    rawHoles = detail.holes_data;
-  } else if(Array.isArray(detail.holes) && detail.holes.length >= 9 && typeof detail.holes[0] === 'object'){
-    rawHoles = detail.holes;
-  } else if(Array.isArray(detail.scorecard) && detail.scorecard.length >= 9){
-    rawHoles = detail.scorecard;
-  }
-
+  const name = detail.course_name || 'Unnamed course';
   let parArr = null, yardageArr = null;
-  if(rawHoles){
-    const sortedHoles = [...rawHoles].sort((a,b)=>
-      (pick(a,['number','hole','hole_number'],0) - pick(b,['number','hole','hole_number'],0)));
-    parArr = sortedHoles.slice(0,18).map(h=>{
-      const p = pick(h,['par','hole_par','par_value'],4);
-      return (p != null && !isNaN(+p)) ? +p : 4;
-    });
+  if(Array.isArray(detail.holes) && detail.holes.length>=9){
+    const sortedHoles = [...detail.holes].sort((a,b)=>
+      (pick(a,['hole','hole_number','number'],0) - pick(b,['hole','hole_number','number'],0)));
+    parArr = sortedHoles.slice(0,18).map(h=> pick(h,['par','hole_par','par_value'],4));
     while(parArr.length<18) parArr.push(4);
-
-    yardageArr = sortedHoles.slice(0,18).map(h=> pickYardageFromHole(h, teeColor));
+    yardageArr = sortedHoles.slice(0,18).map(h=> pick(h,['yardage','yards','length','distance'],null));
     if(yardageArr.every(y=>y==null)) yardageArr = null;
     else { while(yardageArr.length<18) yardageArr.push(null); }
+  }
+  let rating=null, slope=null;
+  if(Array.isArray(detail.tees) && detail.tees.length){
+    const preferred = detail.tees.find(t=>{
+      const n = (pick(t,['tee_name','name','color'],'')||'').toLowerCase();
+      return n.includes('white') || n.includes('men');
+    }) || detail.tees[0];
+    rating = pick(preferred, ['course_rating','rating'], null);
+    slope = pick(preferred, ['slope_rating','slope'], null);
   }
 
   document.getElementById('co-name').value = name;
@@ -1772,11 +1613,9 @@ function applyApiCourseDetail(detail){
 
   pendingApiCourse = { name, par: parArr, yardage: yardageArr, rating, slope, apiCourseId: detail.id };
 
-  const parNote = parArr ? 'full 18-hole par' : 'par data was not available — set it manually after saving if needed';
-  const ydNote = yardageArr ? ` and yardages (${teeColor})` : '';
   document.getElementById('apiSearchResults').innerHTML = `<div class="empty">
-    Loaded <strong>${escapeHtml(name)}</strong> — rating/slope filled in below with ${parNote}${ydNote}.
-    Review, add notes if you like, then hit <strong>Save course</strong>. It will appear in the Play &amp; Rounds course dropdowns. GPS distance-to-green works once saved.
+    Loaded ${escapeHtml(name)} — rating/slope filled in below${parArr?' along with full 18-hole par':' (par data was not available — you can set it manually after saving)'}${yardageArr?' and yardages':''}.
+    Review, add notes if you like, then hit "Save course" below. GPS distance-to-pin will also work for this course once saved.
   </div>`;
 }
 
@@ -1825,35 +1664,30 @@ function extractFeatureArray(data){
 }
 function isGreenFeature(f){
   const props = f.properties || f.props || {};
-  const tags = f.tags || props.tags || [];
-  const blob = (JSON.stringify(props) + JSON.stringify(tags)).toLowerCase();
-  return blob.includes('green') || blob.includes('golf=green');
-}
-function featureCenter(f){
-  // OpenGolfAPI features often expose center: { lat, lng } directly
-  if(f.center && f.center.lat != null && (f.center.lng != null || f.center.lon != null)){
-    return { lat: +f.center.lat, lng: +(f.center.lng ?? f.center.lon) };
-  }
-  return geoJsonCenter(f.geometry || f.geom || f.shape);
+  return JSON.stringify(props).toLowerCase().includes('green');
 }
 async function fetchGreenCenter(courseId, holeNum){
   const urls = [
     `${OGA_BASE}/api/v1/features?course=${encodeURIComponent(courseId)}&hole=${holeNum}&type=green`,
+    `${OGA_BASE}/api/v1/features?course=${encodeURIComponent(courseId)}&hole=${holeNum}&type=greens`,
     `${OGA_BASE}/api/v1/features?course=${encodeURIComponent(courseId)}&hole=${holeNum}`
   ];
+  const attempts = [];
   for(const url of urls){
     try{
       const res = await fetch(url);
-      if(!res.ok) continue;
+      if(!res.ok){ attempts.push({url, status:res.status}); continue; }
       const data = await res.json();
       const feats = extractFeatureArray(data);
+      attempts.push({url, status:res.status, featureCount:feats.length, sample: JSON.stringify(data).slice(0,300)});
       if(!feats.length) continue;
       const greenFeat = feats.find(isGreenFeature) || feats[0];
-      const center = featureCenter(greenFeat);
-      if(center) return center;
-    }catch(e){ /* try next url */ }
+      const center = geoJsonCenter(greenFeat.geometry || greenFeat.geom || greenFeat.shape);
+      if(center) return {center, attempts};
+    }catch(e){ attempts.push({url, error: e.message}); }
   }
-  return null;
+  console.warn('OpenGolfAPI green lookup — no usable result. Details:', attempts);
+  return {center:null, attempts};
 }
 document.getElementById('gpsBtn').addEventListener('click', ()=>{
   if(!currentApiCourseId) return;
@@ -1865,9 +1699,17 @@ document.getElementById('gpsBtn').addEventListener('click', ()=>{
     const holeNum = playHoles[currentHole].hole;
     resultEl.textContent = 'Looking up the green…';
     try{
-      const center = await fetchGreenCenter(currentApiCourseId, holeNum);
+      const {center, attempts} = await fetchGreenCenter(currentApiCourseId, holeNum);
       if(!center){
-        resultEl.textContent = `No green data published for hole ${holeNum} yet — coverage is community-maintained and varies by course.`;
+        const anyOk = attempts.some(a=>a.status && a.status<300);
+        const anyRouteError = attempts.some(a=>a.status && a.status>=400);
+        if(anyOk){
+          resultEl.textContent = `No green published for hole ${holeNum} yet (coverage gap — community-maintained data). Open your browser console for details.`;
+        }else if(anyRouteError){
+          resultEl.textContent = `OpenGolfAPI returned an error (status ${attempts.find(a=>a.status)?.status}) — this may be a wrong endpoint on my end. Open the browser console (tap ⋮ → More tools → Developer tools → Console on Chrome) and send me what's logged there.`;
+        }else{
+          resultEl.textContent = `Couldn't reach OpenGolfAPI at all — check your connection, or open the browser console and send me what's logged.`;
+        }
         return;
       }
       const yds = distanceYards(latitude, longitude, center.lat, center.lng);
@@ -1883,27 +1725,28 @@ document.getElementById('gpsBtn').addEventListener('click', ()=>{
 document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
   const name = document.getElementById('co-name').value.trim();
   if(!name){ alert('Name the course.'); return; }
-  const rating = document.getElementById('co-rating').value ? +document.getElementById('co-rating').value : null;
-  const slope = document.getElementById('co-slope').value ? +document.getElementById('co-slope').value : null;
-  const notes = document.getElementById('co-notes').value.trim();
-  const fromApi = (pendingApiCourse && pendingApiCourse.name===name) ? pendingApiCourse : null;
+  const newRating = document.getElementById('co-rating').value ? +document.getElementById('co-rating').value : null;
+  const newSlope = document.getElementById('co-slope').value ? +document.getElementById('co-slope').value : null;
+  const newNotes = document.getElementById('co-notes').value.trim();
+  const extra = (pendingApiCourse && pendingApiCourse.name===name)
+    ? { par: pendingApiCourse.par, yardage: pendingApiCourse.yardage, apiCourseId: pendingApiCourse.apiCourseId } : {};
 
-  // Upsert by name so re-importing from OpenGolfAPI replaces the old entry
   const existingIdx = courses.findIndex(c=>c.name.trim().toLowerCase()===name.toLowerCase());
-  const base = existingIdx >= 0 ? { ...courses[existingIdx] } : { id: uid() };
-  const updated = {
-    ...base,
-    name,
-    rating: rating ?? base.rating ?? null,
-    slope: slope ?? base.slope ?? null,
-    notes: notes || base.notes || '',
-    par: (fromApi && fromApi.par) ? fromApi.par : (base.par || null),
-    yardage: (fromApi && fromApi.yardage) ? fromApi.yardage : (base.yardage || null),
-    apiCourseId: (fromApi && fromApi.apiCourseId) ? fromApi.apiCourseId : (base.apiCourseId || null)
-  };
-  if(existingIdx >= 0) courses[existingIdx] = updated;
-  else courses.push(updated);
-
+  if(existingIdx>=0){
+    const existing = courses[existingIdx];
+    courses[existingIdx] = {
+      ...existing,
+      name,
+      rating: newRating!=null ? newRating : existing.rating,
+      slope: newSlope!=null ? newSlope : existing.slope,
+      notes: newNotes ? newNotes : existing.notes, // never blank out notes you already wrote
+      ...(extra.par ? {par: extra.par} : {}),
+      ...(extra.yardage ? {yardage: extra.yardage} : {}),
+      ...(extra.apiCourseId ? {apiCourseId: extra.apiCourseId} : {})
+    };
+  }else{
+    courses.push({ id: uid(), name, rating: newRating, slope: newSlope, notes: newNotes, ...extra });
+  }
   await saveList('courses', courses);
   pendingApiCourse = null;
   document.getElementById('co-name').value='';
@@ -1914,10 +1757,6 @@ document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
   document.getElementById('api-search-q').value='';
   renderCourses();
   populatePresetDropdown();
-  const inDropdown = Array.isArray(updated.par) && updated.par.length===18;
-  alert(inDropdown
-    ? `"${name}" saved — available in Play & Rounds dropdowns${updated.yardage ? ' with yardages' : ''}.`
-    : `"${name}" saved, but without 18-hole par data it won't appear in Play/Rounds. Re-import from OpenGolfAPI or add par manually.`);
 });
 document.getElementById('coursesList').addEventListener('click', async e=>{
   const btn = e.target.closest('button.del[data-kind="course"]');
@@ -2014,32 +1853,40 @@ async function init(){
   populatePresetDropdown();
   buildScorecardTable();
   renderPlayHole();
-  renderAuthBar();
+  [rounds, practice, bag, courses, notes] = await Promise.all([
+    loadList('rounds'), loadList('practice'), loadList('bag'), loadList('courses'), loadList('notes')
+  ]);
 
-  // Load whatever is on-device first so the UI is fast
-  [rounds, practice, bag, courses, notes] = await Promise.all(LIST_KEYS.map(k => loadList(k)));
-  console.info('[Adairway] courses in storage:', courses.length, courses.map(c=>c.name));
+  // Seed the bag with the current Ping i15 set on first run only
+  if(bag.length===0){
+    const clubs = ['3-iron','4-iron','5-iron','6-iron','7-iron','8-iron','9-iron','PW'];
+    bag = clubs.map(name=>({
+      id: uid(),
+      name,
+      model: 'Ping i15',
+      shaft: 'Stiff',
+      status: 'active',
+      distance: null,
+      dateAdded: todayISO(),
+      notes: 'Black dot · owned roughly 10–15 years'
+    }));
+    await saveList('bag', bag);
+  }
+
+  // Seed course book with the regulars on first run only (empty notes to fill in later)
+  if(courses.length===0){
+    courses = Object.entries(COURSE_PRESETS).map(([name,preset])=>({
+      id: uid(), name, rating: preset.rating, slope: preset.slope, notes: ''
+    }));
+    await saveList('courses', courses);
+  }
+
   renderRounds();
   renderPractice();
   renderBag();
   renderCourses();
   renderNotes();
-  populatePresetDropdown();
-
-  // Auth: when user signs in/out, reload lists from cloud (or local)
-  if(fbAuth){
-    fbAuth.onAuthStateChanged(async (user)=>{
-      currentUser = user;
-      authReady = true;
-      renderAuthBar();
-      await reloadAllLists();
-    });
-  } else {
-    authReady = true;
-    renderAuthBar();
-  }
 }
-init();
 </script>
 </body>
 </html>
