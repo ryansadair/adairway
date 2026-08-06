@@ -1751,41 +1751,10 @@ async function init(){
     loadList('rounds'), loadList('practice'), loadList('bag'), loadList('courses'), loadList('notes')
   ]);
 
-  // First-run seeds only when this browser has NEVER stored that key.
-  // Important: an empty list is stored as "[]", which is not null — so deleting
-  // everything and refreshing must NOT re-seed. (That was the ghost-courses bug.)
-  const bagRaw = localStorage.getItem(STORAGE_PREFIX + 'bag');
-  const coursesRaw = localStorage.getItem(STORAGE_PREFIX + 'courses');
-
-  if(bagRaw === null && bag.length===0){
-    const clubs = ['3-iron','4-iron','5-iron','6-iron','7-iron','8-iron','9-iron','PW'];
-    bag = clubs.map(name=>({
-      id: uid(),
-      name,
-      model: 'Ping i15',
-      shaft: 'Stiff',
-      status: 'active',
-      distance: null,
-      dateAdded: todayISO(),
-      notes: 'Black dot · owned roughly 10–15 years'
-    }));
-    await saveList('bag', bag);
-  }
-
-  if(coursesRaw === null && courses.length===0){
-    // Brand-new install only — starter regulars with par data.
-    courses = Object.entries(COURSE_PRESETS).map(([name,preset])=>({
-      id: uid(),
-      name,
-      par: preset.par,
-      yardage: null,
-      rating: preset.rating,
-      slope: preset.slope,
-      notes: ''
-    }));
-    await saveList('courses', courses);
-  } else if(courses.length > 0){
-    // Repair older seeds that stored regulars without a par array
+  // Courses are NEVER auto-seeded. Empty course book stays empty after delete
+  // or after clearing localStorage. Add courses via OpenGolfAPI or the form.
+  // COURSE_PRESETS is only used to fill missing par on already-saved regulars.
+  if(courses.length > 0){
     let repaired = false;
     courses = courses.map(c=>{
       if(Array.isArray(c.par) && c.par.length===18) return c;
