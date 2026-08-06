@@ -33,8 +33,9 @@ instead of being stuck to one browser. A few one-time steps in the
 [Firebase Console](https://console.firebase.google.com) for your `adairway-golf`
 project to finish wiring this up:
 
-1. **Enable Google Sign-In** — Build → Authentication → Sign-in method →
-   enable the **Google** provider.
+1. **Enable sign-in providers** — Build → Authentication → Sign-in method →
+   enable **Google**, and **Email/Password** if you want that option too (the
+   app offers both — Google or email+password, whichever you prefer).
 2. **Add your GitHub Pages domain** — Authentication → Settings → Authorized
    domains → add `<your-username>.github.io`. Without this, sign-in will fail
    with an "unauthorized domain" error.
