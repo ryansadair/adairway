@@ -119,6 +119,24 @@
   table.sc td.holes-excluded{opacity:0.25;}
   .edit-btn{background:none;border:none;color:var(--turf);cursor:pointer;font-size:12px;font-family:'IBM Plex Mono',monospace;padding:2px 6px;display:block;margin-left:auto;}
   .edit-btn:hover{text-decoration:underline;}
+  .miss-panel{margin-top:10px;display:none;flex-direction:column;gap:8px;}
+  .miss-panel.show{display:flex;}
+  .miss-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;}
+  .miss-row .miss-label{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--turf);min-width:64px;}
+  .chip{
+    border:1px solid var(--line);background:#fff;color:var(--graphite);
+    font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;
+    padding:7px 11px;border-radius:999px;cursor:pointer;line-height:1;
+  }
+  .chip.on{background:var(--fairway-deep);border-color:var(--fairway-deep);color:var(--paper-light);}
+  .tend-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .tend-card{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:12px;}
+  .tend-card h4{margin:0 0 8px;font-size:13px;font-family:'Fraunces',serif;color:var(--fairway-deep);}
+  .tend-bar{display:flex;height:14px;border-radius:4px;overflow:hidden;background:rgba(31,58,46,0.08);margin-bottom:8px;}
+  .tend-bar span{display:block;height:100%;}
+  .tend-legend{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--turf);line-height:1.55;}
+  @media (max-width:520px){ .tend-grid{grid-template-columns:1fr;} }
+
   .course-hc-pill{
     display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;
     background:var(--fairway-deep);color:var(--paper-light);padding:4px 10px;border-radius:4px;margin-right:8px;
@@ -473,6 +491,24 @@
           <button class="toggle-btn" id="firToggle" type="button">Fairway hit</button>
           <button class="toggle-btn" id="girToggle" type="button">Green in reg</button>
         </div>
+        <div class="miss-panel" id="missPanel">
+          <div class="miss-row" id="firMissRow">
+            <span class="miss-label">Tee miss</span>
+            <button type="button" class="chip" data-miss="fir" data-val="L">Left</button>
+            <button type="button" class="chip" data-miss="fir" data-val="R">Right</button>
+          </div>
+          <div class="miss-row" id="girMissRow">
+            <span class="miss-label">Approach</span>
+            <button type="button" class="chip" data-miss="girLat" data-val="L">Left</button>
+            <button type="button" class="chip" data-miss="girLat" data-val="R">Right</button>
+            <button type="button" class="chip" data-miss="girDepth" data-val="S">Short</button>
+            <button type="button" class="chip" data-miss="girDepth" data-val="Long">Long</button>
+          </div>
+          <div class="miss-row">
+            <span class="miss-label">Sand</span>
+            <button type="button" class="chip" id="bunkerChip">Bunker</button>
+          </div>
+        </div>
       </div>
 
       <div class="stat-block">
@@ -589,6 +625,13 @@
       <div class="card">
         <h2>GIR% vs score</h2>
         <svg class="chart" id="girScatter"></svg>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Miss tendencies <small>optional detail from the Play tab</small></h2>
+      <div class="tend-grid" id="missTendencies">
+        <div class="empty">Mark left/right/short/long or bunker on holes while playing to unlock this.</div>
       </div>
     </div>
   </section>
@@ -1266,16 +1309,16 @@ const OGA_BASE = 'https://api.opengolfapi.org';
 let pendingApiCourse = null;
 let currentApiCourseId = null;
 
-let playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, fir:false, gir:false}));
+let playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, fir:false, gir:false, firMiss:null, girMissLat:null, girMissDepth:null, bunker:false}));
 let currentHole = 0;
 let playRange = {start:0, end:17};
 function setPlayRange(mode){
   if(mode==='front'){
     playRange = {start:0, end:8};
-    for(let i=9;i<18;i++){ playHoles[i].score=0; playHoles[i].putts=0; playHoles[i].fir=false; playHoles[i].gir=false; }
+    for(let i=9;i<18;i++){ playHoles[i].score=0; playHoles[i].putts=0; playHoles[i].fir=false; playHoles[i].gir=false; playHoles[i].firMiss=null; playHoles[i].girMissLat=null; playHoles[i].girMissDepth=null; playHoles[i].bunker=false; }
   }else if(mode==='back'){
     playRange = {start:9, end:17};
-    for(let i=0;i<9;i++){ playHoles[i].score=0; playHoles[i].putts=0; playHoles[i].fir=false; playHoles[i].gir=false; }
+    for(let i=0;i<9;i++){ playHoles[i].score=0; playHoles[i].putts=0; playHoles[i].fir=false; playHoles[i].gir=false; playHoles[i].firMiss=null; playHoles[i].girMissLat=null; playHoles[i].girMissDepth=null; playHoles[i].bunker=false; }
   }else{
     playRange = {start:0, end:17};
   }
@@ -1300,6 +1343,33 @@ function renderPlayHole(){
   firBtn.disabled = (h.par===3);
   const girBtn = document.getElementById('girToggle');
   girBtn.classList.toggle('on', h.gir);
+
+  // Progressive miss detail — only when relevant
+  if(h.fir) h.firMiss = null;
+  if(h.gir){ h.girMissLat = null; h.girMissDepth = null; }
+  if(h.par===3) h.firMiss = null;
+
+  const showFirMiss = !h.fir && h.par !== 3;
+  const showGirMiss = !h.gir;
+  const showPanel = showFirMiss || showGirMiss || !!h.bunker;
+  const panel = document.getElementById('missPanel');
+  if(panel) panel.classList.toggle('show', showPanel);
+  const firMissRow = document.getElementById('firMissRow');
+  const girMissRow = document.getElementById('girMissRow');
+  if(firMissRow) firMissRow.style.display = showFirMiss ? '' : 'none';
+  if(girMissRow) girMissRow.style.display = showGirMiss ? '' : 'none';
+
+  document.querySelectorAll('.chip[data-miss="fir"]').forEach(btn=>{
+    btn.classList.toggle('on', h.firMiss === btn.dataset.val);
+  });
+  document.querySelectorAll('.chip[data-miss="girLat"]').forEach(btn=>{
+    btn.classList.toggle('on', h.girMissLat === btn.dataset.val);
+  });
+  document.querySelectorAll('.chip[data-miss="girDepth"]').forEach(btn=>{
+    btn.classList.toggle('on', h.girMissDepth === btn.dataset.val);
+  });
+  const bunkerChip = document.getElementById('bunkerChip');
+  if(bunkerChip) bunkerChip.classList.toggle('on', !!h.bunker);
 
   document.getElementById('playPrev').disabled = (currentHole===playRange.start);
   document.getElementById('playNext').disabled = (currentHole===playRange.end);
@@ -1343,11 +1413,33 @@ document.getElementById('firToggle').addEventListener('click', ()=>{
   const h = playHoles[currentHole];
   if(h.par===3) return;
   h.fir = !h.fir;
+  if(h.fir) h.firMiss = null;
   renderPlayHole();
 });
 document.getElementById('girToggle').addEventListener('click', ()=>{
   const h = playHoles[currentHole];
   h.gir = !h.gir;
+  if(h.gir){ h.girMissLat = null; h.girMissDepth = null; }
+  renderPlayHole();
+});
+document.getElementById('missPanel')?.addEventListener('click', e=>{
+  const chip = e.target.closest('.chip');
+  if(!chip) return;
+  const h = playHoles[currentHole];
+  if(chip.id === 'bunkerChip'){
+    h.bunker = !h.bunker;
+    renderPlayHole();
+    return;
+  }
+  const kind = chip.dataset.miss;
+  const val = chip.dataset.val;
+  if(kind === 'fir'){
+    h.firMiss = (h.firMiss === val) ? null : val;
+  }else if(kind === 'girLat'){
+    h.girMissLat = (h.girMissLat === val) ? null : val;
+  }else if(kind === 'girDepth'){
+    h.girMissDepth = (h.girMissDepth === val) ? null : val;
+  }
   renderPlayHole();
 });
 document.getElementById('playPrev').addEventListener('click', ()=>{
@@ -1691,6 +1783,77 @@ function getStatsRounds(){
   const withScores = sorted.filter(r=> r.holes.reduce((s,h)=>s+h.score,0)>0);
   if(year === 'all') return withScores;
   return withScores.filter(r => (r.date||'').startsWith(year));
+}
+
+
+function renderMissTendencies(withScores){
+  const el = document.getElementById('missTendencies');
+  if(!el) return;
+  let firL=0, firR=0, firMissN=0;
+  let gL=0, gR=0, gS=0, gLong=0, girMissN=0;
+  let bunkers=0, holesN=0, sandSaves=0, sandOpps=0;
+
+  withScores.forEach(r=>{
+    (r.holes||[]).forEach(h=>{
+      if(!h || !(h.score>0)) return;
+      holesN++;
+      if(h.bunker){
+        bunkers++;
+        sandOpps++;
+        // simple sand-save proxy: up-and-down (score <= par + 1) from a bunker
+        if(h.par>0 && h.score <= h.par + 1) sandSaves++;
+      }
+      if(!h.fir && h.par !== 3){
+        if(h.firMiss==='L'){ firL++; firMissN++; }
+        else if(h.firMiss==='R'){ firR++; firMissN++; }
+      }
+      if(!h.gir){
+        if(h.girMissLat==='L'){ gL++; girMissN++; }
+        else if(h.girMissLat==='R'){ gR++; girMissN++; }
+        if(h.girMissDepth==='S'){ gS++; girMissN++; }
+        else if(h.girMissDepth==='Long'){ gLong++; girMissN++; }
+      }
+    });
+  });
+
+  if(firMissN + girMissN + bunkers === 0){
+    el.innerHTML = '<div class="empty">Mark left/right/short/long or bunker on holes while playing to unlock this.</div>';
+    return;
+  }
+
+  function bar(parts){
+    const total = parts.reduce((s,p)=>s+p.n,0) || 1;
+    return `<div class="tend-bar">${parts.map(p=> p.n? `<span style="width:${(p.n/total*100).toFixed(1)}%;background:${p.color};" title="${p.label}: ${p.n}"></span>` : '').join('')}</div>`;
+  }
+  function pct(n, d){ return d ? Math.round(n/d*100)+'%' : '—'; }
+
+  const firTotal = firL+firR;
+  const girLatTotal = gL+gR;
+  const girDepthTotal = gS+gLong;
+
+  el.innerHTML = `
+    <div class="tend-card">
+      <h4>Fairway misses</h4>
+      ${firTotal ? bar([{n:firL,color:'#3F6B4A',label:'Left'},{n:firR,color:'#A4402F',label:'Right'}]) : '<div class="tend-legend">No tee-miss sides logged yet.</div>'}
+      <div class="tend-legend">Left ${firL} · Right ${firR}${firTotal?` · ${pct(firL,firTotal)} L / ${pct(firR,firTotal)} R`:''}</div>
+    </div>
+    <div class="tend-card">
+      <h4>Approach misses (side)</h4>
+      ${girLatTotal ? bar([{n:gL,color:'#3F6B4A',label:'Left'},{n:gR,color:'#A4402F',label:'Right'}]) : '<div class="tend-legend">No side misses logged yet.</div>'}
+      <div class="tend-legend">Left ${gL} · Right ${gR}${girLatTotal?` · ${pct(gL,girLatTotal)} L / ${pct(gR,girLatTotal)} R`:''}</div>
+    </div>
+    <div class="tend-card">
+      <h4>Approach misses (depth)</h4>
+      ${girDepthTotal ? bar([{n:gS,color:'#C7A876',label:'Short'},{n:gLong,color:'#1F3A2E',label:'Long'}]) : '<div class="tend-legend">No short/long misses logged yet.</div>'}
+      <div class="tend-legend">Short ${gS} · Long ${gLong}${girDepthTotal?` · ${pct(gS,girDepthTotal)} S / ${pct(gLong,girDepthTotal)} Lg`:''}</div>
+    </div>
+    <div class="tend-card">
+      <h4>Bunkers</h4>
+      <div class="tend-legend">
+        ${bunkers} bunker hole${bunkers===1?'':'s'} · ${holesN? (bunkers/Math.max(withScores.length,1)).toFixed(1) : '0'} per round<br>
+        Sand-save proxy: ${sandOpps? pct(sandSaves, sandOpps) : '—'} (${sandSaves}/${sandOpps||0})
+      </div>
+    </div>`;
 }
 
 function renderStats(){
