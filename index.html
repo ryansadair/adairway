@@ -97,7 +97,7 @@
   button.btn.small{padding:5px 10px;font-size:11px;}
 
   .scorecard{overflow-x:auto;margin-bottom:14px;border:1px solid var(--fairway-deep);border-radius:2px;}
-  table.sc{border-collapse:collapse;width:100%;min-width:900px;font-family:'IBM Plex Mono',monospace;font-size:12px;}
+  table.sc{border-collapse:collapse;width:100%;min-width:1100px;font-family:'IBM Plex Mono',monospace;font-size:12px;}
   table.sc th, table.sc td{border:1px solid var(--line);padding:4px 2px;text-align:center;}
   table.sc th{background:var(--fairway-deep);color:var(--paper-light);font-weight:600;font-size:10.5px;}
   table.sc td.rowlabel{background:var(--sand);color:var(--graphite);font-weight:700;text-align:left;padding-left:8px;width:64px;font-size:10.5px;}
@@ -106,10 +106,15 @@
   table.sc input[type=number]{
     width:30px;border:none;background:transparent;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:12.5px;padding:3px 0;
   }
+  table.sc input.yardage[type=number]{
+    width:40px;min-width:40px;font-size:11.5px;
+  }
   table.sc input[type=checkbox]{width:15px;height:15px;cursor:pointer;}
   table.sc input[type=checkbox]:disabled{opacity:0.15;cursor:default;}
   table.sc td.total{background:var(--fairway-deep);color:var(--paper-light);font-weight:700;font-size:11.5px;}
   table.sc td.holes-excluded{opacity:0.25;}
+  .edit-btn{background:none;border:none;color:var(--turf);cursor:pointer;font-size:12px;font-family:'IBM Plex Mono',monospace;padding:2px 6px;display:block;margin-left:auto;}
+  .edit-btn:hover{text-decoration:underline;}
 
   .preset-row{display:flex;gap:10px;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap;}
   .preset-row .field{flex:1;min-width:220px;margin-bottom:0;}
@@ -519,6 +524,7 @@
       <div class="field"><label>Yardage, 18 holes comma-separated (optional)</label><input type="text" id="co-yardage" placeholder="380,410,175,520,..."></div>
       <div class="field"><label>Strategy / quirks / holes to remember</label><textarea id="co-notes" placeholder="e.g. #7 plays long, favor left off the tee on #12, greens break toward the river..."></textarea></div>
       <button class="btn" id="saveCourseBtn">Save course</button>
+      <button class="btn outline" id="cancelEditCourseBtn" type="button" style="display:none;margin-left:8px;">Cancel edit</button>
       <div class="hint" style="margin-top:8px;margin-bottom:0;">Tip: re-entering a course name you've already saved updates that course instead of duplicating it — handy for adding par to a course you added before this field existed.</div>
     </div>
     <div class="card">
@@ -1601,7 +1607,10 @@ function renderCourses(){
         <div class="meta">Par: ${hasPar?'set':'not set'} · Yardage: ${hasYardage?'set':'not available'} · GPS: ${gpsLabel}</div>
         ${c.notes?`<div class="notes">${escapeHtml(c.notes)}</div>`:''}
       </div>
-      <button class="del" data-id="${c.id}" data-kind="course">delete</button>
+      <div>
+        <button class="edit-btn" data-id="${c.id}" data-kind="course-edit" type="button">edit</button>
+        <button class="del" data-id="${c.id}" data-kind="course">delete</button>
+      </div>
     </div>`;
   }).join('');
 }
@@ -1679,7 +1688,6 @@ function pickYardageFromHole(h, preferredColor){
 function applyApiCourseDetail(detail){
   const name = detail.course_name || detail.name || 'Unnamed course';
 
-  // Prefer White male tee for rating / slope / yardage color
   let rating=null, slope=null, teeColor='white', teeLabel='';
   if(Array.isArray(detail.tees) && detail.tees.length){
     const preferred = detail.tees.find(t=>{
@@ -1696,7 +1704,7 @@ function applyApiCourseDetail(detail){
     teeLabel = pick(preferred, ['tee_name','name','tee_color','color'], '') || '';
   }
 
-  // On /api/v1, hole-by-hole data is in holes_data (detail.holes is just the count integer)
+  // holes is a count; hole-by-hole lives in holes_data
   let rawHoles = null;
   if(Array.isArray(detail.holes_data) && detail.holes_data.length >= 9){
     rawHoles = detail.holes_data;
@@ -1724,7 +1732,6 @@ function applyApiCourseDetail(detail){
   document.getElementById('co-name').value = name;
   if(rating!=null) document.getElementById('co-rating').value = rating;
   if(slope!=null) document.getElementById('co-slope').value = slope;
-  // Fill optional CSV fields so you can see/edit before saving
   const coPar = document.getElementById('co-par');
   const coYd = document.getElementById('co-yardage');
   if(coPar) coPar.value = parArr ? parArr.join(',') : '';
@@ -1732,7 +1739,6 @@ function applyApiCourseDetail(detail){
   document.getElementById('co-notes').value = detail.architect
     ? `Designed by ${detail.architect}${detail.year_built?(', '+detail.year_built):''}.` : '';
 
-  // Also fill Play/Rounds course+tees fields for convenience
   const rCourse = document.getElementById('r-course');
   const plCourse = document.getElementById('pl-course');
   if(rCourse) rCourse.value = name;
@@ -1911,45 +1917,15 @@ function parseCsvNumbers(str, expectedLen){
   return { values: nums };
 }
 
-document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
-  const name = document.getElementById('co-name').value.trim();
-  if(!name){ alert('Name the course.'); return; }
-  const newRating = document.getElementById('co-rating').value ? +document.getElementById('co-rating').value : null;
-  const newSlope = document.getElementById('co-slope').value ? +document.getElementById('co-slope').value : null;
-  const newNotes = document.getElementById('co-notes').value.trim();
+let editingCourseId = null;
 
-  const extra = (pendingApiCourse && pendingApiCourse.name===name)
-    ? { par: pendingApiCourse.par, yardage: pendingApiCourse.yardage, apiCourseId: pendingApiCourse.apiCourseId } : {};
-
-  const parResult = parseCsvNumbers(document.getElementById('co-par').value, 18);
-  if(parResult){
-    if(parResult.error) alert('Par: ' + parResult.error + ' — course will still save, just without par data.');
-    else extra.par = parResult.values; // manual entry overrides an API par if both were provided
-  }
-  const ydResult = parseCsvNumbers(document.getElementById('co-yardage').value, 18);
-  if(ydResult){
-    if(ydResult.error) alert('Yardage: ' + ydResult.error + ' — course will still save, just without yardage data.');
-    else extra.yardage = ydResult.values;
-  }
-
-  const existingIdx = courses.findIndex(c=>c.name.trim().toLowerCase()===name.toLowerCase());
-  if(existingIdx>=0){
-    const existing = courses[existingIdx];
-    courses[existingIdx] = {
-      ...existing,
-      name,
-      rating: newRating!=null ? newRating : existing.rating,
-      slope: newSlope!=null ? newSlope : existing.slope,
-      notes: newNotes ? newNotes : existing.notes, // never blank out notes you already wrote
-      ...(extra.par ? {par: extra.par} : {}),
-      ...(extra.yardage ? {yardage: extra.yardage} : {}),
-      ...(extra.apiCourseId ? {apiCourseId: extra.apiCourseId} : {})
-    };
-  }else{
-    courses.push({ id: uid(), name, rating: newRating, slope: newSlope, notes: newNotes, ...extra });
-  }
-  await saveList('courses', courses);
-  pendingApiCourse = null;
+function setCourseEditorMode(editing){
+  const saveBtn = document.getElementById('saveCourseBtn');
+  const cancelBtn = document.getElementById('cancelEditCourseBtn');
+  if(saveBtn) saveBtn.textContent = editing ? 'Update course' : 'Save course';
+  if(cancelBtn) cancelBtn.style.display = editing ? 'inline-block' : 'none';
+}
+function clearCourseForm(){
   document.getElementById('co-name').value='';
   document.getElementById('co-rating').value='';
   document.getElementById('co-slope').value='';
@@ -1957,14 +1933,121 @@ document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
   document.getElementById('co-yardage').value='';
   document.getElementById('co-notes').value='';
   document.getElementById('apiSearchResults').innerHTML='';
+  pendingApiCourse = null;
+}
+function loadCourseIntoForm(c){
+  editingCourseId = c.id;
+  document.getElementById('co-name').value = c.name || '';
+  document.getElementById('co-rating').value = c.rating != null ? c.rating : '';
+  document.getElementById('co-slope').value = c.slope != null ? c.slope : '';
+  document.getElementById('co-par').value = Array.isArray(c.par) ? c.par.join(',') : '';
+  document.getElementById('co-yardage').value = Array.isArray(c.yardage)
+    ? c.yardage.map(y=>y==null?'':y).join(',')
+    : '';
+  document.getElementById('co-notes').value = c.notes || '';
+  pendingApiCourse = {
+    name: c.name,
+    par: Array.isArray(c.par) ? c.par : null,
+    yardage: Array.isArray(c.yardage) ? c.yardage : null,
+    apiCourseId: c.apiCourseId || null
+  };
+  setCourseEditorMode(true);
+  document.getElementById('tab-courses').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
+  const name = document.getElementById('co-name').value.trim();
+  if(!name){ alert('Name the course.'); return; }
+  const newRating = document.getElementById('co-rating').value ? +document.getElementById('co-rating').value : null;
+  const newSlope = document.getElementById('co-slope').value ? +document.getElementById('co-slope').value : null;
+  const newNotes = document.getElementById('co-notes').value.trim();
+
+  const extra = {};
+  if(pendingApiCourse){
+    if(pendingApiCourse.par) extra.par = pendingApiCourse.par;
+    if(pendingApiCourse.yardage) extra.yardage = pendingApiCourse.yardage;
+    if(pendingApiCourse.apiCourseId) extra.apiCourseId = pendingApiCourse.apiCourseId;
+  }
+
+  const parResult = parseCsvNumbers(document.getElementById('co-par').value, 18);
+  if(parResult){
+    if(parResult.error) alert('Par: ' + parResult.error + ' — course will still save, just without updating par.');
+    else extra.par = parResult.values;
+  }
+  const ydResult = parseCsvNumbers(document.getElementById('co-yardage').value, 18);
+  if(ydResult){
+    if(ydResult.error) alert('Yardage: ' + ydResult.error + ' — course will still save, just without updating yardage.');
+    else extra.yardage = ydResult.values;
+  }
+
+  if(editingCourseId){
+    const idx = courses.findIndex(c=>c.id===editingCourseId);
+    if(idx>=0){
+      const existing = courses[idx];
+      courses[idx] = {
+        ...existing,
+        name,
+        rating: newRating,
+        slope: newSlope,
+        notes: newNotes,
+        ...(extra.par ? {par: extra.par} : {}),
+        ...(extra.yardage ? {yardage: extra.yardage} : {}),
+        ...(extra.apiCourseId ? {apiCourseId: extra.apiCourseId} : {})
+      };
+    }
+    editingCourseId = null;
+  } else {
+    const existingIdx = courses.findIndex(c=>c.name.trim().toLowerCase()===name.toLowerCase());
+    if(existingIdx>=0){
+      const existing = courses[existingIdx];
+      courses[existingIdx] = {
+        ...existing,
+        name,
+        rating: newRating!=null ? newRating : existing.rating,
+        slope: newSlope!=null ? newSlope : existing.slope,
+        notes: newNotes ? newNotes : existing.notes,
+        ...(extra.par ? {par: extra.par} : {}),
+        ...(extra.yardage ? {yardage: extra.yardage} : {}),
+        ...(extra.apiCourseId ? {apiCourseId: extra.apiCourseId} : {})
+      };
+    }else{
+      courses.push({ id: uid(), name, rating: newRating, slope: newSlope, notes: newNotes, ...extra });
+    }
+  }
+
+  await saveList('courses', courses);
+  clearCourseForm();
+  setCourseEditorMode(false);
   document.getElementById('api-search-q').value='';
   renderCourses();
   populatePresetDropdown();
 });
+
+document.getElementById('cancelEditCourseBtn').addEventListener('click', ()=>{
+  editingCourseId = null;
+  clearCourseForm();
+  setCourseEditorMode(false);
+});
+
 document.getElementById('coursesList').addEventListener('click', async e=>{
+  const editBtn = e.target.closest('button[data-kind="course-edit"]');
+  if(editBtn){
+    const c = courses.find(x=>x.id===editBtn.dataset.id);
+    if(c){
+      document.querySelector('nav button[data-tab="courses"]')?.click();
+      loadCourseIntoForm(c);
+    }
+    return;
+  }
   const btn = e.target.closest('button.del[data-kind="course"]');
   if(!btn) return;
+  if(!confirm('Delete this course from your book?')) return;
   courses = courses.filter(c=>c.id!==btn.dataset.id);
+  if(editingCourseId === btn.dataset.id){
+    editingCourseId = null;
+    clearCourseForm();
+    setCourseEditorMode(false);
+  }
   await saveList('courses', courses);
   renderCourses();
   populatePresetDropdown();
