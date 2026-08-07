@@ -130,9 +130,80 @@ it in place. "Cancel edit" on either form backs out without saving.
 
 
 This only works in the GitHub-hosted version — the Claude-artifact version can't
-reach external APIs, so course lookup and GPS will just show a "couldn't reach"
-message there. Everything else in this app (rounds, stats, bag, journal) works
-the same in both.
+reach external APIs, so the OpenGolfAPI lookup and course-search will just show
+a "couldn't reach" message there. GPS itself works in both (see below).
+
+## GPS fallback: save your own green locations
+
+OpenGolfAPI's green-boundary coverage is uneven — plenty of courses (especially
+smaller regional ones) just don't have that data published yet. Rather than
+depend on it, GPS now builds its own database as you play:
+
+- **"Save my current spot as this hole's green"** (Play tab) — stand near or on
+  the green, tap it once, and that exact spot is saved for that course and
+  hole, forever. No internet needed after that — it's stored the same way as
+  everything else.
+- **"Get distance"** checks in this order: your own saved spot first (if you
+  have one), then OpenGolfAPI (if the course was looked up and has coverage),
+  then tells you plainly if neither exists yet — with a nudge to just save one.
+- This works for **any course**, including the 7 pre-loaded regulars — you
+  don't need to look a course up via OpenGolfAPI at all for this to work.
+- The Courses tab now shows how many of a course's 18 greens you've personally
+  saved, so you can see coverage build up round by round.
+
+Practically: the first time at a course, GPS might say "no data yet" on most
+holes. Tap "save" once per hole as you play it, and every round after that,
+it's instant and doesn't touch the network at all.
+
+## Fixed: deleted defaults coming back
+
+The app used to reseed the 7 default courses (and the Ping i15 bag) any time
+that list was *empty* — meant for "first time ever opening this," but it
+couldn't tell that apart from "you just deleted everything on purpose." So
+deleting all your courses to clean up duplicates, then refreshing, silently
+brought the old no-yardage defaults right back.
+
+Fixed with a one-time flag: seeding now only ever happens once, the very first
+time your account is used. After that, an empty list stays empty no matter how
+many times you refresh — delete really means delete.
+
+**This matters for tomorrow's migration**: when you sign into the new Firebase
+version for the first time, it's a brand-new account with nothing in it yet —
+that first login is when the one-time seeding happens (Ping i15 bag only —
+see below, courses are no longer auto-seeded at all). Restore your backup
+*after* that first sign-in, not before, so you don't end up with the seeded
+bag sitting alongside a restored one as duplicates.
+
+## Built-in course presets removed entirely
+
+The 7 pre-loaded regulars (and the silent fallback data behind them) are gone.
+This was the real root of the dropdown/yardage confusion — even after courses
+were deleted from your list, a hardcoded copy of their names and par data was
+still baked into the code as a fallback, so they kept reappearing in the
+Rounds/Play dropdown no matter what you did in the Courses tab.
+
+Now: **the Courses tab is the only source of truth.** Nothing auto-appears on
+first login, nothing falls back to hidden data, and deleting a course removes
+it everywhere, permanently — the dropdown is built directly from whatever's
+actually in your list.
+
+**One consequence worth knowing**: only courses with 18-hole par data show up
+in the Rounds/Play quick-load dropdown, since there'd be nothing to load
+otherwise. "Look up a course" fills that in automatically. If you add a course
+manually instead, there are now two optional fields — **Par** and **Yardage**,
+each 18 comma-separated numbers (e.g. `4,4,3,5,4,4,4,3,5,4,4,3,5,4,4,4,3,5`) —
+so a manually-added course can show up in the dropdown too. Re-entering a name
+you've already saved updates that course rather than duplicating it, so this
+also works for retroactively adding par to a course you added before this
+existed.
+
+**To get a clean slate**, once you're signed into the new version: open the
+Courses tab and delete anything left over from before (any stale copies with
+no yardage set). Then re-add each course either by searching for it in **Look
+up a course** (gets you real par, yardage, rating, and slope automatically) or
+by typing it in manually. Takes a couple minutes once, and after that the
+dropdown will only ever show exactly what you've chosen to keep.
+
 
 ## Hole yardages
 
