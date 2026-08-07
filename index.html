@@ -287,7 +287,7 @@
         <div class="field">
           <label>Quick-load a course (fills in par)</label>
           <select id="pl-preset">
-            <option value="">— Select a regular —</option>
+            <option value="">— Select a saved course —</option>
           </select>
         </div>
       </div>
@@ -367,7 +367,7 @@
         <div class="field">
           <label>Quick-load a course (fills in par)</label>
           <select id="r-preset">
-            <option value="">— Select a regular —</option>
+            <option value="">— Select a saved course —</option>
           </select>
         </div>
       </div>
@@ -654,15 +654,10 @@ onAuthStateChanged(auth, async user=>{
 });
 
 // ---------- course presets (real par data, hole 1-18) ----------
-const COURSE_PRESETS = {
-  "Pine Ridge Golf Club": {par:[5,4,4,3,4,4,4,5,4, 3,5,4,4,4,3,4,3,5], rating:70.2, slope:121},
-  "Laurelwood Golf Course": {par:[5,4,3,4,4,3,4,3,5, 5,4,3,4,4,3,4,3,5], rating:66.2, slope:117},
-  "Oakway Golf Course": {par:[4,3,3,3,3,4,3,4,3, 4,3,4,3,3,4,3,4,3], rating:58.6, slope:91},
-  "Eugene Country Club": {par:[4,3,4,4,3,5,3,5,4, 4,4,3,5,4,4,5,4,4], rating:71.3, slope:136},
-  "Tokatee Golf Club": {par:[4,4,5,3,4,5,4,3,4, 4,3,5,4,4,4,5,3,4], rating:68.3, slope:116},
-  "Sandpines Golf Links": {par:[4,4,5,4,3,4,5,3,4, 4,3,5,4,4,4,4,3,5], rating:70.4, slope:122},
-  "Emerald Valley Golf Club": {par:[4,3,5,4,3,4,5,4,4, 4,3,4,5,4,4,4,3,5], rating:65.6, slope:115}
-};
+// No built-in course presets anymore — every course lives only in your
+// Courses tab, added either manually or via "Look up a course." Nothing
+// auto-appears, and deleting a course actually removes it, permanently.
+const COURSE_PRESETS = {};
 
 // ---------- utilities ----------
 const todayISO = () => new Date().toISOString().slice(0,10);
@@ -708,11 +703,17 @@ document.getElementById('tabs').addEventListener('click', e=>{
 // ---------- preset dropdown ----------
 function getCoursePresetMap(){
   const map = {};
-  Object.entries(COURSE_PRESETS).forEach(([name,p])=>{ map[name] = p; });
   courses.forEach(c=>{
-    if(Array.isArray(c.par) && c.par.length===18){
-      map[c.name] = {par: c.par, yardage: c.yardage||null, rating: c.rating, slope: c.slope, apiCourseId: c.apiCourseId || null};
-    }
+    const preset = COURSE_PRESETS[c.name] || null;
+    const par = (Array.isArray(c.par) && c.par.length===18) ? c.par : (preset ? preset.par : null);
+    if(!par) return; // no par data anywhere for this course — nothing to quick-load
+    map[c.name] = {
+      par,
+      yardage: (Array.isArray(c.yardage) && c.yardage.some(y=>y)) ? c.yardage : (preset ? preset.yardage : null) || null,
+      rating: c.rating!=null ? c.rating : (preset ? preset.rating : null),
+      slope: c.slope!=null ? c.slope : (preset ? preset.slope : null),
+      apiCourseId: c.apiCourseId || null
+    };
   });
   return map;
 }
@@ -1979,7 +1980,6 @@ async function init(){
   ]);
 
   const bagSeeded = await loadFlag('bagSeeded');
-  const coursesSeeded = await loadFlag('coursesSeeded');
 
   // Seed the bag with the current Ping i15 set — but only the very first time
   // this account is ever used, never again after that (even if you later
@@ -2000,14 +2000,8 @@ async function init(){
   }
   if(!bagSeeded) await saveFlag('bagSeeded', true);
 
-  // Same one-time rule for the course book.
-  if(courses.length===0 && !coursesSeeded){
-    courses = Object.entries(COURSE_PRESETS).map(([name,preset])=>({
-      id: uid(), name, rating: preset.rating, slope: preset.slope, notes: ''
-    }));
-    await saveList('courses', courses);
-  }
-  if(!coursesSeeded) await saveFlag('coursesSeeded', true);
+  // No course seeding — the Courses tab starts empty and only ever contains
+  // what you add yourself, manually or via "Look up a course."
 
   renderRounds();
   renderPractice();
