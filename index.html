@@ -514,8 +514,12 @@
         <div class="field"><label>Course rating (optional — powers handicap index)</label><input type="number" step="0.1" id="co-rating" placeholder="e.g. 70.2"></div>
         <div class="field"><label>Slope rating (optional)</label><input type="number" id="co-slope" placeholder="e.g. 121"></div>
       </div>
+      <div class="hint" style="margin-top:0;">Only courses with par data show up in the Rounds/Play quick-load dropdown — "Look up a course" above fills this in automatically, or enter it yourself below.</div>
+      <div class="field"><label>Par, 18 holes comma-separated (optional)</label><input type="text" id="co-par" placeholder="4,4,3,5,4,4,4,3,5,4,4,3,5,4,4,4,3,5"></div>
+      <div class="field"><label>Yardage, 18 holes comma-separated (optional)</label><input type="text" id="co-yardage" placeholder="380,410,175,520,..."></div>
       <div class="field"><label>Strategy / quirks / holes to remember</label><textarea id="co-notes" placeholder="e.g. #7 plays long, favor left off the tee on #12, greens break toward the river..."></textarea></div>
       <button class="btn" id="saveCourseBtn">Save course</button>
+      <div class="hint" style="margin-top:8px;margin-bottom:0;">Tip: re-entering a course name you've already saved updates that course instead of duplicating it — handy for adding par to a course you added before this field existed.</div>
     </div>
     <div class="card">
       <h2>Course book</h2>
@@ -1830,14 +1834,36 @@ document.getElementById('gpsSaveBtn').addEventListener('click', ()=>{
   }, {enableHighAccuracy:true, timeout:8000});
 });
 
+function parseCsvNumbers(str, expectedLen){
+  const trimmed = (str||'').trim();
+  if(!trimmed) return null;
+  const parts = trimmed.split(',').map(s=>s.trim()).filter(s=>s.length);
+  if(parts.length !== expectedLen) return { error: `Expected ${expectedLen} numbers, got ${parts.length}.` };
+  const nums = parts.map(Number);
+  if(nums.some(n=>isNaN(n))) return { error: 'One or more values are not numbers.' };
+  return { values: nums };
+}
+
 document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
   const name = document.getElementById('co-name').value.trim();
   if(!name){ alert('Name the course.'); return; }
   const newRating = document.getElementById('co-rating').value ? +document.getElementById('co-rating').value : null;
   const newSlope = document.getElementById('co-slope').value ? +document.getElementById('co-slope').value : null;
   const newNotes = document.getElementById('co-notes').value.trim();
+
   const extra = (pendingApiCourse && pendingApiCourse.name===name)
     ? { par: pendingApiCourse.par, yardage: pendingApiCourse.yardage, apiCourseId: pendingApiCourse.apiCourseId } : {};
+
+  const parResult = parseCsvNumbers(document.getElementById('co-par').value, 18);
+  if(parResult){
+    if(parResult.error) alert('Par: ' + parResult.error + ' — course will still save, just without par data.');
+    else extra.par = parResult.values; // manual entry overrides an API par if both were provided
+  }
+  const ydResult = parseCsvNumbers(document.getElementById('co-yardage').value, 18);
+  if(ydResult){
+    if(ydResult.error) alert('Yardage: ' + ydResult.error + ' — course will still save, just without yardage data.');
+    else extra.yardage = ydResult.values;
+  }
 
   const existingIdx = courses.findIndex(c=>c.name.trim().toLowerCase()===name.toLowerCase());
   if(existingIdx>=0){
@@ -1860,6 +1886,8 @@ document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
   document.getElementById('co-name').value='';
   document.getElementById('co-rating').value='';
   document.getElementById('co-slope').value='';
+  document.getElementById('co-par').value='';
+  document.getElementById('co-yardage').value='';
   document.getElementById('co-notes').value='';
   document.getElementById('apiSearchResults').innerHTML='';
   document.getElementById('api-search-q').value='';
