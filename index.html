@@ -2559,6 +2559,23 @@ let mapEditor = {
   clickHandler: null
 };
 
+function destroyGreenMap(){
+  if(mapEditor.map){
+    try{
+      Object.values(mapEditor.markers).forEach(m=>{
+        try{ mapEditor.map.removeLayer(m); }catch(e){}
+      });
+      mapEditor.map.off();
+      mapEditor.map.remove();
+    }catch(e){}
+  }
+  mapEditor.map = null;
+  mapEditor.markers = {};
+  mapEditor.clickHandler = null;
+  const el = document.getElementById('greenMap');
+  if(el) el.innerHTML = '';
+}
+
 function openGreenMapEditor(courseId){
   if(typeof L === 'undefined'){
     alert('Map library failed to load. Check your connection and try again.');
@@ -2566,6 +2583,10 @@ function openGreenMapEditor(courseId){
   }
   const course = courses.find(c=>c.id===courseId);
   if(!course) return;
+
+  // Always reset so switching courses never reuses the previous pins/view
+  destroyGreenMap();
+
   mapEditor.courseId = courseId;
   mapEditor.hole = 1;
   mapEditor.greens = Array.isArray(course.greens)
@@ -2588,26 +2609,33 @@ function openGreenMapEditor(courseId){
 
   setTimeout(()=>{
     const firstGreen = mapEditor.greens.find(g=>g);
-    const center = (course.lat != null && course.lng != null)
-      ? [course.lat, course.lng]
-      : (firstGreen ? [firstGreen.lat, firstGreen.lng] : [44.05, -123.0]);
-    if(!mapEditor.map){
-      mapEditor.map = L.map('greenMap', { scrollWheelZoom: true }).setView(center, 16);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '&copy; OpenStreetMap'
-      }).addTo(mapEditor.map);
-      mapEditor.clickHandler = (e)=>{
-        placeGreenPin(mapEditor.hole, e.latlng.lat, e.latlng.lng);
-      };
-      mapEditor.map.on('click', mapEditor.clickHandler);
-    } else {
-      mapEditor.map.invalidateSize();
-      mapEditor.map.setView(center, mapEditor.map.getZoom() || 16);
+    let center = [44.05, -123.0];
+    let zoom = 15;
+    if(course.lat != null && course.lng != null){
+      center = [course.lat, course.lng];
+      zoom = 16;
+    }else if(firstGreen){
+      center = [firstGreen.lat, firstGreen.lng];
+      zoom = 16;
     }
+
+    mapEditor.map = L.map('greenMap', { scrollWheelZoom: true }).setView(center, zoom);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(mapEditor.map);
+    mapEditor.clickHandler = (e)=>{
+      placeGreenPin(mapEditor.hole, e.latlng.lat, e.latlng.lng);
+    };
+    mapEditor.map.on('click', mapEditor.clickHandler);
     refreshMapMarkers();
+    // Fit all existing pins for this course if any
+    const pts = mapEditor.greens.filter(Boolean).map(g=>[g.lat,g.lng]);
+    if(pts.length >= 2){
+      try{ mapEditor.map.fitBounds(pts, { padding:[30,30], maxZoom:17 }); }catch(e){}
+    }
     updateMapHint();
-  }, 50);
+  }, 80);
 }
 
 function closeGreenMapEditor(){
@@ -2615,6 +2643,8 @@ function closeGreenMapEditor(){
   modal.classList.remove('open');
   modal.setAttribute('aria-hidden','true');
   mapEditor.courseId = null;
+  // Keep map destroyed so the next open is always clean
+  destroyGreenMap();
 }
 
 function setMapHole(n){
