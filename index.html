@@ -371,6 +371,7 @@
       <div id="greenMap"></div>
       <div class="map-modal-actions">
         <button type="button" class="btn small" id="greenMapClearHoleBtn">Clear this hole</button>
+        <button type="button" class="btn outline small" id="greenMapClearAllBtn">Clear all pins</button>
         <button type="button" class="btn" id="greenMapSaveBtn">Save greens</button>
         <p class="hint" id="greenMapHint">Select hole 1, then tap the green on the map.</p>
       </div>
@@ -2001,7 +2002,7 @@ function renderCourses(){
         ${c.notes?`<div class="notes">${escapeHtml(c.notes)}</div>`:''}
       </div>
       <div>
-        <button class="edit-btn" data-id="${c.id}" data-kind="course-map" type="button">map greens</button>
+        <button class="edit-btn" data-id="${c.id}" data-name="${escapeHtml(c.name)}" data-kind="course-map" type="button">map greens</button>
         <button class="edit-btn" data-id="${c.id}" data-kind="course-edit" type="button">edit</button>
         <button class="del" data-id="${c.id}" data-kind="course">delete</button>
       </div>
@@ -2522,7 +2523,7 @@ document.getElementById('cancelEditCourseBtn').addEventListener('click', ()=>{
 document.getElementById('coursesList').addEventListener('click', async e=>{
   const mapBtn = e.target.closest('button[data-kind="course-map"]');
   if(mapBtn){
-    openGreenMapEditor(mapBtn.dataset.id);
+    openGreenMapEditor(mapBtn.dataset.id, mapBtn.dataset.name || '');
     return;
   }
   const editBtn = e.target.closest('button[data-kind="course-edit"]');
@@ -2582,16 +2583,20 @@ function destroyGreenMap(){
   }
 }
 
-function openGreenMapEditor(courseId){
+function openGreenMapEditor(courseId, courseName){
   if(typeof L === 'undefined'){
     alert('Map library failed to load. Check your connection and try again.');
     return;
   }
-  const course = courses.find(c=>c.id===courseId);
+  let course = courses.find(c=>c.id===courseId);
+  if(!course && courseName){
+    course = courses.find(c=>c.name===courseName);
+  }
   if(!course){
     alert('Could not find that course.');
     return;
   }
+  courseId = course.id;
 
   // Bump generation so any in-flight init from a previous open is ignored
   const gen = ++mapEditor.gen;
@@ -2606,11 +2611,12 @@ function openGreenMapEditor(courseId){
   while(mapEditor.greens.length < 18) mapEditor.greens.push(null);
   if(mapEditor.greens.length > 18) mapEditor.greens = mapEditor.greens.slice(0,18);
 
-  document.getElementById('greenMapTitle').textContent = course.name;
+  document.getElementById('greenMapTitle').textContent = 'Greens: ' + course.name;
   const nSaved = mapEditor.greens.filter(Boolean).length;
   document.getElementById('greenMapSub').textContent =
-    nSaved ? `${nSaved}/18 greens on file for this course. Select a hole, then tap the map.`
-           : 'No greens saved for this course yet. Select a hole, then tap its green on the map.';
+    nSaved
+      ? `${nSaved}/18 pins saved on “${course.name}”. Select a hole to edit, or Clear all pins to start over.`
+      : `No pins on “${course.name}” yet. Select a hole, then tap its green.`;
 
   const modal = document.getElementById('greenMapModal');
   modal.classList.add('open');
@@ -2745,7 +2751,8 @@ document.getElementById('greenMapSaveBtn')?.addEventListener('click', async ()=>
   const courseId = mapEditor.courseId;
   const course = courses.find(c=>c.id===courseId);
   if(!course) return;
-  // Fresh array — never share references across courses
+  const n = mapEditor.greens.filter(Boolean).length;
+  if(!confirm(`Save ${n} green pin(s) to “${course.name}”?`)) return;
   course.greens = mapEditor.greens.map(g => g ? { lat:+g.lat, lng:+g.lng, savedAt:g.savedAt||Date.now(), source:g.source||'map' } : null);
   const first = course.greens.find(Boolean);
   if(first && (course.lat == null || course.lng == null)){
@@ -2756,6 +2763,20 @@ document.getElementById('greenMapSaveBtn')?.addEventListener('click', async ()=>
   renderCourses();
   if(typeof updateGpsAvailability === 'function') updateGpsAvailability();
   closeGreenMapEditor();
+});
+
+document.getElementById('greenMapClearAllBtn')?.addEventListener('click', ()=>{
+  if(!confirm('Remove every green pin for this course? (Then hit Save greens to make it permanent.)')) return;
+  mapEditor.greens = Array(18).fill(null);
+  refreshMapMarkers();
+  document.querySelectorAll('#greenMapHoles .map-hole-btn').forEach(btn=>{
+    btn.classList.remove('has');
+  });
+  updateMapHint();
+  const course = courses.find(c=>c.id===mapEditor.courseId);
+  const name = course ? course.name : 'this course';
+  document.getElementById('greenMapSub').textContent =
+    `No pins on “${name}” yet. Select a hole, then tap its green.`;
 });
 
 // ---------- NOTES ----------
