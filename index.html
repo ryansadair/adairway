@@ -710,6 +710,7 @@
         <div class="field"><label>Course rating (optional — powers handicap index)</label><input type="number" step="0.1" id="co-rating" placeholder="e.g. 70.2"></div>
         <div class="field"><label>Slope rating (optional)</label><input type="number" id="co-slope" placeholder="e.g. 121"></div>
       </div>
+      <div class="field"><label>Course elevation (ft, optional — club advice)</label><input type="number" id="co-elevation" placeholder="e.g. 450" min="0" max="14000"></div>
       <div class="hint" style="margin-top:0;">Only courses with par data show up in the Rounds/Play quick-load dropdown — "Look up a course" above fills this in automatically, or enter it yourself below.</div>
       <div class="field"><label>Par, 18 holes comma-separated (optional)</label><input type="text" id="co-par" placeholder="4,4,3,5,4,4,4,3,5,4,4,3,5,4,4,4,3,5"></div>
       <div class="field"><label>Yardage, 18 holes comma-separated (optional)</label><input type="text" id="co-yardage" placeholder="380,410,175,520,..."></div>
@@ -2235,7 +2236,7 @@ function renderCourses(){
     return `<div class="round-item">
       <div style="flex:1">
         <div class="title">${escapeHtml(c.name)} ${isDup?'<span style="color:var(--flag);font-family:\'IBM Plex Mono\',monospace;font-size:10.5px;">⚠ duplicate name — delete one</span>':''}</div>
-        <div class="meta">${(c.rating&&c.slope) ? `Rating ${c.rating} / Slope ${c.slope}` : 'Rating/slope not set — handicap index will skip this course'}</div>
+        <div class="meta">${(c.rating&&c.slope) ? `Rating ${c.rating} / Slope ${c.slope}` : 'Rating/slope not set — handicap index will skip this course'}${c.elevationFt!=null ? ` · Elev ${c.elevationFt} ft` : ''}</div>
         <div class="meta">Par: ${hasPar?'set':'not set'} · Yardage: ${hasYardage?'set':'not available'} · GPS: ${gpsLabel}</div>
         ${c.notes?`<div class="notes">${escapeHtml(c.notes)}</div>`:''}
       </div>
@@ -2508,6 +2509,55 @@ function getOrCreateCourseByName(name){
   }
   return c;
 }
+
+// Club recommendation: bag distances + optional altitude (~2%/1000 ft more carry)
+function altitudeCarryFactor(elevFt){
+  if(elevFt == null || isNaN(+elevFt)) return 1;
+  return 1 + 0.02 * (+elevFt / 1000);
+}
+function recommendClub(yards, course){
+  if(yards == null || !(yards > 0)) return null;
+  const clubs = bag
+    .filter(c => (c.status||'active') !== 'retired' && c.distance != null && +c.distance > 0)
+    .map(c => ({ name: c.name, model: c.model||'', d: +c.distance }))
+    .sort((a,b) => a.d - b.d);
+  if(!clubs.length) return null;
+  const elev = course && course.elevationFt != null ? +course.elevationFt : null;
+  const factor = altitudeCarryFactor(elev);
+  // Plays-like yardage (shorter at altitude). Round down preference = club <= playsLike
+  const playsLike = yards / factor;
+  let pick = null;
+  for(const c of clubs){
+    if(c.d <= playsLike + 0.5) pick = c; // slight float tolerance
+  }
+  if(!pick) pick = clubs[0]; // shorter than every club → use shortest
+  return {
+    club: pick,
+    yards: Math.round(yards),
+    playsLike: Math.round(playsLike),
+    elev: elev != null ? Math.round(elev) : null,
+    factor
+  };
+}
+function formatClubAdvice(rec){
+  if(!rec) return '';
+  const label = rec.club.model ? `${rec.club.name} (${rec.club.model})` : rec.club.name;
+  let s = `Suggested: ${label} · stock ${rec.club.d} yds`;
+  if(rec.elev != null && rec.elev >= 500){
+    s += ` · plays ~${rec.playsLike} yds at ${rec.elev} ft`;
+  }
+  s += ' (errs short)';
+  return s;
+}
+function showDistanceWithClub(resultEl, yards, course, sourceLabel){
+  const rec = recommendClub(yards, course);
+  const main = `≈ ${Math.round(yards)} yds to green${sourceLabel ? ' ('+sourceLabel+')' : ''}`;
+  const advice = formatClubAdvice(rec);
+  resultEl.innerHTML = advice
+    ? `${main}<br><span style="color:var(--fairway-deep);font-weight:600;">${advice}</span>`
+    : main + (bag.some(c=>c.distance) ? '' : '<br><span class="hint">Add club distances in Bag for a suggestion.</span>');
+}
+
 function updateGpsAvailability(){
   const name = document.getElementById('pl-course').value;
   const c = getCourseByName(name);
@@ -2569,7 +2619,7 @@ document.getElementById('gpsBtn').addEventListener('click', ()=>{
     const manual = course && Array.isArray(course.greens) && course.greens[holeNum-1];
     if(manual){
       const yds = distanceYards(latitude, longitude, manual.lat, manual.lng);
-      resultEl.textContent = `≈ ${Math.round(yds)} yds to green (your saved spot)`;
+      showDistanceWithClub(resultEl, yds, course, 'your saved spot');
       return;
     }
 
@@ -2580,7 +2630,7 @@ document.getElementById('gpsBtn').addEventListener('click', ()=>{
         const {center, attempts} = await fetchGreenCenter(course.apiCourseId, holeNum);
         if(center){
           const yds = distanceYards(latitude, longitude, center.lat, center.lng);
-          resultEl.textContent = `≈ ${Math.round(yds)} yds to green center (via OpenGolfAPI)`;
+          showDistanceWithClub(resultEl, yds, course, 'OpenGolfAPI');
           return;
         }
       }catch(err){ /* fall through to the manual-save prompt below */ }
@@ -2635,6 +2685,7 @@ function clearCourseForm(){
   document.getElementById('co-name').value='';
   document.getElementById('co-rating').value='';
   document.getElementById('co-slope').value='';
+  document.getElementById('co-elevation').value='';
   document.getElementById('co-par').value='';
   document.getElementById('co-yardage').value='';
   document.getElementById('co-notes').value='';
@@ -2646,6 +2697,7 @@ function loadCourseIntoForm(c){
   document.getElementById('co-name').value = c.name || '';
   document.getElementById('co-rating').value = c.rating != null ? c.rating : '';
   document.getElementById('co-slope').value = c.slope != null ? c.slope : '';
+  document.getElementById('co-elevation').value = c.elevationFt != null ? c.elevationFt : '';
   document.getElementById('co-par').value = Array.isArray(c.par) ? c.par.join(',') : '';
   document.getElementById('co-yardage').value = Array.isArray(c.yardage)
     ? c.yardage.map(y=>y==null?'':y).join(',')
@@ -2666,6 +2718,8 @@ document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
   if(!name){ alert('Name the course.'); return; }
   const newRating = document.getElementById('co-rating').value ? +document.getElementById('co-rating').value : null;
   const newSlope = document.getElementById('co-slope').value ? +document.getElementById('co-slope').value : null;
+  const elevRaw = document.getElementById('co-elevation').value;
+  const newElev = elevRaw !== '' && !isNaN(+elevRaw) ? +elevRaw : null;
   const newNotes = document.getElementById('co-notes').value.trim();
 
   const extra = {};
@@ -2704,6 +2758,7 @@ document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
         name,
         rating: newRating,
         slope: newSlope,
+        elevationFt: newElev,
         notes: newNotes,
         ...(extra.par ? {par: extra.par} : {}),
         ...(extra.yardage ? {yardage: extra.yardage} : {}),
@@ -2727,6 +2782,7 @@ document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
         name,
         rating: newRating!=null ? newRating : existing.rating,
         slope: newSlope!=null ? newSlope : existing.slope,
+        elevationFt: newElev!=null ? newElev : existing.elevationFt,
         notes: newNotes ? newNotes : existing.notes,
         ...(extra.par ? {par: extra.par} : {}),
         ...(extra.yardage ? {yardage: extra.yardage} : {}),
@@ -2740,7 +2796,7 @@ document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
         ...(extra.preferredTee ? {preferredTee: extra.preferredTee} : {})
       };
     }else{
-      courses.push({ id: uid(), name, rating: newRating, slope: newSlope, notes: newNotes, ...extra });
+      courses.push({ id: uid(), name, rating: newRating, slope: newSlope, elevationFt: newElev, notes: newNotes, ...extra });
     }
   }
 
@@ -3173,6 +3229,44 @@ async function init(){
     }
     seenIds.add(c.id);
   });
+
+
+  // Known elevations (ft) for common courses — only fill if missing
+  const KNOWN_ELEV = {
+    'pine ridge golf club': 486,
+    'pine ridge': 486,
+    'laurelwood golf course': 446,
+    'laurelwood': 446,
+    'oakway golf course': 427,
+    'oakway': 427,
+    'eugene country club': 413,
+    'tokatee golf club': 1434,
+    'tokatee': 1434,
+    'langdon farms golf club': 184,
+    'langdon farms': 184,
+    'sandpines golf links': 112,
+    'sandpines': 112,
+    'emerald valley golf club': 531,
+    'emerald valley': 531
+  };
+  let elevUpdated = false;
+  courses.forEach(c=>{
+    if(c.elevationFt != null) return;
+    const key = (c.name||'').trim().toLowerCase();
+    if(KNOWN_ELEV[key] != null){
+      c.elevationFt = KNOWN_ELEV[key];
+      elevUpdated = true;
+    } else {
+      for(const [k,v] of Object.entries(KNOWN_ELEV)){
+        if(key.includes(k) || k.includes(key)){
+          c.elevationFt = v;
+          elevUpdated = true;
+          break;
+        }
+      }
+    }
+  });
+  if(elevUpdated) await saveList('courses', courses);
 
   populatePresetDropdown();
   renderRounds();
