@@ -2727,7 +2727,15 @@ document.getElementById('importFile').addEventListener('change', async (e)=>{
     saveList('rounds', rounds), saveList('practice', practice), saveList('bag', bag),
     saveList('courses', courses), saveList('notes', notes)
   ]);
+  courses.forEach(c=>{
+    if(Array.isArray(c.par) && c.par.length===18){
+      c.par = c.par.map(n => +n || 4);
+    }
+  });
+  populatePresetDropdown();
   renderRounds(); renderPractice(); renderBag(); renderCourses(); renderNotes();
+  updateCourseHandicapDisplay('pl');
+  updateCourseHandicapDisplay('r');
   e.target.value='';
   alert('Backup restored.');
 });
@@ -2784,6 +2792,14 @@ async function init(){
   // No course seeding — the Courses tab starts empty and only ever contains
   // what you add yourself, manually or via "Look up a course."
 
+  // Normalize par arrays that may have been stored oddly
+  courses.forEach(c=>{
+    if(Array.isArray(c.par) && c.par.length===18){
+      c.par = c.par.map(n => +n || 4);
+    }
+  });
+
+  populatePresetDropdown();
   renderRounds();
   renderPractice();
   renderBag();
