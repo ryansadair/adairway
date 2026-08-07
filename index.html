@@ -342,7 +342,8 @@
         <div class="stat-name" style="text-align:center;">Distance to green</div>
         <div style="text-align:center;">
           <button class="btn outline" id="gpsBtn" type="button">📍 Get distance</button>
-          <div id="gpsResult" class="hint" style="margin-top:8px;margin-bottom:0;"></div>
+          <div id="gpsResult" class="hint" style="margin-top:8px;margin-bottom:8px;"></div>
+          <button class="del" id="gpsSaveBtn" type="button">Save my current spot as this hole's green</button>
         </div>
       </div>
 
@@ -1576,13 +1577,17 @@ function renderCourses(){
   list.innerHTML = courses.map(c=>{
     const hasPar = Array.isArray(c.par) && c.par.length===18;
     const hasYardage = Array.isArray(c.yardage) && c.yardage.some(y=>y);
-    const hasGps = !!c.apiCourseId;
+    const apiGps = !!c.apiCourseId;
+    const savedGreens = Array.isArray(c.greens) ? c.greens.filter(Boolean).length : 0;
+    const gpsLabel = savedGreens>0
+      ? `${savedGreens}/18 greens saved by you`
+      : apiGps ? 'OpenGolfAPI enabled (coverage varies)' : 'not set up yet';
     const isDup = nameCounts[c.name.trim().toLowerCase()] > 1;
     return `<div class="round-item">
       <div style="flex:1">
         <div class="title">${escapeHtml(c.name)} ${isDup?'<span style="color:var(--flag);font-family:\'IBM Plex Mono\',monospace;font-size:10.5px;">⚠ duplicate name — delete one</span>':''}</div>
         <div class="meta">${(c.rating&&c.slope) ? `Rating ${c.rating} / Slope ${c.slope}` : 'Rating/slope not set — handicap index will skip this course'}</div>
-        <div class="meta">Par: ${hasPar?'set':'not set'} · Yardage: ${hasYardage?'set':'not available'} · GPS: ${hasGps?'enabled':'not looked up'}</div>
+        <div class="meta">Par: ${hasPar?'set':'not set'} · Yardage: ${hasYardage?'set':'not available'} · GPS: ${gpsLabel}</div>
         ${c.notes?`<div class="notes">${escapeHtml(c.notes)}</div>`:''}
       </div>
       <button class="del" data-id="${c.id}" data-kind="course">delete</button>
@@ -1704,15 +1709,32 @@ function geoJsonCenter(geom){
   }
   return null;
 }
+function getCourseByName(name){
+  name = (name||'').trim().toLowerCase();
+  if(!name) return null;
+  return courses.find(c=>c.name.trim().toLowerCase()===name) || null;
+}
+function getOrCreateCourseByName(name){
+  name = (name||'').trim();
+  if(!name) return null;
+  let c = getCourseByName(name);
+  if(!c){
+    c = { id: uid(), name, rating:null, slope:null, notes:'' };
+    courses.push(c);
+  }
+  return c;
+}
 function updateGpsAvailability(){
   const name = document.getElementById('pl-course').value;
-  const c = courses.find(x=>x.name.trim().toLowerCase()===String(name).trim().toLowerCase());
+  const c = getCourseByName(name);
   currentApiCourseId = (c && c.apiCourseId) ? c.apiCourseId : null;
   const btn = document.getElementById('gpsBtn');
   const result = document.getElementById('gpsResult');
   if(!btn) return;
-  if(currentApiCourseId){ btn.disabled = false; result.textContent = ''; }
-  else { btn.disabled = true; result.textContent = 'Look this course up via OpenGolfAPI (Courses tab) to enable GPS.'; }
+  btn.disabled = false; // GPS always works now — falls back to a spot you save yourself
+  const holeNum = playHoles[currentHole] ? playHoles[currentHole].hole : null;
+  const hasManual = c && Array.isArray(c.greens) && holeNum && c.greens[holeNum-1];
+  result.textContent = hasManual ? 'You have a saved green location for this hole.' : '';
 }
 function extractFeatureArray(data){
   if(Array.isArray(data)) return data;
@@ -1749,33 +1771,59 @@ async function fetchGreenCenter(courseId, holeNum){
   return {center:null, attempts};
 }
 document.getElementById('gpsBtn').addEventListener('click', ()=>{
-  if(!currentApiCourseId) return;
   const resultEl = document.getElementById('gpsResult');
   if(!navigator.geolocation){ resultEl.textContent = 'Geolocation not supported in this browser.'; return; }
+  const courseName = document.getElementById('pl-course').value;
   resultEl.textContent = 'Getting your location…';
   navigator.geolocation.getCurrentPosition(async pos=>{
     const {latitude, longitude} = pos.coords;
     const holeNum = playHoles[currentHole].hole;
-    resultEl.textContent = 'Looking up the green…';
-    try{
-      const {center, attempts} = await fetchGreenCenter(currentApiCourseId, holeNum);
-      if(!center){
-        const anyOk = attempts.some(a=>a.status && a.status<300);
-        const anyRouteError = attempts.some(a=>a.status && a.status>=400);
-        if(anyOk){
-          resultEl.textContent = `No green published for hole ${holeNum} yet (coverage gap — community-maintained data). Open your browser console for details.`;
-        }else if(anyRouteError){
-          resultEl.textContent = `OpenGolfAPI returned an error (status ${attempts.find(a=>a.status)?.status}) — this may be a wrong endpoint on my end. Open the browser console (tap ⋮ → More tools → Developer tools → Console on Chrome) and send me what's logged there.`;
-        }else{
-          resultEl.textContent = `Couldn't reach OpenGolfAPI at all — check your connection, or open the browser console and send me what's logged.`;
-        }
-        return;
-      }
-      const yds = distanceYards(latitude, longitude, center.lat, center.lng);
-      resultEl.textContent = `≈ ${Math.round(yds)} yds to green center`;
-    }catch(err){
-      resultEl.textContent = `Couldn't reach OpenGolfAPI (${err.message}).`;
+    const course = getCourseByName(courseName);
+
+    // 1. A spot you saved yourself always wins — it's guaranteed accurate for
+    // how you actually play this hole, and works with zero network calls.
+    const manual = course && Array.isArray(course.greens) && course.greens[holeNum-1];
+    if(manual){
+      const yds = distanceYards(latitude, longitude, manual.lat, manual.lng);
+      resultEl.textContent = `≈ ${Math.round(yds)} yds to green (your saved spot)`;
+      return;
     }
+
+    // 2. Otherwise, try OpenGolfAPI if this course has been looked up there.
+    if(course && course.apiCourseId){
+      resultEl.textContent = 'Looking up the green…';
+      try{
+        const {center, attempts} = await fetchGreenCenter(course.apiCourseId, holeNum);
+        if(center){
+          const yds = distanceYards(latitude, longitude, center.lat, center.lng);
+          resultEl.textContent = `≈ ${Math.round(yds)} yds to green center (via OpenGolfAPI)`;
+          return;
+        }
+      }catch(err){ /* fall through to the manual-save prompt below */ }
+    }
+
+    // 3. No data anywhere yet — prompt to build your own.
+    resultEl.textContent = `No green location on file for hole ${holeNum} yet. Stand near the green and tap "Save my current spot" below — only needs doing once, ever, per hole.`;
+  }, ()=>{
+    resultEl.textContent = 'Location permission denied or unavailable.';
+  }, {enableHighAccuracy:true, timeout:8000});
+});
+
+document.getElementById('gpsSaveBtn').addEventListener('click', ()=>{
+  const resultEl = document.getElementById('gpsResult');
+  if(!navigator.geolocation){ resultEl.textContent = 'Geolocation not supported in this browser.'; return; }
+  const courseName = document.getElementById('pl-course').value;
+  if(!courseName.trim()){ resultEl.textContent = 'Enter a course name above first.'; return; }
+  resultEl.textContent = 'Getting your location…';
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    const {latitude, longitude} = pos.coords;
+    const holeNum = playHoles[currentHole].hole;
+    const course = getOrCreateCourseByName(courseName);
+    if(!Array.isArray(course.greens)) course.greens = Array(18).fill(null);
+    course.greens[holeNum-1] = { lat: latitude, lng: longitude, savedAt: Date.now() };
+    await saveList('courses', courses);
+    populatePresetDropdown();
+    resultEl.textContent = `Saved — hole ${holeNum}'s green is set for ${course.name}. GPS will use this from now on, no internet required.`;
   }, ()=>{
     resultEl.textContent = 'Location permission denied or unavailable.';
   }, {enableHighAccuracy:true, timeout:8000});
@@ -1907,6 +1955,20 @@ document.getElementById('importFile').addEventListener('change', async (e)=>{
   alert('Backup restored.');
 });
 
+// ---------- one-time seeding flag (so deleting everything doesn't bring defaults back) ----------
+async function loadFlag(key){
+  if(!currentUser) return false;
+  try{
+    const snap = await getDoc(doc(db, 'users', currentUser.uid, 'meta', key));
+    return snap.exists() ? !!snap.data().value : false;
+  }catch(e){ return false; }
+}
+async function saveFlag(key, value){
+  if(!currentUser) return false;
+  try{ await setDoc(doc(db, 'users', currentUser.uid, 'meta', key), { value }); return true; }
+  catch(e){ return false; }
+}
+
 // ---------- init ----------
 async function init(){
   populatePresetDropdown();
@@ -1916,8 +1978,13 @@ async function init(){
     loadList('rounds'), loadList('practice'), loadList('bag'), loadList('courses'), loadList('notes')
   ]);
 
-  // Seed the bag with the current Ping i15 set on first run only
-  if(bag.length===0){
+  const bagSeeded = await loadFlag('bagSeeded');
+  const coursesSeeded = await loadFlag('coursesSeeded');
+
+  // Seed the bag with the current Ping i15 set — but only the very first time
+  // this account is ever used, never again after that (even if you later
+  // delete every club — that's a real, intentional empty bag, not "unseeded").
+  if(bag.length===0 && !bagSeeded){
     const clubs = ['3-iron','4-iron','5-iron','6-iron','7-iron','8-iron','9-iron','PW'];
     bag = clubs.map(name=>({
       id: uid(),
@@ -1931,14 +1998,16 @@ async function init(){
     }));
     await saveList('bag', bag);
   }
+  if(!bagSeeded) await saveFlag('bagSeeded', true);
 
-  // Seed course book with the regulars on first run only (empty notes to fill in later)
-  if(courses.length===0){
+  // Same one-time rule for the course book.
+  if(courses.length===0 && !coursesSeeded){
     courses = Object.entries(COURSE_PRESETS).map(([name,preset])=>({
       id: uid(), name, rating: preset.rating, slope: preset.slope, notes: ''
     }));
     await saveList('courses', courses);
   }
+  if(!coursesSeeded) await saveFlag('coursesSeeded', true);
 
   renderRounds();
   renderPractice();
