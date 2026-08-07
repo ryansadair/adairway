@@ -1985,7 +1985,7 @@ function renderCourses(){
   if(courses.length===0){ list.innerHTML = '<div class="empty">No course notes yet.</div>'; return; }
   const nameCounts = {};
   courses.forEach(c=>{ const n=c.name.trim().toLowerCase(); nameCounts[n]=(nameCounts[n]||0)+1; });
-  list.innerHTML = courses.map(c=>{
+  list.innerHTML = courses.map((c, idx)=>{
     const hasPar = Array.isArray(c.par) && c.par.length===18;
     const hasYardage = Array.isArray(c.yardage) && c.yardage.some(y=>y);
     const apiGps = !!c.apiCourseId;
@@ -2002,7 +2002,7 @@ function renderCourses(){
         ${c.notes?`<div class="notes">${escapeHtml(c.notes)}</div>`:''}
       </div>
       <div>
-        <button class="edit-btn" data-id="${c.id}" data-name="${escapeHtml(c.name)}" data-kind="course-map" type="button">map greens</button>
+        <button class="edit-btn" data-idx="${idx}" data-id="${c.id}" data-name="${escapeHtml(c.name)}" data-kind="course-map" type="button">map greens</button>
         <button class="edit-btn" data-id="${c.id}" data-kind="course-edit" type="button">edit</button>
         <button class="del" data-id="${c.id}" data-kind="course">delete</button>
       </div>
@@ -2523,7 +2523,8 @@ document.getElementById('cancelEditCourseBtn').addEventListener('click', ()=>{
 document.getElementById('coursesList').addEventListener('click', async e=>{
   const mapBtn = e.target.closest('button[data-kind="course-map"]');
   if(mapBtn){
-    openGreenMapEditor(mapBtn.dataset.id, mapBtn.dataset.name || '');
+    const idx = mapBtn.dataset.idx !== undefined ? parseInt(mapBtn.dataset.idx, 10) : -1;
+    openGreenMapEditor(mapBtn.dataset.id, mapBtn.dataset.name || '', idx);
     return;
   }
   const editBtn = e.target.closest('button[data-kind="course-edit"]');
@@ -2583,15 +2584,15 @@ function destroyGreenMap(){
   }
 }
 
-function openGreenMapEditor(courseId, courseName){
+function openGreenMapEditor(courseId, courseName, idx){
   if(typeof L === 'undefined'){
     alert('Map library failed to load. Check your connection and try again.');
     return;
   }
-  let course = courses.find(c=>c.id===courseId);
-  if(!course && courseName){
-    course = courses.find(c=>c.name===courseName);
-  }
+  // Prefer the visible list index — guaranteed to match the row you clicked
+  let course = (typeof idx === 'number' && idx >= 0 && idx < courses.length) ? courses[idx] : null;
+  if(!course && courseId) course = courses.find(c=>c.id===courseId);
+  if(!course && courseName) course = courses.find(c=>c.name===courseName);
   if(!course){
     alert('Could not find that course.');
     return;
@@ -2920,7 +2921,8 @@ async function init(){
   // No course seeding — the Courses tab starts empty and only ever contains
   // what you add yourself, manually or via "Look up a course."
 
-  // Normalize par arrays and isolate greens arrays per course
+  // Normalize par arrays, isolate greens, and ensure unique course ids
+  const seenIds = new Set();
   courses.forEach(c=>{
     if(Array.isArray(c.par) && c.par.length===18){
       c.par = c.par.map(n => +n || 4);
@@ -2928,6 +2930,10 @@ async function init(){
     if(Array.isArray(c.greens)){
       c.greens = c.greens.map(g => g ? { lat:+g.lat, lng:+g.lng, savedAt:g.savedAt||null, source:g.source||null } : null);
     }
+    if(!c.id || seenIds.has(c.id)){
+      c.id = uid();
+    }
+    seenIds.add(c.id);
   });
 
   populatePresetDropdown();
