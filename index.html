@@ -493,6 +493,15 @@
       </div>
 
       <div class="stat-block">
+        <div class="stat-name" style="text-align:center;">Chips</div>
+        <div class="stepper">
+          <button id="chipsMinus" type="button">−</button>
+          <div class="val" id="chipsVal">0</div>
+          <button id="chipsPlus" type="button">+</button>
+        </div>
+      </div>
+
+      <div class="stat-block">
         <div class="toggle-row">
           <button class="toggle-btn" id="firToggle" type="button">Fairway hit</button>
           <button class="toggle-btn" id="girToggle" type="button">Green in reg</button>
@@ -1179,6 +1188,12 @@ function buildScorecardTable(){
   for(let i=10;i<=18;i++) puttsRow += `<td class="back9"><input type="number" class="putts" data-hole="${i}" min="0" max="8"></td>`;
   puttsRow += `<td class="total" id="inPutts">0</td><td class="total" id="totPutts">0</td></tr>`;
 
+  let chipsRow = '<tr><td class="rowlabel">Chips</td>';
+  for(let i=1;i<=9;i++) chipsRow += `<td class="front9"><input type="number" class="chips" data-hole="${i}" min="0" max="6"></td>`;
+  chipsRow += `<td class="total" id="outChips">0</td>`;
+  for(let i=10;i<=18;i++) chipsRow += `<td class="back9"><input type="number" class="chips" data-hole="${i}" min="0" max="6"></td>`;
+  chipsRow += `<td class="total" id="inChips">0</td><td class="total" id="totChips">0</td></tr>`;
+
   let firRow = '<tr><td class="rowlabel">Fairway</td>';
   for(let i=1;i<=9;i++) firRow += `<td class="front9"><input type="checkbox" class="fir" data-hole="${i}"></td>`;
   firRow += `<td class="total" id="outFir">0</td>`;
@@ -1220,7 +1235,7 @@ function buildScorecardTable(){
   for(let i=10;i<=18;i++) bunkerRow += `<td class="back9"><input type="checkbox" class="bunker" data-hole="${i}"></td>`;
   bunkerRow += `<td class="total" id="inBunker">0</td><td class="total" id="totBunker">0</td></tr>`;
 
-  t.innerHTML = holeHeader + parRow + ydRow + scoreRow + puttsRow + firRow + girRow + firMissRow + girLatRow + girDepthRow + bunkerRow;
+  t.innerHTML = holeHeader + parRow + ydRow + scoreRow + puttsRow + chipsRow + firRow + girRow + firMissRow + girLatRow + girDepthRow + bunkerRow;
   t.addEventListener('input', recalcScorecard);
   t.addEventListener('change', recalcScorecard);
   recalcScorecard();
@@ -1287,6 +1302,18 @@ function recalcScorecard(){
   document.getElementById('outPutts').textContent = outPutts;
   document.getElementById('inPutts').textContent = inPutts;
   document.getElementById('totPutts').textContent = outPutts+inPutts;
+  let outChips=0, inChips=0;
+  document.querySelectorAll('.chips').forEach(p=>{
+    const h=+p.dataset.hole, v=+p.value||0;
+    if(h<=9) outChips+=v; else inChips+=v;
+  });
+  const outC=document.getElementById('outChips');
+  const inC=document.getElementById('inChips');
+  const totC=document.getElementById('totChips');
+  if(outC) outC.textContent = outChips;
+  if(inC) inC.textContent = inChips;
+  if(totC) totC.textContent = outChips+inChips;
+
 
   // FIR
   let outFir=0, inFir=0;
@@ -1316,6 +1343,8 @@ function readScorecard(){
     const yardage = +document.querySelector(`.yardage[data-hole="${i}"]`).value || 0;
     const score = +document.querySelector(`.score[data-hole="${i}"]`).value || 0;
     const putts = +document.querySelector(`.putts[data-hole="${i}"]`).value || 0;
+    const chipsEl = document.querySelector(`.chips[data-hole="${i}"]`);
+    const chips = chipsEl ? (+chipsEl.value || 0) : 0;
     const fir = document.querySelector(`.fir[data-hole="${i}"]`).checked;
     const gir = document.querySelector(`.gir[data-hole="${i}"]`).checked;
     const firMissEl = document.querySelector(`.fir-miss[data-hole="${i}"]`);
@@ -1326,14 +1355,14 @@ function readScorecard(){
     const girMissLat = (!gir && girLatEl && girLatEl.value) ? girLatEl.value : null;
     const girMissDepth = (!gir && girDepthEl && girDepthEl.value) ? girDepthEl.value : null;
     const bunker = !!(bunkerEl && bunkerEl.checked);
-    holes.push({hole:i, par, yardage, score, putts, fir, gir, firMiss, girMissLat, girMissDepth, bunker});
+    holes.push({hole:i, par, yardage, score, putts, chips, fir, gir, firMiss, girMissLat, girMissDepth, bunker});
   }
   return holes;
 }
 function applyHolesPlayedToScorecard(mode){
   for(let h=1; h<=18; h++){
     const inRange = mode==='full' || (mode==='front'&&h<=9) || (mode==='back'&&h>=10);
-    ['score','putts','fir','gir','bunker'].forEach(cls=>{
+    ['score','putts','chips','fir','gir','bunker'].forEach(cls=>{
       const el = document.querySelector(`.${cls}[data-hole="${h}"]`);
       if(!el) return;
       el.disabled = !inRange;
@@ -1377,16 +1406,16 @@ const OGA_BASE = 'https://api.opengolfapi.org';
 let pendingApiCourse = null;
 let currentApiCourseId = null;
 
-let playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, fir:false, gir:false, firMiss:null, girMissLat:null, girMissDepth:null, bunker:false}));
+let playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, chips:0, fir:false, gir:false, firMiss:null, girMissLat:null, girMissDepth:null, bunker:false}));
 let currentHole = 0;
 let playRange = {start:0, end:17};
 function setPlayRange(mode){
   if(mode==='front'){
     playRange = {start:0, end:8};
-    for(let i=9;i<18;i++){ playHoles[i].score=0; playHoles[i].putts=0; playHoles[i].fir=false; playHoles[i].gir=false; playHoles[i].firMiss=null; playHoles[i].girMissLat=null; playHoles[i].girMissDepth=null; playHoles[i].bunker=false; }
+    for(let i=9;i<18;i++){ playHoles[i].score=0; playHoles[i].putts=0; playHoles[i].chips=0; playHoles[i].fir=false; playHoles[i].gir=false; playHoles[i].firMiss=null; playHoles[i].girMissLat=null; playHoles[i].girMissDepth=null; playHoles[i].bunker=false; }
   }else if(mode==='back'){
     playRange = {start:9, end:17};
-    for(let i=0;i<9;i++){ playHoles[i].score=0; playHoles[i].putts=0; playHoles[i].fir=false; playHoles[i].gir=false; playHoles[i].firMiss=null; playHoles[i].girMissLat=null; playHoles[i].girMissDepth=null; playHoles[i].bunker=false; }
+    for(let i=0;i<9;i++){ playHoles[i].score=0; playHoles[i].putts=0; playHoles[i].chips=0; playHoles[i].fir=false; playHoles[i].gir=false; playHoles[i].firMiss=null; playHoles[i].girMissLat=null; playHoles[i].girMissDepth=null; playHoles[i].bunker=false; }
   }else{
     playRange = {start:0, end:17};
   }
@@ -1405,6 +1434,7 @@ function renderPlayHole(){
   document.getElementById('playHolePar').textContent = 'Par ' + h.par + ydLabel;
   document.getElementById('scoreVal').textContent = h.score;
   document.getElementById('puttsVal').textContent = h.putts;
+  document.getElementById('chipsVal').textContent = h.chips||0;
 
   const firBtn = document.getElementById('firToggle');
   firBtn.classList.toggle('on', h.fir);
@@ -1477,6 +1507,16 @@ document.getElementById('puttsPlus').addEventListener('click', ()=>{
   h.putts = Math.min(8, h.putts+1);
   renderPlayHole();
 });
+document.getElementById('chipsMinus').addEventListener('click', ()=>{
+  const h = playHoles[currentHole];
+  h.chips = Math.max(0, (h.chips||0)-1);
+  renderPlayHole();
+});
+document.getElementById('chipsPlus').addEventListener('click', ()=>{
+  const h = playHoles[currentHole];
+  h.chips = Math.min(6, (h.chips||0)+1);
+  renderPlayHole();
+});
 document.getElementById('firToggle').addEventListener('click', ()=>{
   const h = playHoles[currentHole];
   if(h.par===3) return;
@@ -1528,7 +1568,7 @@ document.getElementById('finishRoundBtn').addEventListener('click', async ()=>{
     document.getElementById('pl-holesplayed').value
   );
   // reset play state for next round
-  playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, fir:false, gir:false, firMiss:null, girMissLat:null, girMissDepth:null, bunker:false}));
+  playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, chips:0, fir:false, gir:false, firMiss:null, girMissLat:null, girMissDepth:null, bunker:false}));
   document.getElementById('pl-holesplayed').value = 'full';
   setPlayRange('full');
   document.getElementById('pl-course').value='';
@@ -1554,6 +1594,7 @@ function renderRounds(){
     const toPar = totalScore - totalPar;
     const toParStr = totalScore ? (toPar===0?'E':(toPar>0?'+'+toPar:toPar)) : '—';
     const totalPutts = played.reduce((s,h)=>s+(h.putts||0),0);
+    const totalChips = played.reduce((s,h)=>s+(h.chips||0),0);
     const nonPar3 = played.filter(h=>h.par!==3 && h.par>0).length;
     const firCount = played.filter(h=>h.fir).length;
     const girCount = played.filter(h=>h.gir).length;
@@ -1562,7 +1603,7 @@ function renderRounds(){
       <div style="flex:1">
         <div class="meta">${r.date} · ${r.tees||'—'}${holesLabel}</div>
         <div class="title">${escapeHtml(r.course||'Unnamed course')}</div>
-        <div class="meta" style="margin-top:4px;">Putts: ${totalPutts||'—'} · FIR: ${firCount}/${nonPar3||(r.holesPlayed==='full'?14:7)} · GIR: ${girCount}/${played.length||18}</div>
+        <div class="meta" style="margin-top:4px;">Putts: ${totalPutts||'—'} · Chips: ${totalChips||'—'} · FIR: ${firCount}/${nonPar3||(r.holesPlayed==='full'?14:7)} · GIR: ${girCount}/${played.length||18}</div>
         ${r.notes ? `<div class="notes">${escapeHtml(r.notes)}</div>` : ''}
       </div>
       <div style="text-align:right;">
@@ -1594,6 +1635,7 @@ function startEditRound(round){
     const ydEl = document.querySelector(`.yardage[data-hole="${h.hole}"]`); if(ydEl) ydEl.value = h.yardage||'';
     const scoreEl = document.querySelector(`.score[data-hole="${h.hole}"]`); if(scoreEl) scoreEl.value = h.score||'';
     const puttsEl = document.querySelector(`.putts[data-hole="${h.hole}"]`); if(puttsEl) puttsEl.value = h.putts||'';
+    const chipsEl = document.querySelector(`.chips[data-hole="${h.hole}"]`); if(chipsEl) chipsEl.value = h.chips||'';
     const firEl = document.querySelector(`.fir[data-hole="${h.hole}"]`); if(firEl) firEl.checked = !!h.fir;
     const girEl = document.querySelector(`.gir[data-hole="${h.hole}"]`); if(girEl) girEl.checked = !!h.gir;
     const firMissEl = document.querySelector(`.fir-miss[data-hole="${h.hole}"]`);
@@ -1965,6 +2007,10 @@ function renderStats(){
   const puttsHave = puttsRounds.filter(v=>v>0);
   const avgPutts = puttsHave.length ? (puttsHave.reduce((s,v)=>s+v,0)/puttsHave.length) : null;
 
+  const chipsRounds = withScores.map(r=> r.holes.filter(h=>h.score>0).reduce((s,h)=>s+(h.chips||0),0));
+  const chipsHave = chipsRounds.filter(v=>v>0);
+  const avgChips = chipsHave.length ? (chipsHave.reduce((s,v)=>s+v,0)/chipsHave.length) : null;
+
   const firRounds = withScores.map(r=>{
     const played = r.holes.filter(h=>h.score>0);
     const eligible = played.filter(h=>h.par!==3 && h.par>0).length || 1;
@@ -1986,6 +2032,7 @@ function renderStats(){
     <div class="stat-box"><span class="num">${scoreCount}</span><span class="lbl">Rounds logged</span></div>
     <div class="stat-box"><span class="num">${avgToPar==null?'—':(avgToPar>=0?'+':'')+avgToPar.toFixed(1)}</span><span class="lbl">Avg to par</span></div>
     <div class="stat-box"><span class="num">${avgPutts==null?'—':avgPutts.toFixed(1)}</span><span class="lbl">Avg putts</span></div>
+    <div class="stat-box"><span class="num">${avgChips==null?'—':avgChips.toFixed(1)}</span><span class="lbl">Avg chips</span></div>
     <div class="stat-box"><span class="num">${avgGir==null?'—':avgGir.toFixed(0)+'%'}</span><span class="lbl">Avg GIR</span></div>
   `;
 
