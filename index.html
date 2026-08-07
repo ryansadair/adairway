@@ -119,6 +119,12 @@
   table.sc td.holes-excluded{opacity:0.25;}
   .edit-btn{background:none;border:none;color:var(--turf);cursor:pointer;font-size:12px;font-family:'IBM Plex Mono',monospace;padding:2px 6px;display:block;margin-left:auto;}
   .edit-btn:hover{text-decoration:underline;}
+  .course-hc-pill{
+    display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;
+    background:var(--fairway-deep);color:var(--paper-light);padding:4px 10px;border-radius:4px;margin-right:8px;
+  }
+  .course-hc-wrap{display:flex;flex-wrap:wrap;align-items:center;gap:6px;}
+
 
   .preset-row{display:flex;gap:10px;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap;}
   .preset-row .field{flex:1;min-width:220px;margin-bottom:0;}
@@ -421,8 +427,11 @@
       <div class="grid3">
         <div class="field"><label>Date</label><input type="date" id="pl-date"></div>
         <div class="field"><label>Course</label><input type="text" id="pl-course" placeholder="e.g. Pine Ridge Golf Club"></div>
-        <div class="field"><label>Tees</label><input type="text" id="pl-tees" placeholder="e.g. White"></div>
+        <div class="field"><label>Tees</label>
+          <select id="pl-tees"><option value="">— Tees —</option></select>
+        </div>
       </div>
+      <div id="pl-courseHandicap" class="hint" style="margin-top:-6px;margin-bottom:10px;"></div>
       <div class="field">
         <label>Holes played</label>
         <select id="pl-holesplayed">
@@ -501,7 +510,9 @@
       <div class="grid3">
         <div class="field"><label>Date</label><input type="date" id="r-date"></div>
         <div class="field"><label>Course</label><input type="text" id="r-course" placeholder="e.g. Pine Ridge Golf Club"></div>
-        <div class="field"><label>Tees</label><input type="text" id="r-tees" placeholder="e.g. White, 5,695 yds"></div>
+        <div class="field"><label>Tees</label>
+          <select id="r-tees"><option value="">— Tees —</option></select>
+        </div>
       </div>
       <div class="field">
         <label>Holes played</label>
@@ -511,6 +522,7 @@
           <option value="back">Back 9 only</option>
         </select>
       </div>
+      <div id="r-courseHandicap" class="hint" style="margin-top:-2px;margin-bottom:12px;"></div>
       <div class="hint">Par row auto-loads from your preset. Fairway hit checkboxes disable on par-3s (driving accuracy isn't scored there). If you only played 9, pick that above — the other 9 will grey out so they don't count toward your stats or handicap.</div>
       <div class="scorecard">
         <table class="sc" id="scorecardTable"></table>
@@ -851,11 +863,150 @@ function getCoursePresetMap(){
       yardage: (Array.isArray(c.yardage) && c.yardage.some(y=>y)) ? c.yardage : (preset ? preset.yardage : null) || null,
       rating: c.rating!=null ? c.rating : (preset ? preset.rating : null),
       slope: c.slope!=null ? c.slope : (preset ? preset.slope : null),
-      apiCourseId: c.apiCourseId || null
+      apiCourseId: c.apiCourseId || null,
+      teesList: Array.isArray(c.teesList) ? c.teesList : [],
+      yardagesByTee: c.yardagesByTee || null,
+      strokeIndex: Array.isArray(c.strokeIndex) ? c.strokeIndex : null,
+      parTotal: c.parTotal != null ? c.parTotal : (par ? par.reduce((s,p)=>s+p,0) : null),
+      preferredTee: c.preferredTee || null
     };
   });
   return map;
 }
+
+function getHandicapIndexNow(){
+  const sorted = [...rounds].filter(r=> r.holes && r.holes.reduce((s,h)=>s+(h.score||0),0)>0);
+  return computeHandicapIndex(sorted).index;
+}
+
+/** WHS course handicap (18 holes). */
+function computeCourseHandicap(hi, slope, rating, par){
+  if(hi==null || slope==null || rating==null || par==null) return null;
+  const raw = hi * (slope / 113) + (rating - par);
+  return Math.round(raw);
+}
+
+function findCourseByName(name){
+  name = (name||'').trim().toLowerCase();
+  if(!name) return null;
+  return courses.find(c=>c.name.trim().toLowerCase()===name) || null;
+}
+
+function populateTeeSelect(selectId, course, preferredName){
+  const sel = document.getElementById(selectId);
+  if(!sel) return;
+  const prev = preferredName != null ? preferredName : sel.value;
+  const tees = (course && Array.isArray(course.teesList)) ? course.teesList : [];
+  sel.innerHTML = '';
+  if(!tees.length){
+    const opt = document.createElement('option');
+    opt.value = prev || '';
+    opt.textContent = prev || '— Tees —';
+    sel.appendChild(opt);
+    if(prev){
+      const o2 = document.createElement('option');
+      o2.value = prev; o2.textContent = prev; o2.selected = true;
+      // keep single option
+    }
+    return;
+  }
+  const ph = document.createElement('option');
+  ph.value = ''; ph.textContent = '— Select tees —';
+  sel.appendChild(ph);
+  tees.forEach(t=>{
+    const label = [t.name || t.color || 'Tee', t.gender ? '('+t.gender+')' : null, t.yardage ? t.yardage+' yds' : null].filter(Boolean).join(' · ');
+    const opt = document.createElement('option');
+    opt.value = t.name || t.color || label;
+    opt.textContent = label;
+    opt.dataset.rating = t.rating != null ? t.rating : '';
+    opt.dataset.slope = t.slope != null ? t.slope : '';
+    opt.dataset.par = t.par != null ? t.par : '';
+    opt.dataset.color = t.color || '';
+    opt.dataset.yardage = t.yardage != null ? t.yardage : '';
+    sel.appendChild(opt);
+  });
+  // Prefer white male, then preferredName, then first
+  let pick = prev;
+  if(!pick || ![...sel.options].some(o=>o.value===pick)){
+    const white = tees.find(t=>{
+      const n=(t.name||t.color||'').toLowerCase();
+      const g=(t.gender||'').toLowerCase();
+      return n.includes('white') && (g.includes('male') || g.includes('men') || !g);
+    }) || tees.find(t=>(t.name||t.color||'').toLowerCase().includes('white'));
+    pick = white ? (white.name || white.color) : (tees[0].name || tees[0].color);
+  }
+  if(pick && [...sel.options].some(o=>o.value===pick)) sel.value = pick;
+}
+
+function selectedTeeMeta(selectId){
+  const sel = document.getElementById(selectId);
+  if(!sel || !sel.selectedOptions.length) return null;
+  const o = sel.selectedOptions[0];
+  if(!o || !o.value) return null;
+  return {
+    name: o.value,
+    rating: o.dataset.rating ? +o.dataset.rating : null,
+    slope: o.dataset.slope ? +o.dataset.slope : null,
+    par: o.dataset.par ? +o.dataset.par : null,
+    color: o.dataset.color || '',
+    yardage: o.dataset.yardage ? +o.dataset.yardage : null
+  };
+}
+
+function updateCourseHandicapDisplay(prefix){
+  // prefix: 'pl' or 'r'
+  const el = document.getElementById(prefix + '-courseHandicap');
+  if(!el) return;
+  const courseName = document.getElementById(prefix + '-course')?.value;
+  const course = findCourseByName(courseName);
+  const tee = selectedTeeMeta(prefix + '-tees');
+  const hi = getHandicapIndexNow();
+
+  let rating = tee?.rating ?? course?.rating ?? null;
+  let slope = tee?.slope ?? course?.slope ?? null;
+  let par = tee?.par ?? course?.parTotal ?? null;
+  if(par==null && course && Array.isArray(course.par) && course.par.length===18){
+    par = course.par.reduce((s,p)=>s+p,0);
+  }
+
+  if(hi==null){
+    el.innerHTML = '<span class="course-hc-wrap">Course handicap needs at least 3 rounds with rating/slope to build your index.</span>';
+    return;
+  }
+  if(slope==null || rating==null || par==null){
+    el.innerHTML = `<span class="course-hc-wrap">Index <strong>${hi.toFixed(1)}</strong> · set tees/rating/slope/par to see course handicap.</span>`;
+    return;
+  }
+  const ch = computeCourseHandicap(hi, slope, rating, par);
+  const teeLabel = tee?.name ? escapeHtml(tee.name) : 'selected tees';
+  el.innerHTML = `<span class="course-hc-wrap"><span class="course-hc-pill">CH ${ch}</span>
+    Index ${hi.toFixed(1)} · ${teeLabel} · rating ${rating} / slope ${slope} · par ${par}</span>`;
+}
+
+function applyTeeYardages(course, teeColor, target){
+  // target: 'play' | 'rounds'
+  if(!course || !teeColor) return;
+  let yards = null;
+  if(course.yardagesByTee && course.yardagesByTee[teeColor]){
+    yards = course.yardagesByTee[teeColor];
+  } else if(Array.isArray(course.yardage)){
+    yards = course.yardage;
+  }
+  if(!yards) return;
+  if(target==='play'){
+    yards.forEach((y,i)=>{ if(playHoles[i]) playHoles[i].yardage = y || null; });
+    renderPlayHole();
+  } else {
+    for(let i=1;i<=18;i++){
+      const el = document.querySelector(`.yardage[data-hole="${i}"]`);
+      if(!el) continue;
+      const y = yards[i-1];
+      el.value = (y!=null && y>0) ? y : '';
+    }
+    if(typeof recalcScorecard==='function') recalcScorecard();
+  }
+}
+
 function populatePresetDropdown(){
   ['r-preset','pl-preset'].forEach(id=>{
     const sel = document.getElementById(id);
@@ -873,35 +1024,74 @@ document.getElementById('r-preset').addEventListener('change', e=>{
   const name = e.target.value;
   if(!name) return;
   document.getElementById('r-course').value = name;
+  const course = findCourseByName(name);
   const preset = getCoursePresetMap()[name];
+  populateTeeSelect('r-tees', course || preset, (course||preset)?.preferredTee);
   if(preset && preset.par){
     preset.par.forEach((p,i)=>{
       const el = document.querySelector(`.par[data-hole="${i+1}"]`);
       if(el) el.value = p;
     });
-    for(let i=1;i<=18;i++){
-      const el = document.querySelector(`.yardage[data-hole="${i}"]`);
-      if(!el) continue;
-      const y = Array.isArray(preset.yardage) ? preset.yardage[i-1] : null;
-      el.value = (y != null && y > 0) ? y : '';
+    const tee = selectedTeeMeta('r-tees');
+    if(tee?.color && course) applyTeeYardages(course, tee.color, 'rounds');
+    else {
+      for(let i=1;i<=18;i++){
+        const el = document.querySelector(`.yardage[data-hole="${i}"]`);
+        if(!el) continue;
+        const y = Array.isArray(preset.yardage) ? preset.yardage[i-1] : null;
+        el.value = (y != null && y > 0) ? y : '';
+      }
     }
     recalcScorecard();
   }
+  updateCourseHandicapDisplay('r');
+});
+document.getElementById('r-tees')?.addEventListener('change', ()=>{
+  const name = document.getElementById('r-course').value;
+  const course = findCourseByName(name);
+  const tee = selectedTeeMeta('r-tees');
+  if(course && tee?.color) applyTeeYardages(course, tee.color, 'rounds');
+  updateCourseHandicapDisplay('r');
+});
+document.getElementById('r-course')?.addEventListener('change', ()=>{
+  const name = document.getElementById('r-course').value;
+  const course = findCourseByName(name);
+  if(course) populateTeeSelect('r-tees', course, course.preferredTee);
+  updateCourseHandicapDisplay('r');
 });
 document.getElementById('pl-preset').addEventListener('change', e=>{
   const name = e.target.value;
   if(!name) return;
   document.getElementById('pl-course').value = name;
+  const course = findCourseByName(name);
   const preset = getCoursePresetMap()[name];
+  populateTeeSelect('pl-tees', course || preset, (course||preset)?.preferredTee);
   if(preset && preset.par){
     preset.par.forEach((p,i)=>{ playHoles[i].par = p; playHoles[i].score = p; });
   }
-  if(preset && Array.isArray(preset.yardage)){
+  const tee = selectedTeeMeta('pl-tees');
+  if(course && tee?.color) applyTeeYardages(course, tee.color, 'play');
+  else if(preset && Array.isArray(preset.yardage)){
     preset.yardage.forEach((y,i)=>{ playHoles[i].yardage = y || null; });
+    renderPlayHole();
   } else {
     playHoles.forEach(h=>{ h.yardage = null; });
+    renderPlayHole();
   }
-  renderPlayHole();
+  updateCourseHandicapDisplay('pl');
+});
+document.getElementById('pl-tees')?.addEventListener('change', ()=>{
+  const name = document.getElementById('pl-course').value;
+  const course = findCourseByName(name);
+  const tee = selectedTeeMeta('pl-tees');
+  if(course && tee?.color) applyTeeYardages(course, tee.color, 'play');
+  updateCourseHandicapDisplay('pl');
+});
+document.getElementById('pl-course')?.addEventListener('change', ()=>{
+  const name = document.getElementById('pl-course').value;
+  const course = findCourseByName(name);
+  if(course) populateTeeSelect('pl-tees', course, course.preferredTee);
+  updateCourseHandicapDisplay('pl');
 });
 
 // ---------- scorecard ----------
@@ -1232,7 +1422,10 @@ function startEditRound(round){
   editingRoundId = round.id;
   document.getElementById('r-date').value = round.date;
   document.getElementById('r-course').value = round.course;
-  document.getElementById('r-tees').value = round.tees;
+  const _rc = findCourseByName(round.course);
+  populateTeeSelect('r-tees', _rc, round.tees);
+  if(round.tees) document.getElementById('r-tees').value = round.tees;
+  updateCourseHandicapDisplay('r');
   document.getElementById('r-holesplayed').value = round.holesPlayed || 'full';
   round.holes.forEach(h=>{
     const parEl = document.querySelector(`.par[data-hole="${h.hole}"]`); if(parEl) parEl.value = h.par||4;
@@ -1845,20 +2038,34 @@ function pickYardageFromHole(h, preferredColor){
 function applyApiCourseDetail(detail){
   const name = detail.course_name || detail.name || 'Unnamed course';
 
-  let rating=null, slope=null, teeColor='white', teeLabel='';
-  if(Array.isArray(detail.tees) && detail.tees.length){
-    const preferred = detail.tees.find(t=>{
-      const n = (pick(t,['tee_name','name','tee_color','color'],'')||'').toLowerCase();
-      const g = (pick(t,['gender'],'')||'').toLowerCase();
+  // Normalize all published tees for dropdown + handicap
+  const teesList = (Array.isArray(detail.tees) ? detail.tees : []).map(t=>{
+    const color = (pick(t,['tee_color','color'],'')||'').toLowerCase();
+    const tName = pick(t,['tee_name','name'],'') || color || 'Tee';
+    return {
+      key: pick(t,['tee_key'], null),
+      name: tName,
+      color,
+      gender: pick(t,['gender'],'') || '',
+      rating: pick(t,['course_rating','rating'], null),
+      slope: pick(t,['slope','slope_rating'], null),
+      par: pick(t,['par'], null),
+      yardage: pick(t,['yardage','total_yardage'], null)
+    };
+  }).filter(t=>t.name);
+
+  let rating=null, slope=null, teeColor='white', teeLabel='', teePar=null;
+  if(teesList.length){
+    const preferred = teesList.find(t=>{
+      const n=(t.name||'').toLowerCase();
+      const g=(t.gender||'').toLowerCase();
       return n.includes('white') && (g==='' || g.includes('male') || g.includes('men'));
-    }) || detail.tees.find(t=>{
-      const n = (pick(t,['tee_name','name','tee_color','color'],'')||'').toLowerCase();
-      return n.includes('white');
-    }) || detail.tees[0];
-    rating = pick(preferred, ['course_rating','rating'], null);
-    slope = pick(preferred, ['slope','slope_rating'], null);
-    teeColor = (pick(preferred, ['tee_color','tee_name','name','color'], 'white')||'white').toLowerCase();
-    teeLabel = pick(preferred, ['tee_name','name','tee_color','color'], '') || '';
+    }) || teesList.find(t=>(t.name||'').toLowerCase().includes('white')) || teesList[0];
+    rating = preferred.rating;
+    slope = preferred.slope;
+    teeColor = (preferred.color || preferred.name || 'white').toLowerCase();
+    teeLabel = preferred.name || '';
+    teePar = preferred.par;
   }
 
   // holes is a count; hole-by-hole lives in holes_data
@@ -1886,6 +2093,48 @@ function applyApiCourseDetail(detail){
     else { while(yardageArr.length<18) yardageArr.push(null); }
   }
 
+  // Full yardage matrix by tee color (so switching tees updates the card)
+  const yardagesByTee = {};
+  if(rawHoles){
+    const sortedHoles = [...rawHoles].sort((a,b)=>
+      (pick(a,['number','hole','hole_number'],0) - pick(b,['number','hole','hole_number'],0)));
+    const colors = new Set();
+    sortedHoles.forEach(h=>{
+      if(h.yardages && typeof h.yardages==='object'){
+        Object.keys(h.yardages).forEach(k=>colors.add(k.toLowerCase()));
+      }
+    });
+    colors.forEach(color=>{
+      const arr = sortedHoles.slice(0,18).map(h=> pickYardageFromHole(h, color));
+      if(arr.some(y=>y!=null && y>0)){
+        while(arr.length<18) arr.push(null);
+        yardagesByTee[color] = arr;
+      }
+    });
+  }
+
+  // Stroke index (1-18) when API provides handicap_index per hole
+  let strokeIndex = null;
+  if(rawHoles){
+    const sortedHoles = [...rawHoles].sort((a,b)=>
+      (pick(a,['number','hole','hole_number'],0) - pick(b,['number','hole','hole_number'],0)));
+    const si = sortedHoles.slice(0,18).map(h=> pick(h,['handicap_index','stroke_index','si'], null));
+    if(si.some(v=>v!=null)){
+      strokeIndex = si.map(v=> v!=null ? +v : null);
+      while(strokeIndex.length<18) strokeIndex.push(null);
+    }
+  }
+
+  // Par sanity: compare hole sum vs published tee par
+  let parWarning = '';
+  if(parArr){
+    const sum = parArr.reduce((s,p)=>s+p,0);
+    const published = teePar != null ? +teePar : (detail.par != null ? +detail.par : null);
+    if(published != null && sum !== published){
+      parWarning = ` Note: hole pars sum to ${sum}, but the scorecard lists par ${published}. Edit par after save if your club card differs (OpenGolfAPI data is sometimes wrong).`;
+    }
+  }
+
   document.getElementById('co-name').value = name;
   if(rating!=null) document.getElementById('co-rating').value = rating;
   if(slope!=null) document.getElementById('co-slope').value = slope;
@@ -1907,15 +2156,32 @@ function applyApiCourseDetail(detail){
     if(plTees) plTees.value = teeLabel;
   }
 
-  pendingApiCourse = { name, par: parArr, yardage: yardageArr, rating, slope, apiCourseId: detail.id, teeLabel, lat: detail.lat ?? null, lng: detail.lng ?? null };
+  pendingApiCourse = {
+    name, par: parArr, yardage: yardageArr, rating, slope,
+    apiCourseId: detail.id, teeLabel, teesList, yardagesByTee,
+    strokeIndex, parTotal: teePar != null ? +teePar : (detail.par != null ? +detail.par : null),
+    preferredTee: teeLabel || null,
+    lat: detail.lat ?? null, lng: detail.lng ?? null
+  };
+
+  // Prefill tee dropdowns immediately
+  populateTeeSelect('pl-tees', pendingApiCourse, teeLabel);
+  populateTeeSelect('r-tees', pendingApiCourse, teeLabel);
 
   const parNote = parArr ? `full 18-hole par` : `no par data found`;
   const ydCount = yardageArr ? yardageArr.filter(y=>y>0).length : 0;
   const ydNote = ydCount ? ` · ${ydCount} hole yardages (${teeColor})` : '';
+  const teeNote = teesList.length ? ` · ${teesList.length} tee sets` : '';
   document.getElementById('apiSearchResults').innerHTML = `<div class="empty">
-    Loaded <strong>${escapeHtml(name)}</strong> — ${parNote}${ydNote}${rating!=null?` · rating ${rating}`:''}${slope!=null?` / slope ${slope}`:''}.
-    Fields below are filled in. Hit <strong>Save course</strong> so it appears in Play &amp; Rounds.
+    Loaded <strong>${escapeHtml(name)}</strong> — ${parNote}${ydNote}${teeNote}${rating!=null?` · rating ${rating}`:''}${slope!=null?` / slope ${slope}`:''}.${parWarning}
+    Fields below are filled in.
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
+      <button type="button" class="btn" id="apiQuickSaveBtn">Save course to book</button>
+    </div>
   </div>`;
+  document.getElementById('apiQuickSaveBtn')?.addEventListener('click', ()=>{
+    document.getElementById('saveCourseBtn')?.click();
+  });
 }
 
 // ---------- OpenGolfAPI: local-only GPS distance to green ----------
@@ -2126,6 +2392,13 @@ document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
     if(pendingApiCourse.apiCourseId) extra.apiCourseId = pendingApiCourse.apiCourseId;
     if(pendingApiCourse.lat != null) extra.lat = pendingApiCourse.lat;
     if(pendingApiCourse.lng != null) extra.lng = pendingApiCourse.lng;
+    if(Array.isArray(pendingApiCourse.teesList) && pendingApiCourse.teesList.length){
+      extra.teesList = pendingApiCourse.teesList;
+    }
+    if(pendingApiCourse.yardagesByTee) extra.yardagesByTee = pendingApiCourse.yardagesByTee;
+    if(pendingApiCourse.strokeIndex) extra.strokeIndex = pendingApiCourse.strokeIndex;
+    if(pendingApiCourse.parTotal != null) extra.parTotal = pendingApiCourse.parTotal;
+    if(pendingApiCourse.preferredTee) extra.preferredTee = pendingApiCourse.preferredTee;
   }
 
   const parResult = parseCsvNumbers(document.getElementById('co-par').value, 18);
@@ -2153,7 +2426,12 @@ document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
         ...(extra.yardage ? {yardage: extra.yardage} : {}),
         ...(extra.apiCourseId ? {apiCourseId: extra.apiCourseId} : {}),
         ...(extra.lat != null ? {lat: extra.lat} : {}),
-        ...(extra.lng != null ? {lng: extra.lng} : {})
+        ...(extra.lng != null ? {lng: extra.lng} : {}),
+        ...(extra.teesList ? {teesList: extra.teesList} : {}),
+        ...(extra.yardagesByTee ? {yardagesByTee: extra.yardagesByTee} : {}),
+        ...(extra.strokeIndex ? {strokeIndex: extra.strokeIndex} : {}),
+        ...(extra.parTotal != null ? {parTotal: extra.parTotal} : {}),
+        ...(extra.preferredTee ? {preferredTee: extra.preferredTee} : {})
       };
     }
     editingCourseId = null;
@@ -2171,7 +2449,12 @@ document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
         ...(extra.yardage ? {yardage: extra.yardage} : {}),
         ...(extra.apiCourseId ? {apiCourseId: extra.apiCourseId} : {}),
         ...(extra.lat != null ? {lat: extra.lat} : {}),
-        ...(extra.lng != null ? {lng: extra.lng} : {})
+        ...(extra.lng != null ? {lng: extra.lng} : {}),
+        ...(extra.teesList ? {teesList: extra.teesList} : {}),
+        ...(extra.yardagesByTee ? {yardagesByTee: extra.yardagesByTee} : {}),
+        ...(extra.strokeIndex ? {strokeIndex: extra.strokeIndex} : {}),
+        ...(extra.parTotal != null ? {parTotal: extra.parTotal} : {}),
+        ...(extra.preferredTee ? {preferredTee: extra.preferredTee} : {})
       };
     }else{
       courses.push({ id: uid(), name, rating: newRating, slope: newSlope, notes: newNotes, ...extra });
@@ -2506,6 +2789,8 @@ async function init(){
   renderBag();
   renderCourses();
   renderNotes();
+  updateCourseHandicapDisplay('pl');
+  updateCourseHandicapDisplay('r');
 }
 </script>
 </body>
