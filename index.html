@@ -609,36 +609,59 @@
     </div>
 
     <div class="card">
-      <h2>Score trend <small>dots = round, line = 5-round rolling avg · ▲ gear · ● practice</small></h2>
+      <h2>Score trend</h2>
+      <div class="hint" style="margin-top:0;">
+        Each <span style="color:#C7A876;font-weight:700;">●</span> tan dot is one round's score
+        relative to par (0 = even par, above the line = over par, below = under par). The
+        <span style="color:#1F3A2E;font-weight:700;">—</span> dark green line is your 5-round
+        rolling average, so it smooths out any one bad or great day — <strong>trending downward
+        is what improvement looks like.</strong> <span style="color:#C7A876;">▲ tan</span> markers
+        along the bottom mark when you added/retired a club; <span style="color:#3F6B4A;">● green</span>
+        markers mark a logged practice session — hover one for details.
+      </div>
       <svg class="chart" id="scoreChart"></svg>
     </div>
     <div class="card">
-      <h2>Putts per round <small>dots = round, line = 5-round rolling avg</small></h2>
+      <h2>Putts per round</h2>
+      <div class="hint" style="margin-top:0;">Same idea as the score chart — tan dots are individual rounds, the dark green line is your 5-round rolling average. <strong>Trending downward is good</strong> (fewer putts).</div>
       <svg class="chart" id="puttsChart"></svg>
     </div>
     <div class="grid2">
       <div class="card">
         <h2>Fairways hit %</h2>
+        <div class="hint" style="margin-top:0;">One round per dot, oldest to newest, left to right. <strong>Higher is better</strong> — more tee shots landing in the fairway.</div>
         <svg class="chart" id="firChart"></svg>
       </div>
       <div class="card">
         <h2>Greens in regulation %</h2>
+        <div class="hint" style="margin-top:0;">One round per dot, oldest to newest. <strong>Higher is better</strong> — more approach shots reaching the green in regulation.</div>
         <svg class="chart" id="girChart"></svg>
       </div>
     </div>
 
     <div class="card">
       <h2>Scoring by par type</h2>
+      <div class="hint" style="margin-top:0;">Your average score relative to par on 3s, 4s, and 5s, plus how often you make birdie-or-better, par, bogey, or worse — this is where to look to see which hole type is actually costing you strokes.</div>
       <div id="parTypeBlock"></div>
     </div>
 
     <div class="grid2">
       <div class="card">
         <h2>FIR% vs score</h2>
+        <div class="hint" style="margin-top:0;">
+          Each dot is one round: <strong>further right</strong> = more fairways hit that round,
+          <strong>lower</strong> = a better score (vs. par) that round. If your best-scoring rounds
+          cluster toward the bottom-right, driving accuracy is genuinely paying off for you — if not,
+          it may not be your biggest lever.
+        </div>
         <svg class="chart" id="firScatter"></svg>
       </div>
       <div class="card">
         <h2>GIR% vs score</h2>
+        <div class="hint" style="margin-top:0;">
+          Same read as the chart on the left, but for greens in regulation instead of fairways —
+          further right and lower together suggests GIR is the bigger driver of your good rounds.
+        </div>
         <svg class="chart" id="girScatter"></svg>
       </div>
     </div>
@@ -741,6 +764,7 @@
       <div class="field"><label>Date</label><input type="date" id="n-date"></div>
       <div class="field"><label>Thought</label><textarea id="n-text" placeholder="Anything — a swing thought, gear decision, mental game note, goal for the season..."></textarea></div>
       <button class="btn" id="saveNoteBtn">Add entry</button>
+      <button class="btn outline" id="cancelEditNoteBtn" type="button" style="display:none;margin-left:8px;">Cancel edit</button>
     </div>
     <div class="card">
       <h2>Journal</h2>
@@ -1791,7 +1815,8 @@ function trendChart(svgEl, values, dates, opts={}){
   let refLine = '';
   if(opts.zero!==undefined){
     const zy = yAt(opts.zero);
-    refLine = `<line x1="${pad}" y1="${zy}" x2="${w-pad}" y2="${zy}" stroke="#8FA89A" stroke-dasharray="3,3" stroke-width="1"/>`;
+    refLine = `<line x1="${pad}" y1="${zy}" x2="${w-pad}" y2="${zy}" stroke="#8FA89A" stroke-dasharray="3,3" stroke-width="1"/>
+      <text x="${w-pad}" y="${zy-4}" text-anchor="end" class="chart-label">even par</text>`;
   }
 
   let markers = '';
@@ -1804,14 +1829,16 @@ function trendChart(svgEl, values, dates, opts={}){
     }).join('');
   }
 
+  const fmt = v => (opts.zero!==undefined && v>0 ? '+' : '') + v.toFixed(0);
   svgEl.innerHTML = `
     <line x1="${pad}" y1="${pad+plotH}" x2="${w-pad}" y2="${pad+plotH}" stroke="#D7CCB0" stroke-width="1"/>
     ${refLine}
     ${dots}
     ${rollPts.length>1 ? `<path d="${rollPath}" fill="none" stroke="#1F3A2E" stroke-width="2.5"/>` : ''}
     ${markers}
-    <text x="${pad}" y="14" class="chart-label">${max.toFixed(0)}</text>
-    <text x="${pad}" y="${pad+plotH-4}" class="chart-label">${min.toFixed(0)}</text>
+    <text x="${pad}" y="14" class="chart-label">${fmt(max)}</text>
+    <text x="${pad}" y="${pad+plotH-4}" class="chart-label">${fmt(min)}</text>
+    <text x="${w-pad}" y="14" text-anchor="end" class="chart-label">newest →</text>
   `;
 }
 
@@ -1857,14 +1884,17 @@ function scatterChart(svgEl, points, opts={}){
   const xAt = x => pad + ((x-xMin)/xRange)*(w-2*pad);
   const yAt = y => h-pad - ((y-yMin)/yRange)*(h-2*pad);
   const dots = points.map(p=>`<circle cx="${xAt(p.x).toFixed(1)}" cy="${yAt(p.y).toFixed(1)}" r="4" fill="#A4402F" fill-opacity="0.75"/>`).join('');
+  const fmtY = v => (v>0?'+':'') + v.toFixed(0);
   svgEl.innerHTML = `
     <line x1="${pad}" y1="${h-pad}" x2="${w-pad}" y2="${h-pad}" stroke="#D7CCB0" stroke-width="1"/>
     <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${h-pad}" stroke="#D7CCB0" stroke-width="1"/>
     ${dots}
     <text x="${pad}" y="${h-10}" class="chart-label">${xMin.toFixed(0)}%</text>
     <text x="${w-pad-24}" y="${h-10}" class="chart-label">${xMax.toFixed(0)}%</text>
-    <text x="4" y="${pad+4}" class="chart-label">+${yMax.toFixed(0)}</text>
-    <text x="4" y="${h-pad}" class="chart-label">${yMin.toFixed(0)}</text>
+    <text x="${w/2}" y="${h-10}" text-anchor="middle" class="chart-label">→ more fairways/greens hit</text>
+    <text x="4" y="${pad+4}" class="chart-label">${fmtY(yMax)}</text>
+    <text x="4" y="${h-pad}" class="chart-label">${fmtY(yMin)}</text>
+    <text x="4" y="${pad-8}" class="chart-label">↑ score vs par</text>
   `;
 }
 
@@ -3136,6 +3166,27 @@ document.getElementById('greenMapClearAllBtn')?.addEventListener('click', ()=>{
 });
 
 // ---------- NOTES ----------
+let editingNoteId = null;
+
+function clearNoteForm(){
+  editingNoteId = null;
+  document.getElementById('n-date').value = todayISO();
+  document.getElementById('n-text').value = '';
+  document.getElementById('saveNoteBtn').textContent = 'Add entry';
+  const cancel = document.getElementById('cancelEditNoteBtn');
+  if(cancel) cancel.style.display = 'none';
+}
+
+function loadNoteIntoForm(n){
+  editingNoteId = n.id;
+  document.getElementById('n-date').value = n.date || todayISO();
+  document.getElementById('n-text').value = n.text || '';
+  document.getElementById('saveNoteBtn').textContent = 'Update entry';
+  const cancel = document.getElementById('cancelEditNoteBtn');
+  if(cancel) cancel.style.display = '';
+  document.getElementById('n-text')?.scrollIntoView({ behavior:'smooth', block:'center' });
+}
+
 function renderNotes(){
   const list = document.getElementById('notesList');
   if(notes.length===0){ list.innerHTML = '<div class="empty">No journal entries yet.</div>'; return; }
@@ -3146,21 +3197,41 @@ function renderNotes(){
         <div class="meta">${n.date}</div>
         <div class="notes" style="margin-top:2px;">${escapeHtml(n.text)}</div>
       </div>
-      <button class="del" data-id="${n.id}" data-kind="note">delete</button>
+      <div>
+        <button class="edit-btn" data-id="${n.id}" data-kind="note-edit" type="button">edit</button>
+        <button class="del" data-id="${n.id}" data-kind="note">delete</button>
+      </div>
     </div>
   `).join('');
 }
 document.getElementById('saveNoteBtn').addEventListener('click', async ()=>{
   const text = document.getElementById('n-text').value.trim();
   if(!text){ return; }
-  notes.push({ id: uid(), date: document.getElementById('n-date').value || todayISO(), text });
+  const entry = { id: editingNoteId || uid(), date: document.getElementById('n-date').value || todayISO(), text };
+  if(editingNoteId){
+    const idx = notes.findIndex(n=>n.id===editingNoteId);
+    if(idx>=0) notes[idx] = entry;
+    else notes.push(entry);
+  }else{
+    notes.push(entry);
+  }
   await saveList('notes', notes);
-  document.getElementById('n-text').value='';
+  clearNoteForm();
   renderNotes();
 });
+document.getElementById('cancelEditNoteBtn')?.addEventListener('click', ()=>{
+  clearNoteForm();
+});
 document.getElementById('notesList').addEventListener('click', async e=>{
+  const editBtn = e.target.closest('button[data-kind="note-edit"]');
+  if(editBtn){
+    const n = notes.find(x=>x.id===editBtn.dataset.id);
+    if(n) loadNoteIntoForm(n);
+    return;
+  }
   const btn = e.target.closest('button.del[data-kind="note"]');
   if(!btn) return;
+  if(editingNoteId === btn.dataset.id) clearNoteForm();
   notes = notes.filter(n=>n.id!==btn.dataset.id);
   await saveList('notes', notes);
   renderNotes();

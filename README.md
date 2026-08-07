@@ -68,7 +68,10 @@ putts, chips, FIR, GIR, miss detail, bunker), plus a Front 9 / Back 9 / Full
 rolling 5-round score/putts trends with gear-change and practice-session
 markers, FIR%/GIR% trends, scoring by par-type, FIR/GIR-vs-score scatter
 plots, and a miss-tendency breakdown (fairway side, approach side, approach
-depth, bunker/sand-save proxy) once you've logged enough miss detail.
+depth, bunker/sand-save proxy) once you've logged enough miss detail. Every
+chart has a plain-language caption explaining what the dots/lines/axes mean
+and which direction is "good" — no need to remember what a scatter plot of
+FIR% vs score is supposed to tell you.
 
 **Practice** — session log (focus, duration, notes), editable in place.
 
@@ -80,7 +83,7 @@ place.
 OpenGolfAPI, add manually, edit anything, and open an interactive map to set
 green locations for every hole at once.
 
-**Notes** — a free-form journal.
+**Notes** — a free-form journal, editable in place like everything else.
 
 **Backup** — export everything as one `.json` file, or restore from one.
 
