@@ -2556,7 +2556,8 @@ let mapEditor = {
   greens: [],
   map: null,
   markers: {},
-  clickHandler: null
+  clickHandler: null,
+  gen: 0
 };
 
 function destroyGreenMap(){
@@ -2573,7 +2574,12 @@ function destroyGreenMap(){
   mapEditor.markers = {};
   mapEditor.clickHandler = null;
   const el = document.getElementById('greenMap');
-  if(el) el.innerHTML = '';
+  if(el){
+    el.innerHTML = '';
+    // Leaflet leaves classes on the container — strip them so a new map can mount cleanly
+    el.className = '';
+    el.removeAttribute('tabindex');
+  }
 }
 
 function openGreenMapEditor(courseId){
@@ -2582,20 +2588,30 @@ function openGreenMapEditor(courseId){
     return;
   }
   const course = courses.find(c=>c.id===courseId);
-  if(!course) return;
+  if(!course){
+    alert('Could not find that course.');
+    return;
+  }
 
-  // Always reset so switching courses never reuses the previous pins/view
+  // Bump generation so any in-flight init from a previous open is ignored
+  const gen = ++mapEditor.gen;
   destroyGreenMap();
 
   mapEditor.courseId = courseId;
   mapEditor.hole = 1;
+  // Deep-copy greens so courses never share pin arrays
   mapEditor.greens = Array.isArray(course.greens)
-    ? course.greens.map(g => g ? {...g} : null)
+    ? course.greens.map(g => g ? { lat:+g.lat, lng:+g.lng, savedAt:g.savedAt||null, source:g.source||null } : null)
     : Array(18).fill(null);
   while(mapEditor.greens.length < 18) mapEditor.greens.push(null);
+  if(mapEditor.greens.length > 18) mapEditor.greens = mapEditor.greens.slice(0,18);
 
   document.getElementById('greenMapTitle').textContent = course.name;
-  document.getElementById('greenMapSub').textContent = 'Select a hole, then tap its green on the map.';
+  const nSaved = mapEditor.greens.filter(Boolean).length;
+  document.getElementById('greenMapSub').textContent =
+    nSaved ? `${nSaved}/18 greens on file for this course. Select a hole, then tap the map.`
+           : 'No greens saved for this course yet. Select a hole, then tap its green on the map.';
+
   const modal = document.getElementById('greenMapModal');
   modal.classList.add('open');
   modal.setAttribute('aria-hidden','false');
@@ -2608,42 +2624,52 @@ function openGreenMapEditor(courseId){
   }).join('');
 
   setTimeout(()=>{
+    // Stale open (user switched courses quickly) — abort
+    if(gen !== mapEditor.gen) return;
+    if(mapEditor.courseId !== courseId) return;
+
     const firstGreen = mapEditor.greens.find(g=>g);
     let center = [44.05, -123.0];
-    let zoom = 15;
+    let zoom = 14;
     if(course.lat != null && course.lng != null){
-      center = [course.lat, course.lng];
+      center = [+course.lat, +course.lng];
       zoom = 16;
     }else if(firstGreen){
       center = [firstGreen.lat, firstGreen.lng];
       zoom = 16;
     }
 
-    mapEditor.map = L.map('greenMap', { scrollWheelZoom: true }).setView(center, zoom);
+    // Ensure container is empty before create
+    const container = document.getElementById('greenMap');
+    if(!container) return;
+    container.innerHTML = '';
+
+    mapEditor.map = L.map(container, { scrollWheelZoom: true }).setView(center, zoom);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap'
     }).addTo(mapEditor.map);
     mapEditor.clickHandler = (e)=>{
+      if(mapEditor.courseId !== courseId) return;
       placeGreenPin(mapEditor.hole, e.latlng.lat, e.latlng.lng);
     };
     mapEditor.map.on('click', mapEditor.clickHandler);
     refreshMapMarkers();
-    // Fit all existing pins for this course if any
     const pts = mapEditor.greens.filter(Boolean).map(g=>[g.lat,g.lng]);
     if(pts.length >= 2){
       try{ mapEditor.map.fitBounds(pts, { padding:[30,30], maxZoom:17 }); }catch(e){}
     }
+    mapEditor.map.invalidateSize();
     updateMapHint();
-  }, 80);
+  }, 100);
 }
 
 function closeGreenMapEditor(){
+  mapEditor.gen++; // cancel any pending init
   const modal = document.getElementById('greenMapModal');
   modal.classList.remove('open');
   modal.setAttribute('aria-hidden','true');
   mapEditor.courseId = null;
-  // Keep map destroyed so the next open is always clean
   destroyGreenMap();
 }
 
@@ -2716,9 +2742,16 @@ document.getElementById('greenMapClearHoleBtn')?.addEventListener('click', ()=>{
   updateMapHint();
 });
 document.getElementById('greenMapSaveBtn')?.addEventListener('click', async ()=>{
-  const course = courses.find(c=>c.id===mapEditor.courseId);
+  const courseId = mapEditor.courseId;
+  const course = courses.find(c=>c.id===courseId);
   if(!course) return;
-  course.greens = mapEditor.greens.map(g => g ? {...g} : null);
+  // Fresh array — never share references across courses
+  course.greens = mapEditor.greens.map(g => g ? { lat:+g.lat, lng:+g.lng, savedAt:g.savedAt||Date.now(), source:g.source||'map' } : null);
+  const first = course.greens.find(Boolean);
+  if(first && (course.lat == null || course.lng == null)){
+    course.lat = first.lat;
+    course.lng = first.lng;
+  }
   await saveList('courses', courses);
   renderCourses();
   if(typeof updateGpsAvailability === 'function') updateGpsAvailability();
@@ -2866,10 +2899,13 @@ async function init(){
   // No course seeding — the Courses tab starts empty and only ever contains
   // what you add yourself, manually or via "Look up a course."
 
-  // Normalize par arrays that may have been stored oddly
+  // Normalize par arrays and isolate greens arrays per course
   courses.forEach(c=>{
     if(Array.isArray(c.par) && c.par.length===18){
       c.par = c.par.map(n => +n || 4);
+    }
+    if(Array.isArray(c.greens)){
+      c.greens = c.greens.map(g => g ? { lat:+g.lat, lng:+g.lng, savedAt:g.savedAt||null, source:g.source||null } : null);
     }
   });
 
