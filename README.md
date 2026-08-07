@@ -1,49 +1,37 @@
-# Adairway — Golf Tracker
+# Adairway Golf
 
-A single-file, no-backend golf tracker: rounds, stats, practice log, bag/equipment,
-course notes, and a journal. Works entirely in the browser — no server, no signup.
+A single-file, no-backend golf tracker: rounds, stats, practice log,
+bag/equipment, course notes, and a journal — with real handicap math, live
+GPS distance, and course data pulled from a free public API. Runs as one
+static HTML file with Firebase for account sync.
 
 ## Setup on GitHub Pages (free)
 
-1. Create a new repo on GitHub (public or private both work with Pages on a
-   paid plan; public is simplest if you're on the free tier).
-2. Upload `index.html` (rename `golf-tracker.html` to `index.html`) to the
-   repo — either drag-and-drop on github.com, or:
-   ```
-   git init
-   git add index.html
-   git commit -m "Add golf tracker"
-   git branch -M main
-   git remote add origin https://github.com/<your-username>/<repo-name>.git
-   git push -u origin main
-   ```
-3. In the repo, go to **Settings → Pages**.
-4. Under "Build and deployment", set **Source** to "Deploy from a branch",
-   branch `main`, folder `/ (root)`. Save.
-5. GitHub gives you a URL like:
-   `https://<your-username>.github.io/<repo-name>/`
-   (takes a minute or two to go live the first time.)
-6. Open that URL on your phone, then use your browser's **"Add to Home
-   Screen"** option so it launches like an app.
+1. Create a repo on GitHub.
+2. Upload `index.html` to the repo root (drag-and-drop on github.com, or via
+   `git add / commit / push`).
+3. Repo → **Settings → Pages** → Source: "Deploy from a branch", branch
+   `main`, folder `/ (root)`. Save.
+4. GitHub gives you a URL like `https://<username>.github.io/<repo>/`
+   (takes a minute or two to go live the first time).
+5. Open it on your phone and use **"Add to Home Screen"** so it launches
+   like an app. The page has PWA meta tags (theme color, app title, status
+   bar style) so it looks the part.
 
 ## Account sync (Firebase)
 
-This version now syncs across every device via your own Firebase project,
-instead of being stuck to one browser. A few one-time steps in the
-[Firebase Console](https://console.firebase.google.com) for your `adairway-golf`
-project to finish wiring this up:
+Data syncs across every device via your `adairway-golf` Firebase project.
+One-time setup in the [Firebase Console](https://console.firebase.google.com):
 
-1. **Enable sign-in providers** — Build → Authentication → Sign-in method →
-   enable **Google**, and **Email/Password** if you want that option too (the
-   app offers both — Google or email+password, whichever you prefer).
-2. **Add your GitHub Pages domain** — Authentication → Settings → Authorized
-   domains → add `<your-username>.github.io`. Without this, sign-in will fail
+1. **Enable sign-in providers** — Authentication → Sign-in method → enable
+   **Google** and **Email/Password** (the app offers both on the sign-in
+   screen — whichever you prefer).
+2. **Authorize your domain** — Authentication → Settings → Authorized
+   domains → add `<your-username>.github.io`. Skip this and sign-in fails
    with an "unauthorized domain" error.
-3. **Create the Firestore database** — Build → Firestore Database → Create
-   database (any region close to you is fine; production mode is fine since
-   we set explicit rules below).
-4. **Set security rules** so only you can read/write your own data — Firestore
-   Database → Rules, paste this in, then Publish:
+3. **Create the Firestore database** — Build → Firestore Database → Create.
+4. **Set security rules** so only you can touch your own data — Firestore →
+   Rules:
    ```
    rules_version = '2';
    service cloud.firestore {
@@ -51,186 +39,151 @@ project to finish wiring this up:
        match /users/{userId}/store/{docId} {
          allow read, write: if request.auth != null && request.auth.uid == userId;
        }
+       match /users/{userId}/meta/{docId} {
+         allow read, write: if request.auth != null && request.auth.uid == userId;
+       }
      }
    }
    ```
+   (The `meta` collection holds a one-time flag for first-run bag seeding.)
 
-Once that's done, re-upload `index.html`, open it, and sign in with Google.
-Every device you sign into with that same account sees the same data.
+Every device signed into the same account sees the same data — rounds, bag,
+courses, everything.
 
-**Migrating your existing rounds**: your old data is sitting in this browser's
-localStorage, separate from the new Firestore-backed storage — signing in
-starts you fresh. Before you re-upload the new file, open the *current* live
-version, go to **Backup → Download backup (.json)**, then after signing into
-the new version, use **Backup → Restore from a backup** to bring it all over.
+## How the tabs work
 
-The Claude-artifact version is unaffected by any of this — it still uses your
-Claude account's own storage and works the same as before.
+**Play** — one hole at a time, big tap targets, built for actually being on
+the course. Quick-load a saved course, pick tees (if the course has multiple
+sets on file), track score/putts/chips, fairway & GIR with optional miss
+direction (left/right off the tee, short/long/left/right on approach),
+bunker, and GPS distance to the green — with a club suggestion pulled from
+your Bag's stored distances, adjusted for the course's elevation if set.
 
+**Rounds** — the full 18-hole scorecard for entering a round after the fact,
+or editing one you already logged. Same stat rows as Play (par, yards, score,
+putts, chips, FIR, GIR, miss detail, bunker), plus a Front 9 / Back 9 / Full
+18 selector so a 9-hole round doesn't skew your stats.
+
+**Stats** — year filter, handicap index (real USGA-style differential math),
+rolling 5-round score/putts trends with gear-change and practice-session
+markers, FIR%/GIR% trends, scoring by par-type, FIR/GIR-vs-score scatter
+plots, and a miss-tendency breakdown (fairway side, approach side, approach
+depth, bunker/sand-save proxy) once you've logged enough miss detail.
+
+**Practice** — session log (focus, duration, notes), editable in place.
+
+**Bag** — clubs with shaft, status, notes, and an average distance — the
+distance is what powers the club-suggestion feature in Play. Editable in
+place.
+
+**Courses** — the only source of course data in the app (see below). Search
+OpenGolfAPI, add manually, edit anything, and open an interactive map to set
+green locations for every hole at once.
+
+**Notes** — a free-form journal.
+
+**Backup** — export everything as one `.json` file, or restore from one.
+
+## Courses: the single source of truth
+
+There are no built-in course presets — nothing auto-appears, and deleting a
+course removes it everywhere, permanently, including from the Rounds/Play
+quick-load dropdowns (which are built directly from whatever's actually in
+this list). Only courses with 18-hole par data show up in those dropdowns,
+since there'd be nothing to load otherwise.
+
+**Look up a course** searches OpenGolfAPI's free, keyless public database and
+fills in par, yardage (per tee color, when published), rating, slope, and
+available tee sets. It only ever calls plain read endpoints — no account, no
+API key, nothing about you or your rounds is ever sent, just the course name
+you type in. It's community-maintained data (think of it like a wiki), so:
+- Coverage varies — smaller regional courses may be missing entirely, or
+  have partial data (e.g. rating/slope but no hole-by-hole par).
+- If the hole pars sum to a different total than the course's published par,
+  you'll get an on-screen warning so you can sanity-check it against your
+  scorecard before trusting it.
+- Deliberately not used: their sign-in flow, API keys, or their "moments"
+  data-contribution pipeline. Not needed for anything here.
+
+**Add manually** — name, rating, slope, elevation, and two optional fields
+for **Par** and **Yardage** as 18 comma-separated numbers
+(e.g. `4,4,3,5,4,4,4,3,5,4,4,3,5,4,4,4,3,5`) — so a course you type in by
+hand can show up in the dropdowns too, same as a looked-up one. Re-entering a
+name you've already saved updates that course instead of duplicating it —
+handy for retroactively adding par to an old entry, or refreshing stale data.
+
+**Elevation** (ft) feeds the altitude-adjusted "plays like" distance and club
+suggestion in Play — a handful of well-known courses have elevation
+pre-filled (only if you haven't set one yourself), everything else you enter
+once and it's remembered.
+
+## GPS: two ways to build your own green-location database
+
+OpenGolfAPI's green-boundary data is a sparser layer than "the course
+exists," so this app treats it as one option, not a dependency:
+
+1. **Map editor** — "map greens" on any course in the Courses tab opens an
+   interactive Leaflet map. Click a hole number, then click its green on the
+   map. Do all 18 in a couple of minutes from your couch, or fine-tune one
+   hole after a round.
+2. **On-course single save** — in Play, "Save my current spot as this hole's
+   green" captures your live position and saves it for that hole, once,
+   permanently.
+
+**"Get distance"** checks in this order: your own saved location first
+(works offline, zero network calls), then OpenGolfAPI if the course was
+looked up and has coverage, then a plain "no data yet" message with a nudge
+toward the two options above. Works for **any** course — you don't need an
+OpenGolfAPI lookup at all for GPS to function, since you can map the greens
+yourself.
+
+## Handicap index & course handicap
+
+- **Handicap Index** (Stats tab): `(score − course rating) × 113 / slope`
+  per round, best differentials from your last 20 rounds, averaged with the
+  standard 96% shave — the real USGA formula. Only counts rounds at courses
+  with rating & slope on file. 9-hole rounds are scaled to an 18-hole-
+  equivalent differential rather than skewing the index.
+- **Course Handicap** (shown live in Rounds/Play once you've selected a
+  course and tees): `Index × (Slope / 113) + (Rating − Par)`, using whichever
+  tee set you've picked. Tells you your target score for *this* course
+  before you even start.
+
+## A few structural notes worth knowing
+
+- **9-hole rounds**: the Front 9 / Back 9 / Full 18 selector actually
+  excludes the unplayed holes from every stat and the handicap calc — this
+  was a real bug early on (a 9-hole round was being compared against a full
+  18-hole par/rating, making stats look artificially great) and is fixed.
+- **One-time seeding**: your account gets the Ping i15 starter bag exactly
+  once, on first-ever sign-in — never again, even if you later delete every
+  club. An empty list stays empty; delete really means delete.
+- **Multi-tee support**: courses looked up via OpenGolfAPI store every
+  published tee set (name, color, rating, slope, par, yardage). Picking
+  different tees in Rounds/Play updates yardages and the course handicap
+  live.
+
+## The Claude-artifact companion version
+
+Earlier in this project there was a parallel build (`golf-tracker.html`)
+meant to run as a Claude.ai artifact using Claude's own storage instead of
+Firebase. Given how far this has grown — a Firebase sign-in gate blocking the
+whole app, a Leaflet map pulling map tiles, and live OpenGolfAPI calls — that
+version isn't really viable to keep maintaining in parallel. Claude's
+artifact sandbox can't make the external network calls or (likely) complete
+an auth popup that this app now depends on for basically everything. Worth
+formally retiring that copy and treating this `index.html` as the one real
+version, unless you specifically want a network-free fallback — happy to
+build a deliberately-scoped-down version for that if useful, but it'd need
+to be a real fork, not a silent parity copy.
 
 ## Backing up your data
 
-Even with Firestore syncing across devices, it's still worth having an
-independent copy — the **Backup** tab lets you:
-- **Export** — downloads everything (rounds, practice log, bag, courses,
-  journal) as one `.json` file. Save that file to Google Drive, Files, email,
-  wherever — it's your safety net if anything ever gets deleted or corrupted,
-  or if you ever want to move off Firebase entirely.
-- **Restore** — pick a previously exported `.json` file to replace everything
-  currently loaded with it. Also how you migrate data between this GitHub
-  version and the version in Claude (which uses separate storage).
+Even with cross-device sync, it's worth having an independent copy — the
+**Backup** tab:
+- **Export** — downloads everything as one `.json` file. Save it to Drive,
+  Files, email, wherever.
+- **Restore** — replaces everything currently loaded with a previously
+  exported file. Also how you'd move data if you ever left Firebase.
 
 Worth doing every so often, especially after a good round.
-
-## What's new: analytics
-
-The Stats tab now includes:
-
-- **Handicap index** — a real USGA-style differential calc `(score − course rating) × 113 / slope`, averaged over your best differentials from the last 20 rounds (with the standard 96% shave). This only works for rounds at courses that have a rating and slope set in the Courses tab — your 7 regulars are pre-loaded with real numbers, but double-check them against your actual tee box (I used approximate "white tee" figures; exact values vary by tee).
-- **Rolling 5-round averages** on the score and putts charts, layered over the raw per-round dots, so you can see the trend without the noise of any one bad day.
-- **Gear and practice markers** — small dots along the score chart marking when you added/retired a club or logged a practice session (hover for details).
-- **Scoring by par type** — average to par on 3s/4s/5s, plus a birdie/par/bogey/double+ distribution bar.
-- **Correlation scatters** — FIR% and GIR% plotted against score-to-par, so you can see which one actually tracks with better rounds for you.
-
-Bag entries also now have an optional **distance** field (yds) — worth filling in over time as you get real yardages from the range or GPS.
-
-## Course lookup + GPS (GitHub version only)
-
-The Courses tab now has a **Look up a course** search box backed by OpenGolfAPI's
-free, keyless course database (16,000+ US courses). Search a name, pick a match,
-and it fills in par (all 18 holes), rating, and slope for you — review before saving.
-
-**What this does and doesn't do, on purpose:**
-- Only ever calls the plain read endpoints (course search, course detail, green
-  geometry). No account, no API key, no sign-in.
-- **Never sends anything about you** — not your rounds, not your email, not your
-  location — to OpenGolfAPI or anywhere else. The only data that leaves your
-  browser is the course name you type into the search box.
-- GPS distance-to-pin works the same way: your phone gives your live position
-  directly to this page (never transmitted anywhere), a green coordinate is
-  looked up once for the hole you're on, and the distance is calculated locally
-  in the browser. Tap **"📍 Get distance"** in the Play tab on a course you've
-  looked up this way.
-- Deliberately skipped: their sign-in flow, API keys, and their "moments/shots"
-  data-contribution pipeline — none of that is needed for what this app does,
-  and it's not something to wire in without understanding it fully.
-
-Coverage varies by course since the data is community-maintained (like a wiki) —
-if a course or hole doesn't have data yet, you'll get a clear message and can
-still enter par/rating/slope manually.
-
-## Editing rounds and clubs
-
-Both the Rounds history and the Bag list now have an **edit** link alongside
-delete. For a round, it loads the full scorecard back into the form (including
-holes-played) so you can fix a typo'd score or add putts you forgot — hit
-"Update round" instead of creating a duplicate. Same idea for clubs — edit
-pulls a club back into the Add-a-club form, tweak anything, "Update club" saves
-it in place. "Cancel edit" on either form backs out without saving.
-
-
-This only works in the GitHub-hosted version — the Claude-artifact version can't
-reach external APIs, so the OpenGolfAPI lookup and course-search will just show
-a "couldn't reach" message there. GPS itself works in both (see below).
-
-## GPS fallback: save your own green locations
-
-OpenGolfAPI's green-boundary coverage is uneven — plenty of courses (especially
-smaller regional ones) just don't have that data published yet. Rather than
-depend on it, GPS now builds its own database as you play:
-
-- **"Save my current spot as this hole's green"** (Play tab) — stand near or on
-  the green, tap it once, and that exact spot is saved for that course and
-  hole, forever. No internet needed after that — it's stored the same way as
-  everything else.
-- **"Get distance"** checks in this order: your own saved spot first (if you
-  have one), then OpenGolfAPI (if the course was looked up and has coverage),
-  then tells you plainly if neither exists yet — with a nudge to just save one.
-- This works for **any course**, including the 7 pre-loaded regulars — you
-  don't need to look a course up via OpenGolfAPI at all for this to work.
-- The Courses tab now shows how many of a course's 18 greens you've personally
-  saved, so you can see coverage build up round by round.
-
-Practically: the first time at a course, GPS might say "no data yet" on most
-holes. Tap "save" once per hole as you play it, and every round after that,
-it's instant and doesn't touch the network at all.
-
-## Fixed: deleted defaults coming back
-
-The app used to reseed the 7 default courses (and the Ping i15 bag) any time
-that list was *empty* — meant for "first time ever opening this," but it
-couldn't tell that apart from "you just deleted everything on purpose." So
-deleting all your courses to clean up duplicates, then refreshing, silently
-brought the old no-yardage defaults right back.
-
-Fixed with a one-time flag: seeding now only ever happens once, the very first
-time your account is used. After that, an empty list stays empty no matter how
-many times you refresh — delete really means delete.
-
-**This matters for tomorrow's migration**: when you sign into the new Firebase
-version for the first time, it's a brand-new account with nothing in it yet —
-that first login is when the one-time seeding happens (Ping i15 bag only —
-see below, courses are no longer auto-seeded at all). Restore your backup
-*after* that first sign-in, not before, so you don't end up with the seeded
-bag sitting alongside a restored one as duplicates.
-
-## Built-in course presets removed entirely
-
-The 7 pre-loaded regulars (and the silent fallback data behind them) are gone.
-This was the real root of the dropdown/yardage confusion — even after courses
-were deleted from your list, a hardcoded copy of their names and par data was
-still baked into the code as a fallback, so they kept reappearing in the
-Rounds/Play dropdown no matter what you did in the Courses tab.
-
-Now: **the Courses tab is the only source of truth.** Nothing auto-appears on
-first login, nothing falls back to hidden data, and deleting a course removes
-it everywhere, permanently — the dropdown is built directly from whatever's
-actually in your list.
-
-**One consequence worth knowing**: only courses with 18-hole par data show up
-in the Rounds/Play quick-load dropdown, since there'd be nothing to load
-otherwise. "Look up a course" fills that in automatically. If you add a course
-manually instead, there are now two optional fields — **Par** and **Yardage**,
-each 18 comma-separated numbers (e.g. `4,4,3,5,4,4,4,3,5,4,4,3,5,4,4,4,3,5`) —
-so a manually-added course can show up in the dropdown too. Re-entering a name
-you've already saved updates that course rather than duplicating it, so this
-also works for retroactively adding par to a course you added before this
-existed.
-
-**To get a clean slate**, once you're signed into the new version: open the
-Courses tab and delete anything left over from before (any stale copies with
-no yardage set). Then re-add each course either by searching for it in **Look
-up a course** (gets you real par, yardage, rating, and slope automatically) or
-by typing it in manually. Takes a couple minutes once, and after that the
-dropdown will only ever show exactly what you've chosen to keep.
-
-
-## Hole yardages
-
-The scorecard now has a **Yards** row alongside Par. It auto-fills when you look
-up a course via OpenGolfAPI (if that course's data includes yardage). The 7
-pre-loaded regulars don't have per-hole yardage baked in yet — easiest fix is to
-search for them again in the **Look up a course** tool now that it exists; it'll
-pull real numbers automatically.
-
-## Playing 9 holes (fixed a real bug)
-
-There's now a **Holes played** selector (Full 18 / Front 9 / Back 9) on both the
-Rounds form and the Play tab. Pick Front or Back and the other 9 holes grey out
-so they can't accidentally get counted.
-
-This also fixed a real bug: previously, a 9-hole round's score was being compared
-against a full 18-hole par and course rating, which made your average-to-par and
-handicap index look artificially, impossibly good. Now:
-- Stats (avg to par, FIR%, GIR%, putts) only count holes that actually have a
-  score entered.
-- The handicap index treats a 9-hole round properly — it estimates a 9-hole
-  course rating as half the 18-hole rating, computes the differential, then
-  scales it to an 18-hole-equivalent number the way USGA pairs two 9-hole
-  rounds together. It's a simplified stand-in (real courses publish separate
-  front/back ratings that we don't have), but it's honest about being an
-  estimate and won't wreck your index the way the old bug did.
-
-
-
-

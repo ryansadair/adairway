@@ -3188,13 +3188,13 @@ document.getElementById('importFile').addEventListener('change', async (e)=>{
     const text = await file.text();
     data = JSON.parse(text);
   }catch(err){
-    alert('That file could not be read — make sure it\'s a backup JSON file exported from Back Nine.');
+    alert('That file could not be read — make sure it\'s a backup JSON file exported from Adairway Golf.');
     e.target.value='';
     return;
   }
   const hasAny = ['rounds','practice','bag','courses','notes'].some(k=>Array.isArray(data[k]));
   if(!hasAny){
-    alert('That file doesn\'t look like a Back Nine backup.');
+    alert('That file doesn\'t look like an Adairway Golf backup.');
     e.target.value='';
     return;
   }
