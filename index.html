@@ -192,7 +192,7 @@
     display:flex;align-items:center;justify-content:center;line-height:1;user-select:none;
   }
   .stepper button:active{background:var(--fairway-deep);color:var(--paper-light);}
-  .stepper .val{font-family:'Fraunces',serif;font-weight:700;font-size:38px;color:var(--graphite);min-width:52px;}
+  .stepper .val{font-family:'Fraunces',serif;font-weight:700;font-size:38px;color:var(--graphite);min-width:52px;text-align:center;line-height:1;display:flex;align-items:center;justify-content:center;}
   .toggle-btn{
     font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:0.04em;
     padding:14px 20px;border-radius:3px;border:2px solid var(--line);background:#fff;color:var(--graphite);
@@ -603,6 +603,7 @@
       </div>
       <div class="field"><label>Notes / swing thoughts / reps</label><textarea id="p-notes" placeholder="What you worked on, cues that clicked, drills..."></textarea></div>
       <button class="btn" id="savePracticeBtn">Save session</button>
+      <button class="btn outline" id="cancelEditPracticeBtn" type="button" style="display:none;margin-left:8px;">Cancel edit</button>
     </div>
     <div class="card">
       <h2>Practice history</h2>
@@ -1807,6 +1808,31 @@ function renderStats(){
 }
 
 // ---------- PRACTICE ----------
+let editingPracticeId = null;
+
+function clearPracticeForm(){
+  editingPracticeId = null;
+  document.getElementById('p-date').value = todayISO();
+  document.getElementById('p-focus').value = '';
+  document.getElementById('p-duration').value = '';
+  document.getElementById('p-notes').value = '';
+  document.getElementById('savePracticeBtn').textContent = 'Save session';
+  const cancel = document.getElementById('cancelEditPracticeBtn');
+  if(cancel) cancel.style.display = 'none';
+}
+
+function loadPracticeIntoForm(p){
+  editingPracticeId = p.id;
+  document.getElementById('p-date').value = p.date || todayISO();
+  document.getElementById('p-focus').value = p.focus || '';
+  document.getElementById('p-duration').value = p.duration != null ? p.duration : '';
+  document.getElementById('p-notes').value = p.notes || '';
+  document.getElementById('savePracticeBtn').textContent = 'Update session';
+  const cancel = document.getElementById('cancelEditPracticeBtn');
+  if(cancel) cancel.style.display = '';
+  document.getElementById('p-focus')?.scrollIntoView({ behavior:'smooth', block:'center' });
+}
+
 function renderPractice(){
   const list = document.getElementById('practiceList');
   if(practice.length===0){ list.innerHTML = '<div class="empty">No practice sessions logged yet.</div>'; return; }
@@ -1818,29 +1844,47 @@ function renderPractice(){
         <div class="title">${escapeHtml(p.focus||'Practice session')}</div>
         ${p.notes?`<div class="notes">${escapeHtml(p.notes)}</div>`:''}
       </div>
-      <button class="del" data-id="${p.id}" data-kind="practice">delete</button>
+      <div>
+        <button class="edit-btn" data-id="${p.id}" data-kind="practice-edit" type="button">edit</button>
+        <button class="del" data-id="${p.id}" data-kind="practice">delete</button>
+      </div>
     </div>
   `).join('');
 }
 document.getElementById('savePracticeBtn').addEventListener('click', async ()=>{
   const focus = document.getElementById('p-focus').value.trim();
   if(!focus){ alert('Add a focus area.'); return; }
-  practice.push({
-    id: uid(),
+  const entry = {
+    id: editingPracticeId || uid(),
     date: document.getElementById('p-date').value || todayISO(),
     focus,
     duration: document.getElementById('p-duration').value ? +document.getElementById('p-duration').value : null,
     notes: document.getElementById('p-notes').value.trim()
-  });
+  };
+  if(editingPracticeId){
+    const idx = practice.findIndex(p=>p.id===editingPracticeId);
+    if(idx>=0) practice[idx] = entry;
+    else practice.push(entry);
+  }else{
+    practice.push(entry);
+  }
   await saveList('practice', practice);
-  document.getElementById('p-focus').value='';
-  document.getElementById('p-duration').value='';
-  document.getElementById('p-notes').value='';
+  clearPracticeForm();
   renderPractice();
 });
+document.getElementById('cancelEditPracticeBtn')?.addEventListener('click', ()=>{
+  clearPracticeForm();
+});
 document.getElementById('practiceList').addEventListener('click', async e=>{
+  const editBtn = e.target.closest('button[data-kind="practice-edit"]');
+  if(editBtn){
+    const p = practice.find(x=>x.id===editBtn.dataset.id);
+    if(p) loadPracticeIntoForm(p);
+    return;
+  }
   const btn = e.target.closest('button.del[data-kind="practice"]');
   if(!btn) return;
+  if(editingPracticeId === btn.dataset.id) clearPracticeForm();
   practice = practice.filter(p=>p.id!==btn.dataset.id);
   await saveList('practice', practice);
   renderPractice();
