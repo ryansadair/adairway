@@ -277,7 +277,42 @@
     nav#tabs button.active::after{display:none;}
     nav#tabs button.active .peg{background:var(--flag);}
   }
+
+  /* Green map editor */
+  .map-modal{
+    display:none;position:fixed;inset:0;z-index:2000;background:rgba(31,58,46,0.45);
+    align-items:center;justify-content:center;padding:12px;
+  }
+  .map-modal.open{display:flex;}
+  .map-modal-card{
+    background:var(--paper-light);border:1px solid var(--line);border-radius:10px;
+    width:min(640px,100%);max-height:min(92vh,820px);display:flex;flex-direction:column;
+    box-shadow:0 12px 40px rgba(31,58,46,0.2);overflow:hidden;
+  }
+  .map-modal-head{
+    display:flex;align-items:flex-start;justify-content:space-between;gap:12px;
+    padding:14px 16px 10px;border-bottom:1px solid var(--line);
+  }
+  .map-modal-head h3{margin:0;font-family:'Fraunces',serif;font-size:18px;color:var(--fairway-deep);}
+  .map-modal-head .sub{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--turf);margin-top:4px;}
+  .map-modal-body{padding:12px 16px 16px;display:flex;flex-direction:column;gap:10px;min-height:0;}
+  .map-hole-row{display:flex;flex-wrap:wrap;gap:5px;}
+  .map-hole-btn{
+    width:32px;height:32px;border-radius:6px;border:1px solid var(--line);background:#fff;
+    font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;cursor:pointer;color:var(--graphite);
+  }
+  .map-hole-btn.has{border-color:var(--turf);background:rgba(63,107,74,0.12);}
+  .map-hole-btn.active{background:var(--fairway-deep);color:var(--paper-light);border-color:var(--fairway-deep);}
+  #greenMap{height:min(48vh,360px);width:100%;border-radius:8px;border:1px solid var(--line);z-index:1;}
+  .map-modal-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+  .map-modal-actions .hint{margin:0;flex:1;min-width:140px;}
+  @media (max-width:520px){
+    .map-modal{padding:0;align-items:stretch;}
+    .map-modal-card{max-height:100%;height:100%;border-radius:0;width:100%;}
+    #greenMap{height:42vh;}
+  }
 </style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 </head>
 <body>
 
@@ -315,6 +350,28 @@
     <p id="authError" class="hint" style="color:var(--flag);margin-top:14px;"></p>
   </div>
 </div>
+
+<div id="greenMapModal" class="map-modal" aria-hidden="true">
+  <div class="map-modal-card">
+    <div class="map-modal-head">
+      <div>
+        <h3 id="greenMapTitle">Set greens on map</h3>
+        <div class="sub" id="greenMapSub">Tap a hole, then tap the map on that green.</div>
+      </div>
+      <button type="button" class="btn outline small" id="greenMapCloseBtn">Close</button>
+    </div>
+    <div class="map-modal-body">
+      <div class="map-hole-row" id="greenMapHoles"></div>
+      <div id="greenMap"></div>
+      <div class="map-modal-actions">
+        <button type="button" class="btn small" id="greenMapClearHoleBtn">Clear this hole</button>
+        <button type="button" class="btn" id="greenMapSaveBtn">Save greens</button>
+        <p class="hint" id="greenMapHint">Select hole 1, then tap the green on the map.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
 
 <div class="wrap">
 
@@ -643,6 +700,7 @@
 
 </div>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut,
@@ -1706,6 +1764,7 @@ function renderCourses(){
         ${c.notes?`<div class="notes">${escapeHtml(c.notes)}</div>`:''}
       </div>
       <div>
+        <button class="edit-btn" data-id="${c.id}" data-kind="course-map" type="button">map greens</button>
         <button class="edit-btn" data-id="${c.id}" data-kind="course-edit" type="button">edit</button>
         <button class="del" data-id="${c.id}" data-kind="course">delete</button>
       </div>
@@ -1848,7 +1907,7 @@ function applyApiCourseDetail(detail){
     if(plTees) plTees.value = teeLabel;
   }
 
-  pendingApiCourse = { name, par: parArr, yardage: yardageArr, rating, slope, apiCourseId: detail.id, teeLabel };
+  pendingApiCourse = { name, par: parArr, yardage: yardageArr, rating, slope, apiCourseId: detail.id, teeLabel, lat: detail.lat ?? null, lng: detail.lng ?? null };
 
   const parNote = parArr ? `full 18-hole par` : `no par data found`;
   const ydCount = yardageArr ? yardageArr.filter(y=>y>0).length : 0;
@@ -2065,6 +2124,8 @@ document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
     if(pendingApiCourse.par) extra.par = pendingApiCourse.par;
     if(pendingApiCourse.yardage) extra.yardage = pendingApiCourse.yardage;
     if(pendingApiCourse.apiCourseId) extra.apiCourseId = pendingApiCourse.apiCourseId;
+    if(pendingApiCourse.lat != null) extra.lat = pendingApiCourse.lat;
+    if(pendingApiCourse.lng != null) extra.lng = pendingApiCourse.lng;
   }
 
   const parResult = parseCsvNumbers(document.getElementById('co-par').value, 18);
@@ -2090,7 +2151,9 @@ document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
         notes: newNotes,
         ...(extra.par ? {par: extra.par} : {}),
         ...(extra.yardage ? {yardage: extra.yardage} : {}),
-        ...(extra.apiCourseId ? {apiCourseId: extra.apiCourseId} : {})
+        ...(extra.apiCourseId ? {apiCourseId: extra.apiCourseId} : {}),
+        ...(extra.lat != null ? {lat: extra.lat} : {}),
+        ...(extra.lng != null ? {lng: extra.lng} : {})
       };
     }
     editingCourseId = null;
@@ -2106,7 +2169,9 @@ document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
         notes: newNotes ? newNotes : existing.notes,
         ...(extra.par ? {par: extra.par} : {}),
         ...(extra.yardage ? {yardage: extra.yardage} : {}),
-        ...(extra.apiCourseId ? {apiCourseId: extra.apiCourseId} : {})
+        ...(extra.apiCourseId ? {apiCourseId: extra.apiCourseId} : {}),
+        ...(extra.lat != null ? {lat: extra.lat} : {}),
+        ...(extra.lng != null ? {lng: extra.lng} : {})
       };
     }else{
       courses.push({ id: uid(), name, rating: newRating, slope: newSlope, notes: newNotes, ...extra });
@@ -2128,6 +2193,11 @@ document.getElementById('cancelEditCourseBtn').addEventListener('click', ()=>{
 });
 
 document.getElementById('coursesList').addEventListener('click', async e=>{
+  const mapBtn = e.target.closest('button[data-kind="course-map"]');
+  if(mapBtn){
+    openGreenMapEditor(mapBtn.dataset.id);
+    return;
+  }
   const editBtn = e.target.closest('button[data-kind="course-edit"]');
   if(editBtn){
     const c = courses.find(x=>x.id===editBtn.dataset.id);
@@ -2149,6 +2219,153 @@ document.getElementById('coursesList').addEventListener('click', async e=>{
   await saveList('courses', courses);
   renderCourses();
   populatePresetDropdown();
+});
+
+
+// ---------- Green map editor (pre-round pin placement) ----------
+let mapEditor = {
+  courseId: null,
+  hole: 1,
+  greens: [],
+  map: null,
+  markers: {},
+  clickHandler: null
+};
+
+function openGreenMapEditor(courseId){
+  if(typeof L === 'undefined'){
+    alert('Map library failed to load. Check your connection and try again.');
+    return;
+  }
+  const course = courses.find(c=>c.id===courseId);
+  if(!course) return;
+  mapEditor.courseId = courseId;
+  mapEditor.hole = 1;
+  mapEditor.greens = Array.isArray(course.greens)
+    ? course.greens.map(g => g ? {...g} : null)
+    : Array(18).fill(null);
+  while(mapEditor.greens.length < 18) mapEditor.greens.push(null);
+
+  document.getElementById('greenMapTitle').textContent = course.name;
+  document.getElementById('greenMapSub').textContent = 'Select a hole, then tap its green on the map.';
+  const modal = document.getElementById('greenMapModal');
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden','false');
+
+  const holesEl = document.getElementById('greenMapHoles');
+  holesEl.innerHTML = Array.from({length:18}, (_,i)=>{
+    const n = i+1;
+    const has = !!mapEditor.greens[i];
+    return `<button type="button" class="map-hole-btn${has?' has':''}${n===mapEditor.hole?' active':''}" data-hole="${n}">${n}</button>`;
+  }).join('');
+
+  setTimeout(()=>{
+    const firstGreen = mapEditor.greens.find(g=>g);
+    const center = (course.lat != null && course.lng != null)
+      ? [course.lat, course.lng]
+      : (firstGreen ? [firstGreen.lat, firstGreen.lng] : [44.05, -123.0]);
+    if(!mapEditor.map){
+      mapEditor.map = L.map('greenMap', { scrollWheelZoom: true }).setView(center, 16);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap'
+      }).addTo(mapEditor.map);
+      mapEditor.clickHandler = (e)=>{
+        placeGreenPin(mapEditor.hole, e.latlng.lat, e.latlng.lng);
+      };
+      mapEditor.map.on('click', mapEditor.clickHandler);
+    } else {
+      mapEditor.map.invalidateSize();
+      mapEditor.map.setView(center, mapEditor.map.getZoom() || 16);
+    }
+    refreshMapMarkers();
+    updateMapHint();
+  }, 50);
+}
+
+function closeGreenMapEditor(){
+  const modal = document.getElementById('greenMapModal');
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden','true');
+  mapEditor.courseId = null;
+}
+
+function setMapHole(n){
+  mapEditor.hole = n;
+  document.querySelectorAll('#greenMapHoles .map-hole-btn').forEach(btn=>{
+    const hn = +btn.dataset.hole;
+    btn.classList.toggle('active', hn === n);
+    btn.classList.toggle('has', !!mapEditor.greens[hn-1]);
+  });
+  const g = mapEditor.greens[n-1];
+  if(g && mapEditor.map) mapEditor.map.panTo([g.lat, g.lng]);
+  updateMapHint();
+}
+
+function placeGreenPin(holeNum, lat, lng){
+  mapEditor.greens[holeNum-1] = { lat, lng, savedAt: Date.now(), source: 'map' };
+  refreshMapMarkers();
+  document.querySelectorAll('#greenMapHoles .map-hole-btn').forEach(btn=>{
+    const hn = +btn.dataset.hole;
+    btn.classList.toggle('has', !!mapEditor.greens[hn-1]);
+  });
+  updateMapHint();
+}
+
+function refreshMapMarkers(){
+  if(!mapEditor.map) return;
+  Object.values(mapEditor.markers).forEach(m=> mapEditor.map.removeLayer(m));
+  mapEditor.markers = {};
+  mapEditor.greens.forEach((g,i)=>{
+    if(!g) return;
+    const m = L.marker([g.lat, g.lng], { draggable: true }).addTo(mapEditor.map);
+    m.bindTooltip('Hole '+(i+1), { permanent:false, direction:'top' });
+    m.on('dragend', ()=>{
+      const ll = m.getLatLng();
+      mapEditor.greens[i] = { lat: ll.lat, lng: ll.lng, savedAt: Date.now(), source: 'map' };
+      updateMapHint();
+    });
+    m.on('click', ()=> setMapHole(i+1));
+    mapEditor.markers[i] = m;
+  });
+}
+
+function updateMapHint(){
+  const n = mapEditor.greens.filter(Boolean).length;
+  const g = mapEditor.greens[mapEditor.hole-1];
+  const el = document.getElementById('greenMapHint');
+  if(!el) return;
+  el.textContent = g
+    ? `Hole ${mapEditor.hole} set · ${n}/18 greens. Drag pin to adjust, or tap map to move.`
+    : `Hole ${mapEditor.hole} not set · ${n}/18 greens. Tap the map on the green.`;
+}
+
+document.getElementById('greenMapHoles')?.addEventListener('click', e=>{
+  const btn = e.target.closest('.map-hole-btn');
+  if(!btn) return;
+  setMapHole(+btn.dataset.hole);
+});
+document.getElementById('greenMapCloseBtn')?.addEventListener('click', closeGreenMapEditor);
+document.getElementById('greenMapModal')?.addEventListener('click', e=>{
+  if(e.target.id === 'greenMapModal') closeGreenMapEditor();
+});
+document.getElementById('greenMapClearHoleBtn')?.addEventListener('click', ()=>{
+  mapEditor.greens[mapEditor.hole-1] = null;
+  refreshMapMarkers();
+  document.querySelectorAll('#greenMapHoles .map-hole-btn').forEach(btn=>{
+    const hn = +btn.dataset.hole;
+    btn.classList.toggle('has', !!mapEditor.greens[hn-1]);
+  });
+  updateMapHint();
+});
+document.getElementById('greenMapSaveBtn')?.addEventListener('click', async ()=>{
+  const course = courses.find(c=>c.id===mapEditor.courseId);
+  if(!course) return;
+  course.greens = mapEditor.greens.map(g => g ? {...g} : null);
+  await saveList('courses', courses);
+  renderCourses();
+  if(typeof updateGpsAvailability === 'function') updateGpsAvailability();
+  closeGreenMapEditor();
 });
 
 // ---------- NOTES ----------
@@ -2293,3 +2510,4 @@ async function init(){
 </script>
 </body>
 </html>
+
