@@ -1528,7 +1528,7 @@ document.getElementById('finishRoundBtn').addEventListener('click', async ()=>{
     document.getElementById('pl-holesplayed').value
   );
   // reset play state for next round
-  playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, fir:false, gir:false}));
+  playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, fir:false, gir:false, firMiss:null, girMissLat:null, girMissDepth:null, bunker:false}));
   document.getElementById('pl-holesplayed').value = 'full';
   setPlayRange('full');
   document.getElementById('pl-course').value='';
@@ -1869,31 +1869,43 @@ function renderMissTendencies(withScores){
   let gL=0, gR=0, gS=0, gLong=0, girMissN=0;
   let bunkers=0, holesN=0, sandSaves=0, sandOpps=0;
 
+  const norm = (v)=>{
+    if(v == null || v === '') return '';
+    const s = String(v).trim();
+    if(s === 'L' || s.toLowerCase() === 'left') return 'L';
+    if(s === 'R' || s.toLowerCase() === 'right') return 'R';
+    if(s === 'S' || s.toLowerCase() === 'short') return 'S';
+    if(s === 'Long' || s.toLowerCase() === 'long' || s === 'Lg') return 'Long';
+    return s;
+  };
+
   withScores.forEach(r=>{
     (r.holes||[]).forEach(h=>{
       if(!h || !(h.score>0)) return;
       holesN++;
-      if(h.bunker){
+      if(h.bunker === true || h.bunker === 'true' || h.bunker === 1){
         bunkers++;
         sandOpps++;
-        // simple sand-save proxy: up-and-down (score <= par + 1) from a bunker
         if(h.par>0 && h.score <= h.par + 1) sandSaves++;
       }
       if(!h.fir && h.par !== 3){
-        if(h.firMiss==='L'){ firL++; firMissN++; }
-        else if(h.firMiss==='R'){ firR++; firMissN++; }
+        const fm = norm(h.firMiss);
+        if(fm==='L'){ firL++; firMissN++; }
+        else if(fm==='R'){ firR++; firMissN++; }
       }
       if(!h.gir){
-        if(h.girMissLat==='L'){ gL++; girMissN++; }
-        else if(h.girMissLat==='R'){ gR++; girMissN++; }
-        if(h.girMissDepth==='S'){ gS++; girMissN++; }
-        else if(h.girMissDepth==='Long'){ gLong++; girMissN++; }
+        const lat = norm(h.girMissLat);
+        const depth = norm(h.girMissDepth);
+        if(lat==='L'){ gL++; girMissN++; }
+        else if(lat==='R'){ gR++; girMissN++; }
+        if(depth==='S'){ gS++; girMissN++; }
+        else if(depth==='Long'){ gLong++; girMissN++; }
       }
     });
   });
 
   if(firMissN + girMissN + bunkers === 0){
-    el.innerHTML = '<div class="empty">Mark left/right/short/long or bunker on holes while playing to unlock this.</div>';
+    el.innerHTML = '<div class="empty">No miss/bunker detail on these rounds yet. On Play or the scorecard, leave Fairway/GIR off and tap Left/Right/Short/Long or Bunker — then save the round.</div>';
     return;
   }
 
@@ -2045,6 +2057,7 @@ function renderStats(){
   }).filter(Boolean);
   scatterChart(document.getElementById('firScatter'), firScatterPts, {xMin:0,xMax:100});
   scatterChart(document.getElementById('girScatter'), girScatterPts, {xMin:0,xMax:100});
+  renderMissTendencies(withScores);
 }
 
 // ---------- PRACTICE ----------
