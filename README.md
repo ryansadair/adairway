@@ -52,6 +52,15 @@ courses, everything.
 
 ## How the tabs work
 
+Every tab except Stats and Backup opens showing its history/list first —
+Rounds, Practice, Bag, Courses, and Notes all tuck their entry form behind a
+"+ New round" / "+ Add a club" / etc. toggle, so you're not scrolling past a
+big form just to check past data. Tap the toggle (or edit an existing item)
+to expand it; it collapses itself again after you save, cancel, or update.
+Play's course-setup card works the same way but starts open, since setting
+up is the natural first step there — collapse it manually once you're set
+for the round.
+
 **Play** — one hole at a time, big tap targets, built for actually being on
 the course. Quick-load a saved course, pick tees (if the course has multiple
 sets on file), track score/putts/chips, fairway & GIR with optional miss
@@ -94,6 +103,9 @@ course removes it everywhere, permanently, including from the Rounds/Play
 quick-load dropdowns (which are built directly from whatever's actually in
 this list). Only courses with 18-hole par data show up in those dropdowns,
 since there'd be nothing to load otherwise.
+
+Both ways of adding a course live under one **"+ Add a course"** toggle in
+the Courses tab — search up top, manual fields below it.
 
 **Look up a course** searches OpenGolfAPI's free, keyless public database and
 fills in par, yardage (per tee color, when published), rating, slope, and

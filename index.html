@@ -230,6 +230,20 @@
   button.btn.outline{background:none;color:var(--fairway-deep);border:2px solid var(--fairway-deep);}
   button.btn.outline:hover{background:var(--fairway-deep);color:var(--paper-light);}
   button.btn:disabled{opacity:0.35;cursor:default;}
+  details.form-toggle > summary{
+    cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;
+    font-family:'Fraunces',serif;font-weight:600;font-size:19px;color:var(--fairway-deep);user-select:none;
+  }
+  details.form-toggle > summary::-webkit-details-marker{display:none;}
+  details.form-toggle > summary .marker{
+    font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:14px;color:var(--flag);
+    width:20px;height:20px;border:2px solid var(--flag);border-radius:50%;
+    display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1;
+  }
+  details.form-toggle[open] > summary .marker::after{content:'–';}
+  details.form-toggle:not([open]) > summary .marker::after{content:'+';}
+  details.form-toggle > summary:hover{color:var(--turf);}
+  details.form-toggle .form-body{margin-top:16px;}
   .auth-gate{
     position:fixed;inset:0;background:var(--paper);z-index:1000;
     display:flex;align-items:center;justify-content:center;padding:24px 18px;
@@ -440,31 +454,35 @@
   <!-- PLAY (on-course, one hole at a time) -->
   <section id="tab-play" class="active">
     <div class="card">
-      <h2>Playing now</h2>
-      <div class="preset-row">
-        <div class="field">
-          <label>Quick-load a course (fills in par)</label>
-          <select id="pl-preset">
-            <option value="">— Select a saved course —</option>
-          </select>
+      <details class="form-toggle" id="playFormDetails" open>
+        <summary><span class="marker"></span>Playing now</summary>
+        <div class="form-body">
+          <div class="preset-row">
+            <div class="field">
+              <label>Quick-load a course (fills in par)</label>
+              <select id="pl-preset">
+                <option value="">— Select a saved course —</option>
+              </select>
+            </div>
+          </div>
+          <div class="grid3">
+            <div class="field"><label>Date</label><input type="date" id="pl-date"></div>
+            <div class="field"><label>Course</label><input type="text" id="pl-course" placeholder="e.g. Pine Ridge Golf Club"></div>
+            <div class="field"><label>Tees</label>
+              <select id="pl-tees"><option value="">— Tees —</option></select>
+            </div>
+          </div>
+          <div id="pl-courseHandicap" class="hint" style="margin-top:-6px;margin-bottom:10px;"></div>
+          <div class="field">
+            <label>Holes played</label>
+            <select id="pl-holesplayed">
+              <option value="full">Full 18</option>
+              <option value="front">Front 9 only</option>
+              <option value="back">Back 9 only</option>
+            </select>
+          </div>
         </div>
-      </div>
-      <div class="grid3">
-        <div class="field"><label>Date</label><input type="date" id="pl-date"></div>
-        <div class="field"><label>Course</label><input type="text" id="pl-course" placeholder="e.g. Pine Ridge Golf Club"></div>
-        <div class="field"><label>Tees</label>
-          <select id="pl-tees"><option value="">— Tees —</option></select>
-        </div>
-      </div>
-      <div id="pl-courseHandicap" class="hint" style="margin-top:-6px;margin-bottom:10px;"></div>
-      <div class="field">
-        <label>Holes played</label>
-        <select id="pl-holesplayed">
-          <option value="full">Full 18</option>
-          <option value="front">Front 9 only</option>
-          <option value="back">Back 9 only</option>
-        </select>
-      </div>
+      </details>
     </div>
 
     <div class="card">
@@ -550,38 +568,42 @@
   <!-- ROUNDS -->
   <section id="tab-rounds">
     <div class="card">
-      <h2>New round <small id="roundSavePill" class="savepill">saved</small></h2>
-      <div class="preset-row">
-        <div class="field">
-          <label>Quick-load a course (fills in par)</label>
-          <select id="r-preset">
-            <option value="">— Select a saved course —</option>
-          </select>
+      <details class="form-toggle" id="roundFormDetails">
+        <summary><span class="marker"></span>New round <small id="roundSavePill" class="savepill">saved</small></summary>
+        <div class="form-body">
+          <div class="preset-row">
+            <div class="field">
+              <label>Quick-load a course (fills in par)</label>
+              <select id="r-preset">
+                <option value="">— Select a saved course —</option>
+              </select>
+            </div>
+          </div>
+          <div class="grid3">
+            <div class="field"><label>Date</label><input type="date" id="r-date"></div>
+            <div class="field"><label>Course</label><input type="text" id="r-course" placeholder="e.g. Pine Ridge Golf Club"></div>
+            <div class="field"><label>Tees</label>
+              <select id="r-tees"><option value="">— Tees —</option></select>
+            </div>
+          </div>
+          <div class="field">
+            <label>Holes played</label>
+            <select id="r-holesplayed">
+              <option value="full">Full 18</option>
+              <option value="front">Front 9 only</option>
+              <option value="back">Back 9 only</option>
+            </select>
+          </div>
+          <div id="r-courseHandicap" class="hint" style="margin-top:-2px;margin-bottom:12px;"></div>
+          <div class="hint">Par row auto-loads from your preset. Fairway hit checkboxes disable on par-3s (driving accuracy isn't scored there). If you only played 9, pick that above — the other 9 will grey out so they don't count toward your stats or handicap.</div>
+          <div class="scorecard">
+            <table class="sc" id="scorecardTable"></table>
+          </div>
+          <div class="field"><label>Notes — what worked, what didn't</label><textarea id="r-notes" placeholder="Ball striking, misses, mental game, club that saved you..."></textarea></div>
+          <button class="btn" id="saveRoundBtn">Save round</button>
+          <button class="btn outline" id="cancelEditRoundBtn" type="button" style="display:none;margin-left:8px;">Cancel edit</button>
         </div>
-      </div>
-      <div class="grid3">
-        <div class="field"><label>Date</label><input type="date" id="r-date"></div>
-        <div class="field"><label>Course</label><input type="text" id="r-course" placeholder="e.g. Pine Ridge Golf Club"></div>
-        <div class="field"><label>Tees</label>
-          <select id="r-tees"><option value="">— Tees —</option></select>
-        </div>
-      </div>
-      <div class="field">
-        <label>Holes played</label>
-        <select id="r-holesplayed">
-          <option value="full">Full 18</option>
-          <option value="front">Front 9 only</option>
-          <option value="back">Back 9 only</option>
-        </select>
-      </div>
-      <div id="r-courseHandicap" class="hint" style="margin-top:-2px;margin-bottom:12px;"></div>
-      <div class="hint">Par row auto-loads from your preset. Fairway hit checkboxes disable on par-3s (driving accuracy isn't scored there). If you only played 9, pick that above — the other 9 will grey out so they don't count toward your stats or handicap.</div>
-      <div class="scorecard">
-        <table class="sc" id="scorecardTable"></table>
-      </div>
-      <div class="field"><label>Notes — what worked, what didn't</label><textarea id="r-notes" placeholder="Ball striking, misses, mental game, club that saved you..."></textarea></div>
-      <button class="btn" id="saveRoundBtn">Save round</button>
-      <button class="btn outline" id="cancelEditRoundBtn" type="button" style="display:none;margin-left:8px;">Cancel edit</button>
+      </details>
     </div>
 
     <div class="card">
@@ -677,15 +699,19 @@
   <!-- PRACTICE -->
   <section id="tab-practice">
     <div class="card">
-      <h2>Log practice session</h2>
-      <div class="grid3">
-        <div class="field"><label>Date</label><input type="date" id="p-date"></div>
-        <div class="field"><label>Focus area</label><input type="text" id="p-focus" placeholder="e.g. Putting, wedges, new irons feel"></div>
-        <div class="field"><label>Duration (min)</label><input type="number" id="p-duration" min="0"></div>
-      </div>
-      <div class="field"><label>Notes / swing thoughts / reps</label><textarea id="p-notes" placeholder="What you worked on, cues that clicked, drills..."></textarea></div>
-      <button class="btn" id="savePracticeBtn">Save session</button>
-      <button class="btn outline" id="cancelEditPracticeBtn" type="button" style="display:none;margin-left:8px;">Cancel edit</button>
+      <details class="form-toggle" id="practiceFormDetails">
+        <summary><span class="marker"></span>Log a practice session</summary>
+        <div class="form-body">
+          <div class="grid3">
+            <div class="field"><label>Date</label><input type="date" id="p-date"></div>
+            <div class="field"><label>Focus area</label><input type="text" id="p-focus" placeholder="e.g. Putting, wedges, new irons feel"></div>
+            <div class="field"><label>Duration (min)</label><input type="number" id="p-duration" min="0"></div>
+          </div>
+          <div class="field"><label>Notes / swing thoughts / reps</label><textarea id="p-notes" placeholder="What you worked on, cues that clicked, drills..."></textarea></div>
+          <button class="btn" id="savePracticeBtn">Save session</button>
+          <button class="btn outline" id="cancelEditPracticeBtn" type="button" style="display:none;margin-left:8px;">Cancel edit</button>
+        </div>
+      </details>
     </div>
     <div class="card">
       <h2>Practice history</h2>
@@ -696,21 +722,25 @@
   <!-- BAG -->
   <section id="tab-bag">
     <div class="card">
-      <h2>Add a club</h2>
-      <div class="grid3">
-        <div class="field"><label>Club (e.g. 7-iron, PW)</label><input type="text" id="c-name"></div>
-        <div class="field"><label>Brand / Model</label><input type="text" id="c-model"></div>
-        <div class="field"><label>Shaft</label><input type="text" id="c-shaft" placeholder="e.g. Stiff"></div>
-      </div>
-      <div class="grid3">
-        <div class="field"><label>Status</label>
-          <select id="c-status"><option value="active">In the bag</option><option value="retired">Retired / replaced</option></select>
+      <details class="form-toggle" id="clubFormDetails">
+        <summary><span class="marker"></span>Add a club</summary>
+        <div class="form-body">
+          <div class="grid3">
+            <div class="field"><label>Club (e.g. 7-iron, PW)</label><input type="text" id="c-name"></div>
+            <div class="field"><label>Brand / Model</label><input type="text" id="c-model"></div>
+            <div class="field"><label>Shaft</label><input type="text" id="c-shaft" placeholder="e.g. Stiff"></div>
+          </div>
+          <div class="grid3">
+            <div class="field"><label>Status</label>
+              <select id="c-status"><option value="active">In the bag</option><option value="retired">Retired / replaced</option></select>
+            </div>
+            <div class="field"><label>Avg distance (yds)</label><input type="number" id="c-distance" placeholder="e.g. 150"></div>
+            <div class="field"><label>Notes</label><input type="text" id="c-notes" placeholder="e.g. black dot, owned ~10-15 yrs"></div>
+          </div>
+          <button class="btn" id="saveClubBtn">Add club</button>
+          <button class="btn outline" id="cancelEditClubBtn" type="button" style="display:none;margin-left:8px;">Cancel edit</button>
         </div>
-        <div class="field"><label>Avg distance (yds)</label><input type="number" id="c-distance" placeholder="e.g. 150"></div>
-        <div class="field"><label>Notes</label><input type="text" id="c-notes" placeholder="e.g. black dot, owned ~10-15 yrs"></div>
-      </div>
-      <button class="btn" id="saveClubBtn">Add club</button>
-      <button class="btn outline" id="cancelEditClubBtn" type="button" style="display:none;margin-left:8px;">Cancel edit</button>
+      </details>
     </div>
     <div class="card">
       <h2>Current bag</h2>
@@ -721,7 +751,10 @@
   <!-- COURSES -->
   <section id="tab-courses">
     <div class="card">
-      <h2>Look up a course</h2>
+      <details class="form-toggle" id="courseFormDetails">
+        <summary><span class="marker"></span>Add a course</summary>
+        <div class="form-body">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--turf);margin-bottom:8px;">Look up a course</div>
       <p class="hint" style="margin-top:0;">
         Pulls par, yardage, rating &amp; slope from OpenGolfAPI's free public course
         database — a plain data lookup, no account, nothing sent about you. It's
@@ -733,10 +766,8 @@
       </div>
       <button class="btn" id="apiSearchBtn">Search</button>
       <div id="apiSearchResults" style="margin-top:12px;"></div>
-    </div>
 
-    <div class="card">
-      <h2>Add course notes</h2>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--turf);margin:22px 0 8px;border-top:1px solid var(--line);padding-top:18px;">Or add manually</div>
       <div class="field"><label>Course name</label><input type="text" id="co-name"></div>
       <div class="grid2">
         <div class="field"><label>Course rating (optional — powers handicap index)</label><input type="number" step="0.1" id="co-rating" placeholder="e.g. 70.2"></div>
@@ -750,6 +781,8 @@
       <button class="btn" id="saveCourseBtn">Save course</button>
       <button class="btn outline" id="cancelEditCourseBtn" type="button" style="display:none;margin-left:8px;">Cancel edit</button>
       <div class="hint" style="margin-top:8px;margin-bottom:0;">Tip: re-entering a course name you've already saved updates that course instead of duplicating it — handy for adding par to a course you added before this field existed.</div>
+        </div>
+      </details>
     </div>
     <div class="card">
       <h2>Course book</h2>
@@ -760,11 +793,15 @@
   <!-- NOTES -->
   <section id="tab-notes">
     <div class="card">
-      <h2>Journal entry</h2>
-      <div class="field"><label>Date</label><input type="date" id="n-date"></div>
-      <div class="field"><label>Thought</label><textarea id="n-text" placeholder="Anything — a swing thought, gear decision, mental game note, goal for the season..."></textarea></div>
-      <button class="btn" id="saveNoteBtn">Add entry</button>
-      <button class="btn outline" id="cancelEditNoteBtn" type="button" style="display:none;margin-left:8px;">Cancel edit</button>
+      <details class="form-toggle" id="noteFormDetails">
+        <summary><span class="marker"></span>Journal entry</summary>
+        <div class="form-body">
+          <div class="field"><label>Date</label><input type="date" id="n-date"></div>
+          <div class="field"><label>Thought</label><textarea id="n-text" placeholder="Anything — a swing thought, gear decision, mental game note, goal for the season..."></textarea></div>
+          <button class="btn" id="saveNoteBtn">Add entry</button>
+          <button class="btn outline" id="cancelEditNoteBtn" type="button" style="display:none;margin-left:8px;">Cancel edit</button>
+        </div>
+      </details>
     </div>
     <div class="card">
       <h2>Journal</h2>
@@ -903,6 +940,9 @@ document.getElementById('p-date').value = todayISO();
 document.getElementById('n-date').value = todayISO();
 document.getElementById('pl-date').value = todayISO();
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+
+function openForm(detailsId){ const el = document.getElementById(detailsId); if(el) el.open = true; }
+function closeForm(detailsId){ const el = document.getElementById(detailsId); if(el) el.open = false; }
 
 // Storage: synced to your Firebase account via Firestore, under
 // users/{your uid}/store/{key} — the same data shows up on every device
@@ -1599,6 +1639,7 @@ document.getElementById('finishRoundBtn').addEventListener('click', async ()=>{
   document.getElementById('pl-tees').value='';
   document.getElementById('pl-notes').value='';
   document.getElementById('pl-preset').value='';
+  openForm('playFormDetails');
   renderPlayHole();
   // jump to Rounds tab so the finished round is visible
   document.querySelector('nav button[data-tab="rounds"]').click();
@@ -1675,6 +1716,7 @@ function startEditRound(round){
   document.getElementById('r-notes').value = round.notes || '';
   setRoundFormEditMode(true);
   document.querySelector('nav button[data-tab="rounds"]').click();
+  openForm('roundFormDetails');
   document.getElementById('r-course').scrollIntoView({behavior:'smooth', block:'start'});
 }
 document.getElementById('cancelEditRoundBtn').addEventListener('click', ()=>{
@@ -1684,6 +1726,7 @@ document.getElementById('cancelEditRoundBtn').addEventListener('click', ()=>{
   document.getElementById('r-notes').value='';
   resetScorecard();
   setRoundFormEditMode(false);
+  closeForm('roundFormDetails');
 });
 
 async function commitRound(holes, course, tees, date, notes, holesPlayed){
@@ -1721,6 +1764,7 @@ document.getElementById('saveRoundBtn').addEventListener('click', async ()=>{
   document.getElementById('r-notes').value='';
   resetScorecard();
   flashSave('roundSavePill');
+  closeForm('roundFormDetails');
 });
 
 function flashSave(id){
@@ -2150,6 +2194,7 @@ function clearPracticeForm(){
   document.getElementById('savePracticeBtn').textContent = 'Save session';
   const cancel = document.getElementById('cancelEditPracticeBtn');
   if(cancel) cancel.style.display = 'none';
+  closeForm('practiceFormDetails');
 }
 
 function loadPracticeIntoForm(p){
@@ -2161,6 +2206,7 @@ function loadPracticeIntoForm(p){
   document.getElementById('savePracticeBtn').textContent = 'Update session';
   const cancel = document.getElementById('cancelEditPracticeBtn');
   if(cancel) cancel.style.display = '';
+  openForm('practiceFormDetails');
   document.getElementById('p-focus')?.scrollIntoView({ behavior:'smooth', block:'center' });
 }
 
@@ -2254,6 +2300,7 @@ function startEditClub(club){
   document.getElementById('c-distance').value = club.distance || '';
   document.getElementById('c-notes').value = club.notes || '';
   setClubFormEditMode(true);
+  openForm('clubFormDetails');
   document.getElementById('c-name').scrollIntoView({behavior:'smooth', block:'start'});
 }
 document.getElementById('cancelEditClubBtn').addEventListener('click', ()=>{
@@ -2264,6 +2311,7 @@ document.getElementById('cancelEditClubBtn').addEventListener('click', ()=>{
   document.getElementById('c-distance').value='';
   document.getElementById('c-notes').value='';
   setClubFormEditMode(false);
+  closeForm('clubFormDetails');
 });
 
 document.getElementById('saveClubBtn').addEventListener('click', async ()=>{
@@ -2294,6 +2342,7 @@ document.getElementById('saveClubBtn').addEventListener('click', async ()=>{
   document.getElementById('c-shaft').value='';
   document.getElementById('c-distance').value='';
   document.getElementById('c-notes').value='';
+  closeForm('clubFormDetails');
 });
 document.getElementById('bagList').addEventListener('click', async e=>{
   const editBtn = e.target.closest('button.del[data-kind="club-edit"]');
@@ -2801,6 +2850,7 @@ function loadCourseIntoForm(c){
     apiCourseId: c.apiCourseId || null
   };
   setCourseEditorMode(true);
+  openForm('courseFormDetails');
   document.getElementById('tab-courses').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -2894,6 +2944,7 @@ document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
   await saveList('courses', courses);
   clearCourseForm();
   setCourseEditorMode(false);
+  closeForm('courseFormDetails');
   document.getElementById('api-search-q').value='';
   renderCourses();
   populatePresetDropdown();
@@ -2903,6 +2954,7 @@ document.getElementById('cancelEditCourseBtn').addEventListener('click', ()=>{
   editingCourseId = null;
   clearCourseForm();
   setCourseEditorMode(false);
+  closeForm('courseFormDetails');
 });
 
 document.getElementById('coursesList').addEventListener('click', async e=>{
@@ -3175,6 +3227,7 @@ function clearNoteForm(){
   document.getElementById('saveNoteBtn').textContent = 'Add entry';
   const cancel = document.getElementById('cancelEditNoteBtn');
   if(cancel) cancel.style.display = 'none';
+  closeForm('noteFormDetails');
 }
 
 function loadNoteIntoForm(n){
@@ -3184,6 +3237,7 @@ function loadNoteIntoForm(n){
   document.getElementById('saveNoteBtn').textContent = 'Update entry';
   const cancel = document.getElementById('cancelEditNoteBtn');
   if(cancel) cancel.style.display = '';
+  openForm('noteFormDetails');
   document.getElementById('n-text')?.scrollIntoView({ behavior:'smooth', block:'center' });
 }
 
