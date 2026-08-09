@@ -453,6 +453,10 @@
 
   <!-- PLAY (on-course, one hole at a time) -->
   <section id="tab-play" class="active">
+    <div id="playDraftBanner" class="hint" style="display:none;margin-bottom:12px;padding:10px 12px;border:1px solid var(--line);border-radius:3px;background:var(--paper-light);">
+      Resumed a round in progress from earlier.
+      <button id="discardPlayDraftBtn" type="button" class="del" style="margin-left:4px;">discard and start over</button>
+    </div>
     <div class="card">
       <details class="form-toggle" id="playFormDetails" open>
         <summary><span class="marker"></span>Playing now</summary>
@@ -1473,6 +1477,84 @@ let currentApiCourseId = null;
 let playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, chips:0, fir:false, gir:false, firMiss:null, girMissLat:null, girMissDepth:null, bunker:false}));
 let currentHole = 0;
 let playRange = {start:0, end:17};
+let restoringPlayDraft = false;
+
+// A round in progress only lived in memory before — closing the tab, letting
+// the phone put it to sleep, or just being away for a while would silently
+// wipe it. This saves a lightweight draft to this browser after every change
+// so returning to Play resumes exactly where you left off, even after a
+// full reload. It's local to this browser/device (not synced to your
+// account) — cleared automatically once you finish the round.
+function playDraftKey(){
+  return currentUser ? ('adairwayPlayDraft:' + currentUser.uid) : null;
+}
+function savePlayDraft(){
+  if(restoringPlayDraft) return;
+  const key = playDraftKey();
+  if(!key) return;
+  try{
+    const draft = {
+      playHoles, currentHole, playRange,
+      course: document.getElementById('pl-course')?.value || '',
+      date: document.getElementById('pl-date')?.value || '',
+      tees: document.getElementById('pl-tees')?.value || '',
+      notes: document.getElementById('pl-notes')?.value || '',
+      holesPlayed: document.getElementById('pl-holesplayed')?.value || 'full',
+      savedAt: Date.now()
+    };
+    localStorage.setItem(key, JSON.stringify(draft));
+  }catch(e){ /* storage full/unavailable — not fatal, just no draft this time */ }
+}
+function clearPlayDraft(){
+  const key = playDraftKey();
+  if(!key) return;
+  try{ localStorage.removeItem(key); }catch(e){}
+}
+function loadPlayDraft(){
+  const key = playDraftKey();
+  if(!key) return null;
+  try{
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  }catch(e){ return null; }
+}
+function restorePlayDraftIfAny(){
+  const draft = loadPlayDraft();
+  if(!draft || !draft.course || !draft.course.trim()) return;
+  restoringPlayDraft = true;
+  playHoles = draft.playHoles || playHoles;
+  currentHole = draft.currentHole || 0;
+  playRange = draft.playRange || {start:0, end:17};
+  document.getElementById('pl-course').value = draft.course || '';
+  document.getElementById('pl-date').value = draft.date || todayISO();
+  document.getElementById('pl-tees').value = draft.tees || '';
+  document.getElementById('pl-notes').value = draft.notes || '';
+  document.getElementById('pl-holesplayed').value = draft.holesPlayed || 'full';
+  const banner = document.getElementById('playDraftBanner');
+  if(banner) banner.style.display = '';
+  closeForm('playFormDetails');
+  restoringPlayDraft = false;
+}
+document.getElementById('discardPlayDraftBtn')?.addEventListener('click', ()=>{
+  if(!confirm('Discard the round in progress? This only clears the unsaved draft — nothing already saved to your history is affected.')) return;
+  clearPlayDraft();
+  playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, chips:0, fir:false, gir:false, firMiss:null, girMissLat:null, girMissDepth:null, bunker:false}));
+  currentHole = 0;
+  setPlayRange('full');
+  document.getElementById('pl-course').value='';
+  document.getElementById('pl-tees').value='';
+  document.getElementById('pl-notes').value='';
+  document.getElementById('pl-holesplayed').value='full';
+  document.getElementById('pl-preset').value='';
+  const banner = document.getElementById('playDraftBanner');
+  if(banner) banner.style.display = 'none';
+  openForm('playFormDetails');
+  renderPlayHole();
+});
+['pl-course','pl-date','pl-tees','pl-notes'].forEach(id=>{
+  document.getElementById(id)?.addEventListener('input', savePlayDraft);
+  document.getElementById(id)?.addEventListener('change', savePlayDraft);
+});
 function setPlayRange(mode){
   if(mode==='front'){
     playRange = {start:0, end:8};
@@ -1544,6 +1626,8 @@ function renderPlayHole(){
     else if(ph.score>0) cls += ' done';
     return `<div class="${cls}" data-idx="${i}"></div>`;
   }).join('');
+
+  savePlayDraft();
 }
 document.getElementById('playDots').addEventListener('click', e=>{
   const dot = e.target.closest('.dot');
@@ -1639,6 +1723,9 @@ document.getElementById('finishRoundBtn').addEventListener('click', async ()=>{
   document.getElementById('pl-tees').value='';
   document.getElementById('pl-notes').value='';
   document.getElementById('pl-preset').value='';
+  clearPlayDraft();
+  const banner = document.getElementById('playDraftBanner');
+  if(banner) banner.style.display = 'none';
   openForm('playFormDetails');
   renderPlayHole();
   // jump to Rounds tab so the finished round is visible
@@ -3372,6 +3459,7 @@ document.getElementById('statsYearFilter')?.addEventListener('change', ()=>{
 async function init(){
   populatePresetDropdown();
   buildScorecardTable();
+  restorePlayDraftIfAny();
   renderPlayHole();
   [rounds, practice, bag, courses, notes] = await Promise.all([
     loadList('rounds'), loadList('practice'), loadList('bag'), loadList('courses'), loadList('notes')
