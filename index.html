@@ -351,13 +351,13 @@
   }
   .map-hole-btn.has{border-color:var(--turf);background:rgba(63,107,74,0.12);}
   .map-hole-btn.active{background:var(--fairway-deep);color:var(--paper-light);border-color:var(--fairway-deep);}
-  #greenMap{height:min(48vh,360px);width:100%;border-radius:8px;border:1px solid var(--line);z-index:1;}
+  #greenMap, #aerialMap{height:min(48vh,360px);width:100%;border-radius:8px;border:1px solid var(--line);z-index:1;}
   .map-modal-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
   .map-modal-actions .hint{margin:0;flex:1;min-width:140px;}
   @media (max-width:520px){
     .map-modal{padding:0;align-items:stretch;}
     .map-modal-card{max-height:100%;height:100%;border-radius:0;width:100%;}
-    #greenMap{height:42vh;}
+    #greenMap, #aerialMap{height:42vh;}
   }
 </style>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
@@ -416,6 +416,25 @@
         <button type="button" class="btn outline small" id="greenMapClearAllBtn">Clear all pins</button>
         <button type="button" class="btn" id="greenMapSaveBtn">Save greens</button>
         <p class="hint" id="greenMapHint">Select hole 1, then tap the green on the map.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="aerialModal" class="map-modal" aria-hidden="true">
+  <div class="map-modal-card">
+    <div class="map-modal-head">
+      <div>
+        <h3 id="aerialTitle">Aerial view</h3>
+        <div class="sub" id="aerialSub">Locating you…</div>
+      </div>
+      <button type="button" class="btn outline small" id="aerialCloseBtn">Close</button>
+    </div>
+    <div class="map-modal-body">
+      <div id="aerialMap"></div>
+      <div class="map-modal-actions">
+        <button type="button" class="btn small" id="aerialSetGreenBtn">Tap map, then use this to set the green here</button>
+        <p class="hint" id="aerialHint">📍 = you · 🚩 = saved green (if any). Tap the satellite image anywhere to move the flag, then tap the button above to save it.</p>
       </div>
     </div>
   </div>
@@ -556,6 +575,7 @@
         <div class="stat-name" style="text-align:center;">Distance to green</div>
         <div style="text-align:center;">
           <button class="btn outline" id="gpsBtn" type="button">📍 Get distance</button>
+          <button class="btn outline" id="aerialViewBtn" type="button" style="margin-left:6px;">🛰️ Aerial view</button>
           <div id="gpsResult" class="hint" style="margin-top:8px;margin-bottom:8px;"></div>
           <button class="del" id="gpsSaveBtn" type="button">Save my current spot as this hole's green</button>
         </div>
@@ -2874,24 +2894,125 @@ document.getElementById('gpsBtn').addEventListener('click', ()=>{
   }, {enableHighAccuracy:true, timeout:8000});
 });
 
+async function saveGreenForCurrentHole(lat, lng, source){
+  const courseName = document.getElementById('pl-course').value;
+  if(!courseName.trim()) return { ok:false, message:'Enter a course name above first.' };
+  const holeNum = playHoles[currentHole].hole;
+  const course = getOrCreateCourseByName(courseName);
+  if(!Array.isArray(course.greens)) course.greens = Array(18).fill(null);
+  course.greens[holeNum-1] = { lat, lng, savedAt: Date.now(), source: source || 'manual' };
+  await saveList('courses', courses);
+  populatePresetDropdown();
+  return { ok:true, course, holeNum };
+}
+
 document.getElementById('gpsSaveBtn').addEventListener('click', ()=>{
   const resultEl = document.getElementById('gpsResult');
   if(!navigator.geolocation){ resultEl.textContent = 'Geolocation not supported in this browser.'; return; }
-  const courseName = document.getElementById('pl-course').value;
-  if(!courseName.trim()){ resultEl.textContent = 'Enter a course name above first.'; return; }
+  if(!document.getElementById('pl-course').value.trim()){ resultEl.textContent = 'Enter a course name above first.'; return; }
   resultEl.textContent = 'Getting your location…';
   navigator.geolocation.getCurrentPosition(async pos=>{
     const {latitude, longitude} = pos.coords;
-    const holeNum = playHoles[currentHole].hole;
-    const course = getOrCreateCourseByName(courseName);
-    if(!Array.isArray(course.greens)) course.greens = Array(18).fill(null);
-    course.greens[holeNum-1] = { lat: latitude, lng: longitude, savedAt: Date.now() };
-    await saveList('courses', courses);
-    populatePresetDropdown();
-    resultEl.textContent = `Saved — hole ${holeNum}'s green is set for ${course.name}. GPS will use this from now on, no internet required.`;
+    const res = await saveGreenForCurrentHole(latitude, longitude, 'gps');
+    resultEl.textContent = res.ok
+      ? `Saved — hole ${res.holeNum}'s green is set for ${res.course.name}. GPS will use this from now on, no internet required.`
+      : res.message;
   }, ()=>{
     resultEl.textContent = 'Location permission denied or unavailable.';
   }, {enableHighAccuracy:true, timeout:8000});
+});
+
+// ---------- Aerial view (Play tab) ----------
+let aerialMap = null;
+let aerialMarkers = {};
+let aerialGen = 0;
+let aerialPendingLatLng = null;
+
+function destroyAerialMap(){
+  if(aerialMap){
+    try{ aerialMap.off(); aerialMap.remove(); }catch(e){}
+  }
+  aerialMap = null;
+  aerialMarkers = {};
+  aerialPendingLatLng = null;
+}
+function closeAerialView(){
+  aerialGen++;
+  const modal = document.getElementById('aerialModal');
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden','true');
+  destroyAerialMap();
+}
+document.getElementById('aerialViewBtn').addEventListener('click', ()=>{
+  if(typeof L === 'undefined'){ alert('Map library failed to load. Check your connection and try again.'); return; }
+  if(!navigator.geolocation){ alert('Geolocation not supported in this browser.'); return; }
+  const gen = ++aerialGen;
+  const modal = document.getElementById('aerialModal');
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden','false');
+  document.getElementById('aerialSub').textContent = 'Locating you…';
+  document.getElementById('aerialHint').textContent = '📍 = you · 🚩 = saved green (if any). Tap the satellite image anywhere to move the flag, then tap the button above to save it.';
+  destroyAerialMap();
+
+  navigator.geolocation.getCurrentPosition(pos=>{
+    if(gen !== aerialGen) return; // modal was closed/reopened before this resolved
+    const {latitude, longitude} = pos.coords;
+    const courseName = document.getElementById('pl-course').value;
+    const course = getCourseByName(courseName);
+    const holeNum = playHoles[currentHole].hole;
+    const green = course && Array.isArray(course.greens) ? course.greens[holeNum-1] : null;
+
+    setTimeout(()=>{
+      if(gen !== aerialGen) return;
+      const container = document.getElementById('aerialMap');
+      if(!container) return;
+      container.innerHTML = '';
+      const center = green ? [(latitude+green.lat)/2, (longitude+green.lng)/2] : [latitude, longitude];
+      aerialMap = L.map(container, { scrollWheelZoom: true }).setView(center, 18);
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 19, attribution: 'Imagery &copy; Esri'
+      }).addTo(aerialMap);
+
+      const youIcon = L.divIcon({ className:'', html:'<div style="font-size:22px;line-height:1;">📍</div>', iconSize:[24,24], iconAnchor:[12,20] });
+      aerialMarkers.you = L.marker([latitude, longitude], { icon: youIcon }).addTo(aerialMap).bindTooltip('You', {permanent:false});
+
+      if(green){
+        const flagIcon = L.divIcon({ className:'', html:'<div style="font-size:22px;line-height:1;">🚩</div>', iconSize:[24,24], iconAnchor:[4,20] });
+        aerialMarkers.green = L.marker([green.lat, green.lng], { icon: flagIcon }).addTo(aerialMap).bindTooltip('Saved green', {permanent:false});
+        const yds = distanceYards(latitude, longitude, green.lat, green.lng);
+        document.getElementById('aerialSub').textContent = `Hole ${holeNum} · \u2248 ${Math.round(yds)} yds to your saved green`;
+        try{ aerialMap.fitBounds([[latitude,longitude],[green.lat,green.lng]], { padding:[40,40], maxZoom:19 }); }catch(e){}
+      }else{
+        document.getElementById('aerialSub').textContent = `Hole ${holeNum} · no saved green yet — tap the image to set one`;
+      }
+
+      aerialMap.on('click', e=>{
+        aerialPendingLatLng = e.latlng;
+        if(aerialMarkers.pending) aerialMap.removeLayer(aerialMarkers.pending);
+        const pendingIcon = L.divIcon({ className:'', html:'<div style="font-size:22px;line-height:1;opacity:0.8;">🚩</div>', iconSize:[24,24], iconAnchor:[4,20] });
+        aerialMarkers.pending = L.marker(e.latlng, { icon: pendingIcon }).addTo(aerialMap);
+        document.getElementById('aerialHint').textContent = 'Tap "set the green here" below to save this spot, or tap elsewhere on the image to adjust it first.';
+      });
+
+      aerialMap.invalidateSize();
+    }, 60);
+  }, ()=>{
+    document.getElementById('aerialSub').textContent = 'Location permission denied or unavailable.';
+  }, {enableHighAccuracy:true, timeout:8000});
+});
+document.getElementById('aerialSetGreenBtn').addEventListener('click', async ()=>{
+  if(!aerialPendingLatLng){ alert('Tap the satellite image first to choose a spot.'); return; }
+  const res = await saveGreenForCurrentHole(aerialPendingLatLng.lat, aerialPendingLatLng.lng, 'aerial');
+  if(res.ok){
+    document.getElementById('aerialSub').textContent = `Saved hole ${res.holeNum}'s green for ${res.course.name}.`;
+    aerialPendingLatLng = null;
+  }else{
+    alert(res.message);
+  }
+});
+document.getElementById('aerialCloseBtn').addEventListener('click', closeAerialView);
+document.getElementById('aerialModal').addEventListener('click', e=>{
+  if(e.target.id === 'aerialModal') closeAerialView();
 });
 
 function parseCsvNumbers(str, expectedLen){
@@ -3180,10 +3301,16 @@ function openGreenMapEditor(courseId, courseName, idx){
     container.innerHTML = '';
 
     mapEditor.map = L.map(container, { scrollWheelZoom: true }).setView(center, zoom);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19,
+      attribution: 'Imagery &copy; Esri'
+    });
+    const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap'
-    }).addTo(mapEditor.map);
+    });
+    satelliteLayer.addTo(mapEditor.map); // default to satellite — you can actually see the greens this way
+    L.control.layers({ 'Satellite': satelliteLayer, 'Street map': streetLayer }, null, { position: 'topright' }).addTo(mapEditor.map);
     mapEditor.clickHandler = (e)=>{
       if(mapEditor.courseId !== courseId) return;
       placeGreenPin(mapEditor.hole, e.latlng.lat, e.latlng.lng);
