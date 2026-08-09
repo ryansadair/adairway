@@ -23,6 +23,10 @@
     --line:#D7CCB0;
   }
   *{box-sizing:border-box;}
+  /* Stop the mobile double-tap-to-zoom gesture from firing on quick repeated
+     taps (e.g. mashing the score/putts +/- buttons) — this only affects
+     controls, not the page itself, so pinch-to-zoom still works everywhere. */
+  button, select, .dot, .chip, .toggle-btn, summary{ touch-action: manipulation; }
   body{
     margin:0;
     background:var(--paper);
