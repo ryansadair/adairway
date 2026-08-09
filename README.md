@@ -138,12 +138,22 @@ OpenGolfAPI's green-boundary data is a sparser layer than "the course
 exists," so this app treats it as one option, not a dependency:
 
 1. **Map editor** — "map greens" on any course in the Courses tab opens an
-   interactive Leaflet map. Click a hole number, then click its green on the
-   map. Do all 18 in a couple of minutes from your couch, or fine-tune one
-   hole after a round.
+   interactive map. It defaults to **satellite imagery** (Esri World
+   Imagery — free, no account needed) specifically so you can actually see
+   the green shapes, with a layer switcher in the top-right to flip back to
+   a street map if you'd rather. Click a hole number, then click its green
+   on the map. Do all 18 in a couple of minutes from your couch, or fine-tune
+   one hole after a round.
 2. **On-course single save** — in Play, "Save my current spot as this hole's
    green" captures your live position and saves it for that hole, once,
    permanently.
+3. **Aerial view, mid-round** — "🛰️ Aerial view" in Play opens a satellite
+   view centered on your live position, with a 📍 marker for you and a 🚩 for
+   the saved green (if any), plus the live distance between them. If a hole's
+   green isn't set yet, or looks off, tap anywhere on the image to drop a new
+   flag and save it right there — handy for the exact situation that prompted
+   this: a couple of courses where the green just isn't visible/mapped well
+   enough any other way.
 
 **"Get distance"** checks in this order: your own saved location first
 (works offline, zero network calls), then OpenGolfAPI if the course was
@@ -151,6 +161,12 @@ looked up and has coverage, then a plain "no data yet" message with a nudge
 toward the two options above. Works for **any** course — you don't need an
 OpenGolfAPI lookup at all for GPS to function, since you can map the greens
 yourself.
+
+*Why Esri instead of actual Google Maps:* Google's satellite tiles aren't
+usable for free without their Maps API (a Google Cloud account, billing
+enabled, and an API key) — pulling their tiles directly without that isn't
+allowed. Esri World Imagery is a genuinely free, no-signup satellite basemap
+that solves the same "I can't see the green" problem without that setup.
 
 ## Handicap index & course handicap
 
@@ -177,6 +193,26 @@ yourself.
   published tee set (name, color, rating, slope, par, yardage). Picking
   different tees in Rounds/Play updates yardages and the course handicap
   live.
+- Once a course is selected (quick-load dropdown or typed in), its name now
+  shows as a clean header — right above the hole number in Play, and right
+  above the scorecard in Rounds — so it's always obvious which course you're
+  looking at.
+- **Fixed: an in-progress round used to disappear.** Play mode only kept the
+  current hole-by-hole state in memory — closing the tab, letting your phone
+  put it to sleep, or just stepping away for a while would silently wipe it,
+  even though nothing was actually saved yet. It now autosaves a local draft
+  to this browser after every change (score, putts, hole navigation, course
+  info) and resumes it automatically next time you open Play, with a small
+  banner confirming it picked up where you left off (and a "discard and
+  start over" option if you'd rather not). This draft is local to the
+  device you're playing on — not synced to your account — and clears itself
+  automatically once you tap "Finish & save round."
+
+- **Fixed: double-tap-to-zoom on quick button taps.** Mashing the score/putts
+  +/- buttons (or any button) quickly used to trigger the phone's double-tap
+  zoom gesture. Buttons, dots, and toggles now opt out of that specifically —
+  pinch-to-zoom on the page itself still works fine, this only stops the
+  accidental zoom while tapping controls.
 
 ## The Claude-artifact companion version
 

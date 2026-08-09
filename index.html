@@ -209,6 +209,12 @@
   .dot.done{background:var(--turf);}
   .dot.current{background:var(--flag);width:12px;height:12px;}
   .hole-card{text-align:center;padding:8px 0 4px;}
+  .course-label{
+    font-family:'Fraunces',serif;font-weight:600;font-size:16px;color:var(--fairway-deep);
+    display:none;margin-bottom:6px;
+  }
+  .course-label.show{display:block;}
+  .hole-card .course-label{text-align:center;}
   .hole-card .holenum{font-family:'Fraunces',serif;font-weight:700;font-size:15px;text-transform:uppercase;letter-spacing:0.08em;color:var(--turf);margin-bottom:2px;}
   .hole-card .holepar{font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:var(--graphite);opacity:0.7;margin-bottom:18px;}
   .stat-block{margin-bottom:22px;}
@@ -515,6 +521,7 @@
     <div class="card">
       <div class="dots" id="playDots"></div>
       <div class="hole-card">
+        <div class="course-label" id="playCourseLabel"></div>
         <div class="holenum" id="playHoleNum">Hole 1</div>
         <div class="holepar" id="playHolePar">Par 4</div>
       </div>
@@ -624,6 +631,7 @@
           </div>
           <div id="r-courseHandicap" class="hint" style="margin-top:-2px;margin-bottom:12px;"></div>
           <div class="hint">Par row auto-loads from your preset. Fairway hit checkboxes disable on par-3s (driving accuracy isn't scored there). If you only played 9, pick that above — the other 9 will grey out so they don't count toward your stats or handicap.</div>
+          <div class="course-label" id="roundCourseLabel"></div>
           <div class="scorecard">
             <table class="sc" id="scorecardTable"></table>
           </div>
@@ -1109,8 +1117,17 @@ function selectedTeeMeta(selectId){
 function updateCourseHandicapDisplay(prefix){
   // prefix: 'pl' or 'r'
   const el = document.getElementById(prefix + '-courseHandicap');
-  if(!el) return;
   const courseName = document.getElementById(prefix + '-course')?.value;
+
+  const labelId = prefix === 'pl' ? 'playCourseLabel' : 'roundCourseLabel';
+  const labelEl = document.getElementById(labelId);
+  if(labelEl){
+    const trimmed = (courseName||'').trim();
+    if(trimmed){ labelEl.textContent = trimmed; labelEl.classList.add('show'); }
+    else { labelEl.textContent = ''; labelEl.classList.remove('show'); }
+  }
+
+  if(!el) return;
   const course = findCourseByName(courseName);
   const tee = selectedTeeMeta(prefix + '-tees');
   const hi = getHandicapIndexNow();
