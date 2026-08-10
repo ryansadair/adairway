@@ -169,6 +169,26 @@
     text-align:center;padding:34px 20px;color:var(--turf);font-family:'IBM Plex Mono',monospace;font-size:13px;
     border:1px dashed var(--line);border-radius:3px;
   }
+  .insight-list{margin:0;padding-left:20px;}
+  .insight-list li{font-size:14px;line-height:1.55;color:var(--graphite);margin-bottom:10px;}
+  .insight-list li:last-child{margin-bottom:0;}
+  .insight-list li strong{color:var(--fairway-deep);}
+
+  .play-insight-strip{
+    display:flex;align-items:center;gap:14px;margin-bottom:14px;padding:10px 14px;
+    background:var(--fairway-deep);color:var(--paper-light);border-radius:3px;flex-wrap:wrap;
+  }
+  .pis-item{display:flex;flex-direction:column;align-items:center;line-height:1.15;flex-shrink:0;}
+  .pis-item .pis-num{font-family:'Fraunces',serif;font-weight:700;font-size:20px;}
+  .pis-item .pis-lbl{font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:0.05em;opacity:0.75;}
+  .pis-focus{
+    flex:1;min-width:160px;font-size:12.5px;line-height:1.4;
+    border-left:1px solid rgba(245,240,230,0.3);padding-left:14px;
+  }
+  .pis-focus-lbl{
+    display:block;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;
+    letter-spacing:0.05em;opacity:0.75;margin-bottom:2px;
+  }
 
   .stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;}
   .stat-box{background:var(--fairway-deep);color:var(--paper-light);border-radius:3px;padding:14px 12px;text-align:center;}
@@ -446,6 +466,39 @@
   </div>
 </div>
 
+<div id="backupModal" class="map-modal" aria-hidden="true">
+  <div class="map-modal-card">
+    <div class="map-modal-head">
+      <div>
+        <h3>Backup</h3>
+        <div class="sub">Your independent safety net, separate from the live database.</div>
+      </div>
+      <button type="button" class="btn outline small" id="backupCloseBtn">Close</button>
+    </div>
+    <div class="map-modal-body">
+      <div class="card" style="margin-bottom:0;">
+        <h2 style="font-size:16px;">Export a backup</h2>
+        <p style="font-size:13.5px;line-height:1.5;margin-top:0;">
+          Downloads everything — rounds, practice log, bag, course notes, journal — as one
+          JSON file. Save it to Google Drive, Files, email it to yourself, wherever. Account
+          sync protects against losing a device, but this file is your safety net against
+          anything happening to the account or database itself.
+        </p>
+        <button class="btn" id="exportBtn">Download backup (.json)</button>
+      </div>
+      <div class="card" style="margin-bottom:0;">
+        <h2 style="font-size:16px;">Restore from a backup</h2>
+        <p style="font-size:13.5px;line-height:1.5;margin-top:0;">
+          Picks up a backup file you exported earlier and replaces everything currently
+          loaded with it. Use this if you're recovering from something going wrong, or
+          moving data between accounts.
+        </p>
+        <input type="file" id="importFile" accept="application/json">
+      </div>
+    </div>
+  </div>
+</div>
+
 
 <div class="wrap">
 
@@ -464,7 +517,7 @@
     <div style="text-align:right;">
       <div class="today" id="todayDate"></div>
       <div id="accountRow" style="display:none;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--turf);margin-top:4px;">
-        <span id="accountEmail"></span> · <button id="signOutBtn" class="del" type="button" style="padding:0;">sign out</button>
+        <span id="accountEmail"></span> · <button id="openBackupBtn" class="del" type="button" style="padding:0;">backup</button> · <button id="signOutBtn" class="del" type="button" style="padding:0;">sign out</button>
       </div>
     </div>
   </header>
@@ -477,11 +530,15 @@
     <button data-tab="bag"><span class="peg">4</span>Bag</button>
     <button data-tab="courses"><span class="peg">5</span>Courses</button>
     <button data-tab="notes"><span class="peg">6</span>Notes</button>
-    <button data-tab="backup"><span class="peg">7</span>Backup</button>
   </nav>
 
   <!-- PLAY (on-course, one hole at a time) -->
   <section id="tab-play" class="active">
+    <div id="playInsightStrip" class="play-insight-strip" style="display:none;">
+      <div class="pis-item"><span class="pis-num" id="pisHandicap">—</span><span class="pis-lbl">Index</span></div>
+      <div class="pis-item"><span class="pis-num" id="pisLast5">—</span><span class="pis-lbl">Last 5 avg</span></div>
+      <div class="pis-focus"><span class="pis-focus-lbl">Focus</span><span id="pisFocus"></span></div>
+    </div>
     <div id="playDraftBanner" class="hint" style="display:none;margin-bottom:12px;padding:10px 12px;border:1px solid var(--line);border-radius:3px;background:var(--paper-light);">
       Resumed a round in progress from earlier.
       <button id="discardPlayDraftBtn" type="button" class="del" style="margin-left:4px;">discard and start over</button>
@@ -574,6 +631,8 @@
           <div class="miss-row">
             <span class="miss-label">Sand</span>
             <button type="button" class="chip" id="bunkerChip">Bunker</button>
+            <span class="miss-label" style="margin-left:10px;">Other</span>
+            <button type="button" class="chip" id="penaltyChip">Penalty stroke</button>
           </div>
         </div>
       </div>
@@ -659,6 +718,11 @@
         </select>
       </div>
       <div class="stat-row" id="statBoxes"></div>
+    </div>
+
+    <div class="card">
+      <h2>What the numbers say</h2>
+      <div id="statsInsights"><div class="empty">Log a few rounds and this section will start surfacing patterns.</div></div>
     </div>
 
     <div class="card">
@@ -845,28 +909,7 @@
     </div>
   </section>
 
-  <!-- BACKUP -->
-  <section id="tab-backup">
-    <div class="card">
-      <h2>Export a backup</h2>
-      <p style="font-size:13.5px;line-height:1.5;margin-top:0;">
-        Downloads everything — rounds, practice log, bag, course notes, journal — as one
-        JSON file. Save it to Google Drive, Files, email it to yourself, wherever. This
-        browser's storage is durable for normal use, but this file is your safety net if
-        anything ever gets cleared.
-      </p>
-      <button class="btn" id="exportBtn">Download backup (.json)</button>
-    </div>
-    <div class="card">
-      <h2>Restore from a backup</h2>
-      <p style="font-size:13.5px;line-height:1.5;margin-top:0;">
-        Picks up a backup file you exported earlier and replaces everything currently in
-        this browser with it. Use this if you're setting up on a new phone/browser, or
-        recovering after data got cleared.
-      </p>
-      <input type="file" id="importFile" accept="application/json">
-    </div>
-  </section>
+  <!-- BACKUP moved to header trigger — modal defined near the top with the other modals -->
 
 </div>
 
@@ -1344,7 +1387,13 @@ function buildScorecardTable(){
   for(let i=10;i<=18;i++) bunkerRow += `<td class="back9"><input type="checkbox" class="bunker" data-hole="${i}"></td>`;
   bunkerRow += `<td class="total" id="inBunker">0</td><td class="total" id="totBunker">0</td></tr>`;
 
-  t.innerHTML = holeHeader + parRow + ydRow + scoreRow + puttsRow + chipsRow + firRow + girRow + firMissRow + girLatRow + girDepthRow + bunkerRow;
+  let penaltyRow = '<tr class="detail-row"><td class="rowlabel">Penalty</td>';
+  for(let i=1;i<=9;i++) penaltyRow += `<td class="front9"><input type="checkbox" class="penalty" data-hole="${i}"></td>`;
+  penaltyRow += `<td class="total" id="outPenalty">0</td>`;
+  for(let i=10;i<=18;i++) penaltyRow += `<td class="back9"><input type="checkbox" class="penalty" data-hole="${i}"></td>`;
+  penaltyRow += `<td class="total" id="inPenalty">0</td><td class="total" id="totPenalty">0</td></tr>`;
+
+  t.innerHTML = holeHeader + parRow + ydRow + scoreRow + puttsRow + chipsRow + firRow + girRow + firMissRow + girLatRow + girDepthRow + bunkerRow + penaltyRow;
   t.addEventListener('input', recalcScorecard);
   t.addEventListener('change', recalcScorecard);
   recalcScorecard();
@@ -1443,6 +1492,28 @@ function recalcScorecard(){
   document.getElementById('outGir').textContent = outGir;
   document.getElementById('inGir').textContent = inGir;
   document.getElementById('totGir').textContent = outGir+inGir;
+
+  // Bunker
+  let outBunker=0, inBunker=0;
+  document.querySelectorAll('.bunker').forEach(b=>{
+    const h = +b.dataset.hole;
+    if(b.checked){ if(h<=9) outBunker++; else inBunker++; }
+  });
+  const outBk=document.getElementById('outBunker'), inBk=document.getElementById('inBunker'), totBk=document.getElementById('totBunker');
+  if(outBk) outBk.textContent = outBunker;
+  if(inBk) inBk.textContent = inBunker;
+  if(totBk) totBk.textContent = outBunker+inBunker;
+
+  // Penalty
+  let outPenalty=0, inPenalty=0;
+  document.querySelectorAll('.penalty').forEach(p=>{
+    const h = +p.dataset.hole;
+    if(p.checked){ if(h<=9) outPenalty++; else inPenalty++; }
+  });
+  const outPn=document.getElementById('outPenalty'), inPn=document.getElementById('inPenalty'), totPn=document.getElementById('totPenalty');
+  if(outPn) outPn.textContent = outPenalty;
+  if(inPn) inPn.textContent = inPenalty;
+  if(totPn) totPn.textContent = outPenalty+inPenalty;
 }
 
 function readScorecard(){
@@ -1460,22 +1531,24 @@ function readScorecard(){
     const girLatEl = document.querySelector(`.gir-lat[data-hole="${i}"]`);
     const girDepthEl = document.querySelector(`.gir-depth[data-hole="${i}"]`);
     const bunkerEl = document.querySelector(`.bunker[data-hole="${i}"]`);
+    const penaltyEl = document.querySelector(`.penalty[data-hole="${i}"]`);
     const firMiss = (!fir && firMissEl && firMissEl.value) ? firMissEl.value : null;
     const girMissLat = (!gir && girLatEl && girLatEl.value) ? girLatEl.value : null;
     const girMissDepth = (!gir && girDepthEl && girDepthEl.value) ? girDepthEl.value : null;
     const bunker = !!(bunkerEl && bunkerEl.checked);
-    holes.push({hole:i, par, yardage, score, putts, chips, fir, gir, firMiss, girMissLat, girMissDepth, bunker});
+    const penalty = !!(penaltyEl && penaltyEl.checked);
+    holes.push({hole:i, par, yardage, score, putts, chips, fir, gir, firMiss, girMissLat, girMissDepth, bunker, penalty});
   }
   return holes;
 }
 function applyHolesPlayedToScorecard(mode){
   for(let h=1; h<=18; h++){
     const inRange = mode==='full' || (mode==='front'&&h<=9) || (mode==='back'&&h>=10);
-    ['score','putts','chips','fir','gir','bunker'].forEach(cls=>{
+    ['score','putts','chips','fir','gir','bunker','penalty'].forEach(cls=>{
       const el = document.querySelector(`.${cls}[data-hole="${h}"]`);
       if(!el) return;
       el.disabled = !inRange;
-      if(!inRange){ if(cls==='fir'||cls==='gir'||cls==='bunker') el.checked=false; else el.value=''; }
+      if(!inRange){ if(cls==='fir'||cls==='gir'||cls==='bunker'||cls==='penalty') el.checked=false; else el.value=''; }
       const td = el.closest('td');
       if(td) td.classList.toggle('holes-excluded', !inRange);
     });
@@ -1515,7 +1588,7 @@ const OGA_BASE = 'https://api.opengolfapi.org';
 let pendingApiCourse = null;
 let currentApiCourseId = null;
 
-let playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, chips:0, fir:false, gir:false, firMiss:null, girMissLat:null, girMissDepth:null, bunker:false}));
+let playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, chips:0, fir:false, gir:false, firMiss:null, girMissLat:null, girMissDepth:null, bunker:false, penalty:false}));
 let currentHole = 0;
 let playRange = {start:0, end:17};
 let restoringPlayDraft = false;
@@ -1579,7 +1652,7 @@ function restorePlayDraftIfAny(){
 document.getElementById('discardPlayDraftBtn')?.addEventListener('click', ()=>{
   if(!confirm('Discard the round in progress? This only clears the unsaved draft — nothing already saved to your history is affected.')) return;
   clearPlayDraft();
-  playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, chips:0, fir:false, gir:false, firMiss:null, girMissLat:null, girMissDepth:null, bunker:false}));
+  playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, chips:0, fir:false, gir:false, firMiss:null, girMissLat:null, girMissDepth:null, bunker:false, penalty:false}));
   currentHole = 0;
   setPlayRange('full');
   document.getElementById('pl-course').value='';
@@ -1599,10 +1672,10 @@ document.getElementById('discardPlayDraftBtn')?.addEventListener('click', ()=>{
 function setPlayRange(mode){
   if(mode==='front'){
     playRange = {start:0, end:8};
-    for(let i=9;i<18;i++){ playHoles[i].score=0; playHoles[i].putts=0; playHoles[i].chips=0; playHoles[i].fir=false; playHoles[i].gir=false; playHoles[i].firMiss=null; playHoles[i].girMissLat=null; playHoles[i].girMissDepth=null; playHoles[i].bunker=false; }
+    for(let i=9;i<18;i++){ playHoles[i].score=0; playHoles[i].putts=0; playHoles[i].chips=0; playHoles[i].fir=false; playHoles[i].gir=false; playHoles[i].firMiss=null; playHoles[i].girMissLat=null; playHoles[i].girMissDepth=null; playHoles[i].bunker=false; playHoles[i].penalty=false; }
   }else if(mode==='back'){
     playRange = {start:9, end:17};
-    for(let i=0;i<9;i++){ playHoles[i].score=0; playHoles[i].putts=0; playHoles[i].chips=0; playHoles[i].fir=false; playHoles[i].gir=false; playHoles[i].firMiss=null; playHoles[i].girMissLat=null; playHoles[i].girMissDepth=null; playHoles[i].bunker=false; }
+    for(let i=0;i<9;i++){ playHoles[i].score=0; playHoles[i].putts=0; playHoles[i].chips=0; playHoles[i].fir=false; playHoles[i].gir=false; playHoles[i].firMiss=null; playHoles[i].girMissLat=null; playHoles[i].girMissDepth=null; playHoles[i].bunker=false; playHoles[i].penalty=false; }
   }else{
     playRange = {start:0, end:17};
   }
@@ -1613,8 +1686,45 @@ document.getElementById('pl-holesplayed').addEventListener('change', e=>{
   renderPlayHole();
 });
 
+function updatePlayInsightStrip(){
+  const strip = document.getElementById('playInsightStrip');
+  if(!strip) return;
+  const withScores = getAllScoredRounds();
+  if(withScores.length < 3){
+    strip.style.display = 'none';
+    return;
+  }
+  strip.style.display = '';
+  const scoreToPar = withScores.map(r=>{
+    const played = r.holes.filter(h=>h.score>0);
+    const ts=played.reduce((a,h)=>a+h.score,0), tp=played.reduce((a,h)=>a+h.par,0);
+    return ts-tp;
+  });
+  const hc = computeHandicapIndex(withScores);
+  document.getElementById('pisHandicap').textContent = hc.index==null ? '—' : hc.index.toFixed(1);
+
+  const last5 = scoreToPar.slice(-5);
+  const last5Avg = last5.length ? last5.reduce((s,v)=>s+v,0)/last5.length : null;
+  document.getElementById('pisLast5').textContent = last5Avg==null ? '—' : (last5Avg>=0?'+':'')+last5Avg.toFixed(1);
+
+  const pt = parTypeStats();
+  let puttHolesWithData=0, threePutts=0;
+  withScores.forEach(r=>r.holes.forEach(h=>{ if(h.score>0 && h.putts>0){ puttHolesWithData++; if(h.putts>=3) threePutts++; } }));
+  const threePuttPct = puttHolesWithData ? (threePutts/puttHolesWithData*100) : null;
+  const threePuttPerRound = withScores.length ? threePutts/withScores.length : null;
+  let penaltyHoles=0;
+  withScores.forEach(r=>r.holes.forEach(h=>{ if(h.score>0 && h.penalty) penaltyHoles++; }));
+  const penaltyPerRound = withScores.length ? penaltyHoles/withScores.length : null;
+
+  const insights = generateStatsInsights(withScores, scoreToPar, pt, { threePuttPct, threePuttPerRound, puttHolesWithData, penaltyHoles, penaltyPerRound });
+  document.getElementById('pisFocus').textContent = insights.length
+    ? insights[0].replace(/<\/?strong>/g,'')
+    : 'Keep logging rounds — insights will show up here.';
+}
+
 function renderPlayHole(){
   updateGpsAvailability();
+  updatePlayInsightStrip();
   const h = playHoles[currentHole];
   document.getElementById('playHoleNum').textContent = 'Hole ' + h.hole;
   const ydLabel = (h.yardage && h.yardage > 0) ? ` · ${h.yardage} yds` : '';
@@ -1636,7 +1746,7 @@ function renderPlayHole(){
 
   const showFirMiss = !h.fir && h.par !== 3;
   const showGirMiss = !h.gir;
-  const showPanel = showFirMiss || showGirMiss || !!h.bunker;
+  const showPanel = showFirMiss || showGirMiss || !!h.bunker || !!h.penalty;
   const panel = document.getElementById('missPanel');
   if(panel) panel.classList.toggle('show', showPanel);
   const firMissRow = document.getElementById('firMissRow');
@@ -1655,6 +1765,8 @@ function renderPlayHole(){
   });
   const bunkerChip = document.getElementById('bunkerChip');
   if(bunkerChip) bunkerChip.classList.toggle('on', !!h.bunker);
+  const penaltyChip = document.getElementById('penaltyChip');
+  if(penaltyChip) penaltyChip.classList.toggle('on', !!h.penalty);
 
   document.getElementById('playPrev').disabled = (currentHole===playRange.start);
   document.getElementById('playNext').disabled = (currentHole===playRange.end);
@@ -1728,6 +1840,11 @@ document.getElementById('missPanel')?.addEventListener('click', e=>{
     renderPlayHole();
     return;
   }
+  if(chip.id === 'penaltyChip'){
+    h.penalty = !h.penalty;
+    renderPlayHole();
+    return;
+  }
   const kind = chip.dataset.miss;
   const val = chip.dataset.val;
   if(kind === 'fir'){
@@ -1757,7 +1874,7 @@ document.getElementById('finishRoundBtn').addEventListener('click', async ()=>{
     document.getElementById('pl-holesplayed').value
   );
   // reset play state for next round
-  playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, chips:0, fir:false, gir:false, firMiss:null, girMissLat:null, girMissDepth:null, bunker:false}));
+  playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, chips:0, fir:false, gir:false, firMiss:null, girMissLat:null, girMissDepth:null, bunker:false, penalty:false}));
   document.getElementById('pl-holesplayed').value = 'full';
   setPlayRange('full');
   document.getElementById('pl-course').value='';
@@ -1839,6 +1956,8 @@ function startEditRound(round){
     if(girDepthEl) girDepthEl.value = h.girMissDepth || '';
     const bunkerEl = document.querySelector(`.bunker[data-hole="${h.hole}"]`);
     if(bunkerEl) bunkerEl.checked = !!h.bunker;
+    const penaltyEl = document.querySelector(`.penalty[data-hole="${h.hole}"]`);
+    if(penaltyEl) penaltyEl.checked = !!h.penalty;
   });
   applyHolesPlayedToScorecard(round.holesPlayed || 'full');
   document.getElementById('r-notes').value = round.notes || '';
@@ -2097,10 +2216,13 @@ function populateStatsYearFilter(){
   else sel.value = 'all';
 }
 
+function getAllScoredRounds(){
+  const sorted = [...rounds].sort((a,b)=>a.date.localeCompare(b.date));
+  return sorted.filter(r=> r.holes.reduce((s,h)=>s+h.score,0)>0);
+}
 function getStatsRounds(){
   const year = (document.getElementById('statsYearFilter')||{}).value || 'all';
-  const sorted = [...rounds].sort((a,b)=>a.date.localeCompare(b.date));
-  const withScores = sorted.filter(r=> r.holes.reduce((s,h)=>s+h.score,0)>0);
+  const withScores = getAllScoredRounds();
   if(year === 'all') return withScores;
   return withScores.filter(r => (r.date||'').startsWith(year));
 }
@@ -2188,6 +2310,63 @@ function renderMissTendencies(withScores){
     </div>`;
 }
 
+function generateStatsInsights(withScores, scoreToPar, pt, extras){
+  const insights = [];
+  const n = withScores.length;
+  if(n < 3) return insights;
+
+  const bucketsWithData = [3,4,5]
+    .map(p=>({p, n: pt.buckets[p].n, avg: pt.buckets[p].n ? pt.buckets[p].sum/pt.buckets[p].n : null}))
+    .filter(b=>b.n >= 6);
+  if(bucketsWithData.length >= 2){
+    const best = bucketsWithData.reduce((a,b)=> (b.avg<a.avg?b:a));
+    const worst = bucketsWithData.reduce((a,b)=> (b.avg>a.avg?b:a));
+    if(best.p !== worst.p){
+      insights.push(`<strong>Par ${worst.p}s</strong> are your biggest opportunity right now — averaging ${worst.avg>=0?'+':''}${worst.avg.toFixed(2)} vs par, compared to ${best.avg>=0?'+':''}${best.avg.toFixed(2)} on par ${best.p}s.`);
+    }
+  }
+
+  if(extras.threePuttPct != null && extras.puttHolesWithData >= 18){
+    if(extras.threePuttPct >= 12){
+      insights.push(`You 3-putt ${extras.threePuttPct.toFixed(0)}% of holes with putting data logged — about ${extras.threePuttPerRound.toFixed(1)} per round. Real stroke-saving room on lag putting.`);
+    }else if(extras.threePuttPct <= 5){
+      insights.push(`3-putts are rare for you (${extras.threePuttPct.toFixed(0)}% of holes) — putting isn't where strokes are leaking right now.`);
+    }
+  }
+
+  if(extras.penaltyHoles >= 3){
+    insights.push(`You've flagged a penalty stroke on ${extras.penaltyHoles} hole${extras.penaltyHoles===1?'':'s'} across these rounds — about ${extras.penaltyPerRound.toFixed(1)} per round.`);
+  }
+
+  if(n >= 8){
+    const recent = scoreToPar.slice(-5);
+    const prior = scoreToPar.slice(0, -5);
+    const recentAvg = recent.reduce((s,v)=>s+v,0)/recent.length;
+    const priorAvg = prior.reduce((s,v)=>s+v,0)/prior.length;
+    const delta = recentAvg - priorAvg;
+    if(Math.abs(delta) >= 1){
+      insights.push(delta < 0
+        ? `Your last 5 rounds are averaging ${Math.abs(delta).toFixed(1)} strokes better than the rounds before that — real improvement.`
+        : `Your last 5 rounds are averaging ${delta.toFixed(1)} strokes worse than the rounds before that — worth a look at what's changed.`);
+    }
+  }
+
+  return insights;
+}
+
+function renderStatsInsights(withScores, scoreToPar, pt, extras){
+  const block = document.getElementById('statsInsights');
+  if(!block) return;
+  if(withScores.length < 3){
+    block.innerHTML = `<div class="empty">Log a couple more rounds and this section will start surfacing patterns — strengths, leaks, and trends.</div>`;
+    return;
+  }
+  const insights = generateStatsInsights(withScores, scoreToPar, pt, extras);
+  block.innerHTML = insights.length
+    ? `<ul class="insight-list">${insights.map(i=>`<li>${i}</li>`).join('')}</ul>`
+    : `<div class="empty">Nothing stands out sharply yet — keep logging and patterns will surface here.</div>`;
+}
+
 function renderStats(){
   populateStatsYearFilter();
   const year = (document.getElementById('statsYearFilter')||{}).value || 'all';
@@ -2230,6 +2409,19 @@ function renderStats(){
   const girHave = girRounds.filter(x=>x.hit>0);
   const avgGir = girHave.length ? (girHave.reduce((s,x)=>s+x.pct,0)/girHave.length) : null;
 
+  // 3-putts: only counted on holes where putts data is actually present (>0)
+  let puttHolesWithData=0, threePutts=0;
+  withScores.forEach(r=>r.holes.forEach(h=>{
+    if(h.score>0 && h.putts>0){ puttHolesWithData++; if(h.putts>=3) threePutts++; }
+  }));
+  const threePuttPerRound = scoreCount ? (threePutts/scoreCount) : null;
+  const threePuttPct = puttHolesWithData ? (threePutts/puttHolesWithData*100) : null;
+
+  // Penalty strokes (tagged like Bunker — counts holes flagged, not exact stroke count)
+  let penaltyHoles=0;
+  withScores.forEach(r=>r.holes.forEach(h=>{ if(h.score>0 && h.penalty) penaltyHoles++; }));
+  const penaltyPerRound = scoreCount ? (penaltyHoles/scoreCount) : null;
+
   document.getElementById('statBoxes').innerHTML = `
     <div class="stat-box"><span class="num">${scoreCount}</span><span class="lbl">Rounds logged</span></div>
     <div class="stat-box"><span class="num">${avgToPar==null?'—':(avgToPar>=0?'+':'')+avgToPar.toFixed(1)}</span><span class="lbl">Avg to par</span></div>
@@ -2237,6 +2429,8 @@ function renderStats(){
     <div class="stat-box"><span class="num">${avgChips==null?'—':avgChips.toFixed(1)}</span><span class="lbl">Avg chips</span></div>
     <div class="stat-box"><span class="num">${avgFir==null?'—':avgFir.toFixed(0)+'%'}</span><span class="lbl">Avg FIR</span></div>
     <div class="stat-box"><span class="num">${avgGir==null?'—':avgGir.toFixed(0)+'%'}</span><span class="lbl">Avg GIR</span></div>
+    <div class="stat-box"><span class="num">${threePuttPerRound==null?'—':threePuttPerRound.toFixed(1)}</span><span class="lbl">3-putts / rd</span></div>
+    <div class="stat-box"><span class="num">${penaltyPerRound==null?'—':penaltyPerRound.toFixed(1)}</span><span class="lbl">Penalties / rd</span></div>
   `;
 
   // Handicap index
@@ -2307,6 +2501,7 @@ function renderStats(){
   }).filter(Boolean);
   scatterChart(document.getElementById('firScatter'), firScatterPts, {xMin:0,xMax:100});
   scatterChart(document.getElementById('girScatter'), girScatterPts, {xMin:0,xMax:100});
+  renderStatsInsights(withScores, scoreToPar, pt, { threePuttPct, threePuttPerRound, puttHolesWithData, penaltyHoles, penaltyPerRound });
   renderMissTendencies(withScores);
 }
 
@@ -3030,6 +3225,23 @@ document.getElementById('aerialSetGreenBtn').addEventListener('click', async ()=
 document.getElementById('aerialCloseBtn').addEventListener('click', closeAerialView);
 document.getElementById('aerialModal').addEventListener('click', e=>{
   if(e.target.id === 'aerialModal') closeAerialView();
+});
+
+// ---------- Backup modal (opened from the header) ----------
+function openBackupModal(){
+  const modal = document.getElementById('backupModal');
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden','false');
+}
+function closeBackupModal(){
+  const modal = document.getElementById('backupModal');
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden','true');
+}
+document.getElementById('openBackupBtn')?.addEventListener('click', openBackupModal);
+document.getElementById('backupCloseBtn').addEventListener('click', closeBackupModal);
+document.getElementById('backupModal').addEventListener('click', e=>{
+  if(e.target.id === 'backupModal') closeBackupModal();
 });
 
 function parseCsvNumbers(str, expectedLen){
