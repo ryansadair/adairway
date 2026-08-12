@@ -52,35 +52,39 @@ courses, everything.
 
 ## How the tabs work
 
-Every tab except Stats and Backup opens showing its history/list first —
-Rounds, Practice, Bag, Courses, and Notes all tuck their entry form behind a
-"+ New round" / "+ Add a club" / etc. toggle, so you're not scrolling past a
-big form just to check past data. Tap the toggle (or edit an existing item)
-to expand it; it collapses itself again after you save, cancel, or update.
-Play's course-setup card works the same way but starts open, since setting
-up is the natural first step there — collapse it manually once you're set
-for the round.
+Every tab opens showing its history/list first — Rounds, Practice, Bag,
+Courses, and Notes all tuck their entry form behind a "+ New round" /
+"+ Add a club" / etc. toggle, so you're not scrolling past a big form just
+to check past data. Tap the toggle (or edit an existing item) to expand it;
+it collapses itself again after you save, cancel, or update. Play's
+course-setup card works the same way but starts open, since setting up is
+the natural first step there — collapse it manually once you're set for
+the round.
 
 **Play** — one hole at a time, big tap targets, built for actually being on
-the course. Quick-load a saved course, pick tees (if the course has multiple
-sets on file), track score/putts/chips, fairway & GIR with optional miss
-direction (left/right off the tee, short/long/left/right on approach),
-bunker, and GPS distance to the green — with a club suggestion pulled from
+the course. A compact insight strip up top shows your handicap index, last-5
+round average, and a one-line "focus" (once you've logged 3+ rounds).
+Quick-load a saved course, pick tees (if the course has multiple sets on
+file), track score/putts/chips, fairway & GIR with optional miss direction
+(left/right off the tee, short/long/left/right on approach), bunker, penalty
+stroke, and GPS distance to the green — with a club suggestion pulled from
 your Bag's stored distances, adjusted for the course's elevation if set.
 
 **Rounds** — the full 18-hole scorecard for entering a round after the fact,
 or editing one you already logged. Same stat rows as Play (par, yards, score,
-putts, chips, FIR, GIR, miss detail, bunker), plus a Front 9 / Back 9 / Full
-18 selector so a 9-hole round doesn't skew your stats.
+putts, chips, FIR, GIR, miss detail, bunker, penalty), plus a Front 9 / Back
+9 / Full 18 selector so a 9-hole round doesn't skew your stats.
 
-**Stats** — year filter, handicap index (real USGA-style differential math),
-rolling 5-round score/putts trends with gear-change and practice-session
-markers, FIR%/GIR% trends, scoring by par-type, FIR/GIR-vs-score scatter
-plots, and a miss-tendency breakdown (fairway side, approach side, approach
-depth, bunker/sand-save proxy) once you've logged enough miss detail. Every
-chart has a plain-language caption explaining what the dots/lines/axes mean
-and which direction is "good" — no need to remember what a scatter plot of
-FIR% vs score is supposed to tell you.
+**Stats** — year filter, an auto-generated "What the numbers say" insights
+card (par-type strengths/leaks, 3-putt rate, penalty frequency, recent
+trend — gated behind at least 3 rounds so it doesn't overstate confidence
+on thin data), handicap index (real USGA-style differential math), rolling
+5-round score/putts trends with gear-change and practice-session markers,
+FIR%/GIR% trends, scoring by par-type, FIR/GIR-vs-score scatter plots, and a
+miss-tendency breakdown (fairway side, approach side, approach depth,
+bunker/sand-save proxy) once you've logged enough miss detail. Every chart
+has a plain-language caption explaining what the dots/lines/axes mean and
+which direction is "good."
 
 **Practice** — session log (focus, duration, notes), editable in place.
 
@@ -94,7 +98,10 @@ green locations for every hole at once.
 
 **Notes** — a free-form journal, editable in place like everything else.
 
-**Backup** — export everything as one `.json` file, or restore from one.
+**Backup** — no longer its own tab. Tap **"backup"** next to your account
+email in the header to open it as a popup — export everything as one
+`.json` file, or restore from one. Still worth doing occasionally even with
+account sync — see "Backing up your data" below for why.
 
 ## Courses: the single source of truth
 
@@ -213,6 +220,32 @@ that solves the same "I can't see the green" problem without that setup.
   zoom gesture. Buttons, dots, and toggles now opt out of that specifically —
   pinch-to-zoom on the page itself still works fine, this only stops the
   accidental zoom while tapping controls.
+- **Penalty stroke tag**: a chip next to Bunker in Play, and a matching row
+  on the Rounds scorecard — tags whether a hole had a penalty stroke (OB,
+  water, lost ball, etc). It's a yes/no tag like Bunker, not an exact stroke
+  count, so "Penalties/Rd" in Stats means holes-with-a-penalty per round, not
+  total penalty strokes. Feeds into the Stats insights below.
+- **"What the numbers say"** (Stats) and the **insight strip** (top of Play)
+  both pull from the same underlying logic: par-type strengths/leaks (needs
+  6+ holes of a given par type to speak up), 3-putt rate (needs 18+ holes
+  with putts logged), penalty frequency, and a last-5-vs-prior trend (needs
+  8+ rounds). Deliberately conservative about small samples — with only a
+  few rounds logged, most of these stay quiet rather than overstate a
+  pattern from 2-3 data points. The Play strip only shows once you've got 3+
+  rounds logged at all, and always reflects your all-time data regardless of
+  whatever year filter is selected on the Stats tab.
+- **1st putt distance**: three buckets (<5 ft, 5-15 ft, 15+ ft), tagged next
+  to the Putts stepper in Play and as a row on the Rounds scorecard. This
+  exists to separate two things that look identical in a plain "2 putts"
+  entry but aren't: hitting the green in regulation and 2-putting from 25
+  feet (normal — most golfers don't make those) versus missing the green,
+  chipping it close, and still needing 2 putts (a short game shot that
+  didn't quite finish the job). Stats shows 1-putt% and average putts per
+  distance bucket, plus — once you've logged 5+ missed greens with a
+  distance tagged — what percentage of your recovery shots after a miss
+  actually finished inside 5 feet, and how often you converted those into a
+  save. Entirely optional per hole; leave it blank on any hole and it's just
+  excluded from these stats rather than counted as anything.
 
 ## The Claude-artifact companion version
 
@@ -230,8 +263,12 @@ to be a real fork, not a silent parity copy.
 
 ## Backing up your data
 
-Even with cross-device sync, it's worth having an independent copy — the
-**Backup** tab:
+Firebase sync solves "I lost my phone" — it doesn't solve "I fat-fingered a
+delete," a Firestore security rule getting misconfigured, or losing access
+to the account itself someday. A backup file is your only copy that lives
+completely outside the live database, which is why it's still around even
+though storage moved off local/per-device. It just doesn't need its own tab
+anymore — tap **"backup"** next to your account email in the header:
 - **Export** — downloads everything as one `.json` file. Save it to Drive,
   Files, email, wherever.
 - **Restore** — replaces everything currently loaded with a previously

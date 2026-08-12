@@ -599,6 +599,12 @@
           <div class="val" id="puttsVal">2</div>
           <button id="puttsPlus" type="button">+</button>
         </div>
+        <div class="miss-row" id="puttDistRow" style="justify-content:center;margin-top:10px;">
+          <span class="miss-label">1st putt</span>
+          <button type="button" class="chip" data-puttdist="&lt;5">&lt; 5 ft</button>
+          <button type="button" class="chip" data-puttdist="5-15">5-15 ft</button>
+          <button type="button" class="chip" data-puttdist="15+">15+ ft</button>
+        </div>
       </div>
 
       <div class="stat-block">
@@ -764,6 +770,18 @@
       <h2>Scoring by par type</h2>
       <div class="hint" style="margin-top:0;">Your average score relative to par on 3s, 4s, and 5s, plus how often you make birdie-or-better, par, bogey, or worse — this is where to look to see which hole type is actually costing you strokes.</div>
       <div id="parTypeBlock"></div>
+    </div>
+
+    <div class="card">
+      <h2>Putts by distance</h2>
+      <div class="hint" style="margin-top:0;">
+        Logged from the "1st putt" tag in Play/Rounds — how far your first putt was on
+        each green, whether you got there in regulation or scrambled after a miss.
+        This is the difference between a GIR-and-2-putt from 25 feet (normal — very few
+        golfers make those) and a missed green where a sharp chip left you a tap-in.
+        The distance is what should drive whether a 2-putt feels like a miss or not.
+      </div>
+      <div id="puttDistBlock"></div>
     </div>
 
     <div class="grid2">
@@ -1361,6 +1379,13 @@ function buildScorecardTable(){
   const firMissOpts = missOpts([{v:'',l:'—'},{v:'L',l:'L'},{v:'R',l:'R'}]);
   const girLatOpts = missOpts([{v:'',l:'—'},{v:'L',l:'L'},{v:'R',l:'R'}]);
   const girDepthOpts = missOpts([{v:'',l:'—'},{v:'S',l:'S'},{v:'Long',l:'Lg'}]);
+  const puttDistOpts = missOpts([{v:'',l:'—'},{v:'<5',l:'<5'},{v:'5-15',l:'5-15'},{v:'15+',l:'15+'}]);
+
+  let puttDistRow = '<tr class="detail-row"><td class="rowlabel">1st Putt</td>';
+  for(let i=1;i<=9;i++) puttDistRow += `<td class="front9"><select class="sc-miss puttdist" data-hole="${i}">${puttDistOpts}</select></td>`;
+  puttDistRow += `<td class="total"></td>`;
+  for(let i=10;i<=18;i++) puttDistRow += `<td class="back9"><select class="sc-miss puttdist" data-hole="${i}">${puttDistOpts}</select></td>`;
+  puttDistRow += `<td class="total"></td><td class="total"></td></tr>`;
 
   let firMissRow = '<tr class="detail-row"><td class="rowlabel">Tee L/R</td>';
   for(let i=1;i<=9;i++) firMissRow += `<td class="front9"><select class="sc-miss fir-miss" data-hole="${i}">${firMissOpts}</select></td>`;
@@ -1392,7 +1417,7 @@ function buildScorecardTable(){
   for(let i=10;i<=18;i++) penaltyRow += `<td class="back9"><input type="checkbox" class="penalty" data-hole="${i}"></td>`;
   penaltyRow += `<td class="total" id="inPenalty">0</td><td class="total" id="totPenalty">0</td></tr>`;
 
-  t.innerHTML = holeHeader + parRow + ydRow + scoreRow + puttsRow + chipsRow + firRow + girRow + firMissRow + girLatRow + girDepthRow + bunkerRow + penaltyRow;
+  t.innerHTML = holeHeader + parRow + ydRow + scoreRow + puttsRow + puttDistRow + chipsRow + firRow + girRow + firMissRow + girLatRow + girDepthRow + bunkerRow + penaltyRow;
   t.addEventListener('input', recalcScorecard);
   t.addEventListener('change', recalcScorecard);
   recalcScorecard();
@@ -1531,12 +1556,14 @@ function readScorecard(){
     const girDepthEl = document.querySelector(`.gir-depth[data-hole="${i}"]`);
     const bunkerEl = document.querySelector(`.bunker[data-hole="${i}"]`);
     const penaltyEl = document.querySelector(`.penalty[data-hole="${i}"]`);
+    const puttDistEl = document.querySelector(`.puttdist[data-hole="${i}"]`);
     const firMiss = (!fir && firMissEl && firMissEl.value) ? firMissEl.value : null;
     const girMissLat = (!gir && girLatEl && girLatEl.value) ? girLatEl.value : null;
     const girMissDepth = (!gir && girDepthEl && girDepthEl.value) ? girDepthEl.value : null;
     const bunker = !!(bunkerEl && bunkerEl.checked);
     const penalty = !!(penaltyEl && penaltyEl.checked);
-    holes.push({hole:i, par, yardage, score, putts, chips, fir, gir, firMiss, girMissLat, girMissDepth, bunker, penalty});
+    const puttDistance = (puttDistEl && puttDistEl.value) ? puttDistEl.value : null;
+    holes.push({hole:i, par, yardage, score, putts, chips, fir, gir, firMiss, girMissLat, girMissDepth, bunker, penalty, puttDistance});
   }
   return holes;
 }
@@ -1551,7 +1578,7 @@ function applyHolesPlayedToScorecard(mode){
       const td = el.closest('td');
       if(td) td.classList.toggle('holes-excluded', !inRange);
     });
-    ['fir-miss','gir-lat','gir-depth'].forEach(cls=>{
+    ['fir-miss','gir-lat','gir-depth','puttdist'].forEach(cls=>{
       const el = document.querySelector(`.${cls}[data-hole="${h}"]`);
       if(!el) return;
       el.disabled = !inRange;
@@ -1587,7 +1614,7 @@ const OGA_BASE = 'https://api.opengolfapi.org';
 let pendingApiCourse = null;
 let currentApiCourseId = null;
 
-let playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, chips:0, fir:false, gir:false, firMiss:null, girMissLat:null, girMissDepth:null, bunker:false, penalty:false}));
+let playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, chips:0, fir:false, gir:false, firMiss:null, girMissLat:null, girMissDepth:null, bunker:false, penalty:false, puttDistance:null}));
 let currentHole = 0;
 let playRange = {start:0, end:17};
 let restoringPlayDraft = false;
@@ -1651,7 +1678,7 @@ function restorePlayDraftIfAny(){
 document.getElementById('discardPlayDraftBtn')?.addEventListener('click', ()=>{
   if(!confirm('Discard the round in progress? This only clears the unsaved draft — nothing already saved to your history is affected.')) return;
   clearPlayDraft();
-  playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, chips:0, fir:false, gir:false, firMiss:null, girMissLat:null, girMissDepth:null, bunker:false, penalty:false}));
+  playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, chips:0, fir:false, gir:false, firMiss:null, girMissLat:null, girMissDepth:null, bunker:false, penalty:false, puttDistance:null}));
   currentHole = 0;
   setPlayRange('full');
   document.getElementById('pl-course').value='';
@@ -1671,10 +1698,10 @@ document.getElementById('discardPlayDraftBtn')?.addEventListener('click', ()=>{
 function setPlayRange(mode){
   if(mode==='front'){
     playRange = {start:0, end:8};
-    for(let i=9;i<18;i++){ playHoles[i].score=0; playHoles[i].putts=0; playHoles[i].chips=0; playHoles[i].fir=false; playHoles[i].gir=false; playHoles[i].firMiss=null; playHoles[i].girMissLat=null; playHoles[i].girMissDepth=null; playHoles[i].bunker=false; playHoles[i].penalty=false; }
+    for(let i=9;i<18;i++){ playHoles[i].score=0; playHoles[i].putts=0; playHoles[i].chips=0; playHoles[i].fir=false; playHoles[i].gir=false; playHoles[i].firMiss=null; playHoles[i].girMissLat=null; playHoles[i].girMissDepth=null; playHoles[i].bunker=false; playHoles[i].penalty=false; playHoles[i].puttDistance=null; }
   }else if(mode==='back'){
     playRange = {start:9, end:17};
-    for(let i=0;i<9;i++){ playHoles[i].score=0; playHoles[i].putts=0; playHoles[i].chips=0; playHoles[i].fir=false; playHoles[i].gir=false; playHoles[i].firMiss=null; playHoles[i].girMissLat=null; playHoles[i].girMissDepth=null; playHoles[i].bunker=false; playHoles[i].penalty=false; }
+    for(let i=0;i<9;i++){ playHoles[i].score=0; playHoles[i].putts=0; playHoles[i].chips=0; playHoles[i].fir=false; playHoles[i].gir=false; playHoles[i].firMiss=null; playHoles[i].girMissLat=null; playHoles[i].girMissDepth=null; playHoles[i].bunker=false; playHoles[i].penalty=false; playHoles[i].puttDistance=null; }
   }else{
     playRange = {start:0, end:17};
   }
@@ -1766,6 +1793,9 @@ function renderPlayHole(){
   if(bunkerChip) bunkerChip.classList.toggle('on', !!h.bunker);
   const penaltyChip = document.getElementById('penaltyChip');
   if(penaltyChip) penaltyChip.classList.toggle('on', !!h.penalty);
+  document.querySelectorAll('#puttDistRow .chip').forEach(btn=>{
+    btn.classList.toggle('on', h.puttDistance === btn.dataset.puttdist);
+  });
 
   document.getElementById('playPrev').disabled = (currentHole===playRange.start);
   document.getElementById('playNext').disabled = (currentHole===playRange.end);
@@ -1855,6 +1885,14 @@ document.getElementById('missPanel')?.addEventListener('click', e=>{
   }
   renderPlayHole();
 });
+document.getElementById('puttDistRow')?.addEventListener('click', e=>{
+  const chip = e.target.closest('.chip[data-puttdist]');
+  if(!chip) return;
+  const h = playHoles[currentHole];
+  const val = chip.dataset.puttdist;
+  h.puttDistance = (h.puttDistance === val) ? null : val;
+  renderPlayHole();
+});
 document.getElementById('playPrev').addEventListener('click', ()=>{
   if(currentHole>playRange.start){ currentHole--; renderPlayHole(); }
 });
@@ -1873,7 +1911,7 @@ document.getElementById('finishRoundBtn').addEventListener('click', async ()=>{
     document.getElementById('pl-holesplayed').value
   );
   // reset play state for next round
-  playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, chips:0, fir:false, gir:false, firMiss:null, girMissLat:null, girMissDepth:null, bunker:false, penalty:false}));
+  playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, chips:0, fir:false, gir:false, firMiss:null, girMissLat:null, girMissDepth:null, bunker:false, penalty:false, puttDistance:null}));
   document.getElementById('pl-holesplayed').value = 'full';
   setPlayRange('full');
   document.getElementById('pl-course').value='';
@@ -1957,6 +1995,8 @@ function startEditRound(round){
     if(bunkerEl) bunkerEl.checked = !!h.bunker;
     const penaltyEl = document.querySelector(`.penalty[data-hole="${h.hole}"]`);
     if(penaltyEl) penaltyEl.checked = !!h.penalty;
+    const puttDistEl = document.querySelector(`.puttdist[data-hole="${h.hole}"]`);
+    if(puttDistEl) puttDistEl.value = h.puttDistance || '';
   });
   applyHolesPlayedToScorecard(round.holesPlayed || 'full');
   document.getElementById('r-notes').value = round.notes || '';
@@ -2366,6 +2406,60 @@ function renderStatsInsights(withScores, scoreToPar, pt, extras){
     : `<div class="empty">Nothing stands out sharply yet — keep logging and patterns will surface here.</div>`;
 }
 
+function renderPuttDistanceStats(withScores){
+  const block = document.getElementById('puttDistBlock');
+  if(!block) return;
+  const buckets = { '<5': {n:0, onePutt:0, sumPutts:0}, '5-15': {n:0, onePutt:0, sumPutts:0}, '15+': {n:0, onePutt:0, sumPutts:0} };
+  let missedGirWithDist = 0, missedGirClose = 0, missedGirCloseSaved = 0;
+
+  withScores.forEach(r=>r.holes.forEach(h=>{
+    if(h.score<=0 || !h.puttDistance || !buckets[h.puttDistance]) return;
+    const b = buckets[h.puttDistance];
+    b.n++;
+    if(h.putts>0) b.sumPutts += h.putts;
+    if(h.putts===1) b.onePutt++;
+    if(!h.gir){
+      missedGirWithDist++;
+      if(h.puttDistance==='<5'){
+        missedGirClose++;
+        if(h.putts===1) missedGirCloseSaved++;
+      }
+    }
+  }));
+
+  const total = buckets['<5'].n + buckets['5-15'].n + buckets['15+'].n;
+  if(total===0){
+    block.innerHTML = `<div class="empty">Tag "1st putt" distance while playing and this will start showing patterns — like whether a missed green with a sharp chip is actually costing you strokes, or not.</div>`;
+    return;
+  }
+
+  const rows = ['<5','5-15','15+'].map(key=>{
+    const b = buckets[key];
+    const pct = b.n ? (b.onePutt/b.n*100) : null;
+    const avg = b.n ? (b.sumPutts/b.n) : null;
+    return `<div class="partype-box">
+      <div class="pt-label">${key} ft</div>
+      <span class="pt-num">${pct==null?'—':pct.toFixed(0)+'%'}</span>
+      <div class="pt-sub">1-putt · ${b.n} hole${b.n===1?'':'s'}${avg!=null?' · avg '+avg.toFixed(1)+' putts':''}</div>
+    </div>`;
+  }).join('');
+
+  let scrambleLine = '';
+  if(missedGirWithDist >= 5){
+    const closePct = (missedGirClose/missedGirWithDist*100);
+    scrambleLine = `<p style="font-size:13.5px;margin:14px 0 0;">On missed greens with a distance logged, your recovery shot (chip/pitch) left you inside 5ft <strong>${closePct.toFixed(0)}%</strong> of the time`;
+    if(missedGirClose>0){
+      const savedPct = (missedGirCloseSaved/missedGirClose*100);
+      scrambleLine += ` — and you converted <strong>${savedPct.toFixed(0)}%</strong> of those into a save.`;
+    }else{
+      scrambleLine += '.';
+    }
+    scrambleLine += '</p>';
+  }
+
+  block.innerHTML = `<div class="partype-row">${rows}</div>${scrambleLine}`;
+}
+
 function renderStats(){
   populateStatsYearFilter();
   const year = (document.getElementById('statsYearFilter')||{}).value || 'all';
@@ -2501,6 +2595,7 @@ function renderStats(){
   scatterChart(document.getElementById('firScatter'), firScatterPts, {xMin:0,xMax:100});
   scatterChart(document.getElementById('girScatter'), girScatterPts, {xMin:0,xMax:100});
   renderStatsInsights(withScores, scoreToPar, pt, { threePuttPct, threePuttPerRound, puttHolesWithData, penaltyHoles, penaltyPerRound });
+  renderPuttDistanceStats(withScores);
   renderMissTendencies(withScores);
 }
 
