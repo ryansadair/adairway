@@ -139,10 +139,11 @@ suggestion in Play — a handful of well-known courses have elevation
 pre-filled (only if you haven't set one yourself), everything else you enter
 once and it's remembered.
 
-## GPS: two ways to build your own green-location database
+## GPS: three ways to build your own green-location database
 
 OpenGolfAPI's green-boundary data is a sparser layer than "the course
-exists," so this app treats it as one option, not a dependency:
+exists," so this app treats it as one option among several, not a
+dependency:
 
 1. **Map editor** — "map greens" on any course in the Courses tab opens an
    interactive map. It defaults to **satellite imagery** (Esri World
@@ -151,23 +152,52 @@ exists," so this app treats it as one option, not a dependency:
    a street map if you'd rather. Click a hole number, then click its green
    on the map. Do all 18 in a couple of minutes from your couch, or fine-tune
    one hole after a round.
-2. **On-course single save** — in Play, "Save my current spot as this hole's
+2. **Auto-fill from OpenStreetMap** — a button in the same map editor that
+   queries OSM's free Overpass API for any greens already mapped near the
+   course (plus Nominatim to find the course itself if it doesn't have a
+   location yet), and drops pins automatically. It tries several matching
+   strategies — explicit hole numbers first, then nearest-neighbor pairing,
+   then angular ordering around the course as a last resort for unlabeled
+   data — and always shows you how many holes it actually matched. OSM
+   coverage varies a lot by course (small regional courses are often not
+   drawn at all), and it never overwrites a pin you've placed yourself
+   unless you explicitly confirm that. Review what it finds in the map
+   editor before trusting it — it's community data, same caveat as
+   OpenGolfAPI.
+3. **On-course single save** — in Play, "Save my current spot as this hole's
    green" captures your live position and saves it for that hole, once,
    permanently.
-3. **Aerial view, mid-round** — "🛰️ Aerial view" in Play opens a satellite
-   view centered on your live position, with a 📍 marker for you and a 🚩 for
-   the saved green (if any), plus the live distance between them. If a hole's
-   green isn't set yet, or looks off, tap anywhere on the image to drop a new
-   flag and save it right there — handy for the exact situation that prompted
-   this: a couple of courses where the green just isn't visible/mapped well
-   enough any other way.
 
 **"Get distance"** checks in this order: your own saved location first
 (works offline, zero network calls), then OpenGolfAPI if the course was
 looked up and has coverage, then a plain "no data yet" message with a nudge
-toward the two options above. Works for **any** course — you don't need an
+toward the options above. Works for **any** course — you don't need an
 OpenGolfAPI lookup at all for GPS to function, since you can map the greens
 yourself.
+
+### Rangefinder mode (Play)
+
+"🛰️ Aerial view" in Play is a real live rangefinder now, not a one-shot
+lookup — it tracks your position continuously (`watchPosition`, not a single
+`getCurrentPosition` call) and updates in real time as you walk. It shows:
+
+- **Front / middle / back** yardage to the green (middle is your actual
+  saved pin; front/back are estimated using a typical green depth, since we
+  don't have full green-boundary polygons for most courses)
+- **Club suggestion** pulled from your Bag's stored distances, adjusted for
+  the course's elevation if set — same logic as the rest of the app, just
+  surfaced live on the rangefinder HUD
+- **A draggable orange target** — tap or drag anywhere on the image to
+  measure distance to any spot (a bunker, a tree, a layup point), with
+  distance to both you and the green shown live. Tap "Save target as green"
+  to promote that spot into the hole's saved green location
+- White dot = you, flag = saved green, orange = your measure target — colors
+  deliberately kept in the app's existing palette (fairway green / cream /
+  flag red) rather than a generic map-app blue, so it still looks like part
+  of the same app
+
+Closing the modal stops the GPS watch immediately — it doesn't run in the
+background between holes.
 
 *Why Esri instead of actual Google Maps:* Google's satellite tiles aren't
 usable for free without their Maps API (a Google Cloud account, billing

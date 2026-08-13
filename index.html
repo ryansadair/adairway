@@ -380,10 +380,94 @@
   #greenMap, #aerialMap{height:min(48vh,360px);width:100%;border-radius:8px;border:1px solid var(--line);z-index:1;}
   .map-modal-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
   .map-modal-actions .hint{margin:0;flex:1;min-width:140px;}
+
+  /* Live rangefinder (aerial modal) */
+  .rf-shell{position:relative;flex:1;min-height:0;display:flex;flex-direction:column;}
+  #aerialMap.rf-map{
+    height:min(58vh,480px);border-radius:10px;border:none;
+    box-shadow:inset 0 0 0 1px rgba(31,58,46,0.12);
+  }
+  .rf-hud{
+    position:absolute;left:10px;right:10px;top:10px;z-index:500;
+    pointer-events:none;display:flex;flex-direction:column;gap:8px;
+  }
+  .rf-hud-top{
+    display:flex;align-items:stretch;justify-content:space-between;gap:8px;
+  }
+  .rf-chip{
+    pointer-events:auto;
+    background:rgba(31,58,46,0.92);color:var(--paper-light);
+    border-radius:10px;padding:8px 12px;
+    font-family:'IBM Plex Mono',monospace;
+    box-shadow:0 4px 16px rgba(31,58,46,0.25);
+    -webkit-backdrop-filter:blur(8px);
+    backdrop-filter:blur(8px);
+  }
+  .rf-chip.club{
+    display:flex;flex-direction:column;justify-content:center;min-width:84px;
+  }
+  .rf-chip .rf-club-name{
+    font-size:10px;text-transform:uppercase;letter-spacing:0.06em;opacity:0.8;font-weight:600;
+  }
+  .rf-chip .rf-club-yds{
+    font-family:'Fraunces',serif;font-weight:700;font-size:20px;line-height:1.1;
+  }
+  .rf-fmb{
+    display:flex;gap:5px;align-items:stretch;pointer-events:none;
+  }
+  .rf-fmb span{
+    background:rgba(245,240,230,0.94);color:var(--fairway-deep);
+    border-radius:8px;padding:6px 9px;min-width:52px;text-align:center;
+    font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;
+    box-shadow:0 2px 10px rgba(31,58,46,0.12);
+    display:flex;flex-direction:column;justify-content:center;
+  }
+  .rf-fmb span strong{
+    display:block;font-family:'Fraunces',serif;font-size:15px;font-weight:700;line-height:1.1;
+  }
+  .rf-fmb span.is-middle{
+    background:rgba(31,58,46,0.92);color:var(--paper-light);
+  }
+  .rf-measure{
+    pointer-events:none;
+    background:rgba(245,240,230,0.95);color:var(--graphite);
+    border-radius:10px;padding:8px 12px;
+    font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:1.45;
+    box-shadow:0 2px 12px rgba(31,58,46,0.14);
+    max-width:100%;
+  }
+  .rf-measure strong{color:var(--fairway-deep);}
+  .rf-measure.hidden{display:none;}
+  .rf-actions-bar{
+    display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:4px;
+  }
+  .leaflet-container .rf-you-dot{
+    width:16px;height:16px;border-radius:50%;
+    background:var(--paper-light);border:3px solid var(--fairway-deep);
+    box-shadow:0 0 0 2px rgba(31,58,46,0.35), 0 2px 8px rgba(0,0,0,0.35);
+  }
+  .leaflet-container .rf-green-flag{
+    font-size:26px;line-height:1;filter:drop-shadow(0 2px 3px rgba(0,0,0,0.45));
+  }
+  .leaflet-container .rf-target-dot{
+    width:18px;height:18px;border-radius:50%;
+    background:var(--flag);border:3px solid #fff;
+    box-shadow:0 0 0 2px rgba(164,64,47,0.4), 0 2px 8px rgba(0,0,0,0.35);
+    cursor:grab;
+  }
+  .leaflet-container .rf-dist-label{
+    background:rgba(31,58,46,0.88);color:#F5F0E6;border:none;border-radius:6px;
+    padding:3px 8px;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;
+    box-shadow:0 2px 8px rgba(0,0,0,0.25);white-space:nowrap;
+  }
+  .leaflet-container .rf-dist-label::before{display:none;}
+
   @media (max-width:520px){
     .map-modal{padding:0;align-items:stretch;}
     .map-modal-card{max-height:100%;height:100%;border-radius:0;width:100%;}
-    #greenMap, #aerialMap{height:42vh;}
+    #greenMap{height:42vh;}
+    #aerialMap.rf-map{height:min(62vh, calc(100vh - 220px));border-radius:0;}
+    .map-modal-body{padding:8px 10px 12px;}
   }
 </style>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
@@ -438,10 +522,11 @@
       <div class="map-hole-row" id="greenMapHoles"></div>
       <div id="greenMap"></div>
       <div class="map-modal-actions">
-        <button type="button" class="btn small" id="greenMapClearHoleBtn">Clear this hole</button>
-        <button type="button" class="btn outline small" id="greenMapClearAllBtn">Clear all pins</button>
-        <button type="button" class="btn" id="greenMapSaveBtn">Save greens</button>
-        <p class="hint" id="greenMapHint">Select hole 1, then tap the green on the map.</p>
+        <button type="button" class="btn" id="greenMapOsmBtn">Auto-fill from map data</button>
+        <button type="button" class="btn outline small" id="greenMapClearHoleBtn">Clear hole</button>
+        <button type="button" class="btn outline small" id="greenMapClearAllBtn">Clear all</button>
+        <button type="button" class="btn small" id="greenMapSaveBtn">Save greens</button>
+        <p class="hint" id="greenMapHint">Auto-fill pulls green centers from OpenStreetMap when available. Or select a hole and tap the map to place a pin yourself.</p>
       </div>
     </div>
   </div>
@@ -451,16 +536,35 @@
   <div class="map-modal-card">
     <div class="map-modal-head">
       <div>
-        <h3 id="aerialTitle">Aerial view</h3>
+        <h3 id="aerialTitle">Rangefinder</h3>
         <div class="sub" id="aerialSub">Locating you…</div>
       </div>
       <button type="button" class="btn outline small" id="aerialCloseBtn">Close</button>
     </div>
     <div class="map-modal-body">
-      <div id="aerialMap"></div>
-      <div class="map-modal-actions">
-        <button type="button" class="btn small" id="aerialSetGreenBtn">Tap map, then use this to set the green here</button>
-        <p class="hint" id="aerialHint">📍 = you · 🚩 = saved green (if any). Tap the satellite image anywhere to move the flag, then tap the button above to save it.</p>
+      <div class="rf-shell">
+        <div id="aerialMap" class="rf-map"></div>
+        <div class="rf-hud" id="aerialHud" style="display:none;">
+          <div class="rf-hud-top">
+            <div class="rf-chip club" id="rfClubChip">
+              <span class="rf-club-name" id="rfClubName">—</span>
+              <span class="rf-club-yds" id="rfClubYds">—</span>
+            </div>
+            <div class="rf-fmb" id="rfFmb">
+              <span><strong id="rfFront">—</strong>front</span>
+              <span class="is-middle"><strong id="rfMiddle">—</strong>middle</span>
+              <span><strong id="rfBack">—</strong>back</span>
+            </div>
+          </div>
+          <div class="rf-measure hidden" id="rfMeasure">
+            Tap or drag the orange target to measure a spot.
+          </div>
+        </div>
+      </div>
+      <div class="rf-actions-bar">
+        <button type="button" class="btn small" id="aerialSetGreenBtn">Save target as green</button>
+        <button type="button" class="btn outline small" id="aerialClearTargetBtn">Clear target</button>
+        <p class="hint" id="aerialHint" style="margin:0;flex:1;min-width:140px;">White dot = you · Flag = green · Orange target = measure (drag it).</p>
       </div>
     </div>
   </div>
@@ -3228,20 +3332,49 @@ document.getElementById('gpsSaveBtn').addEventListener('click', ()=>{
   }, {enableHighAccuracy:true, timeout:8000});
 });
 
-// ---------- Aerial view (Play tab) ----------
+// ---------- Aerial rangefinder (Play tab) ----------
+// Manual green pins are the source of truth. Live GPS + a draggable target
+// give you distance to green (front/middle/back) and measure any spot.
+const GREEN_DEPTH_YDS = 25; // approximate green depth for front/back without a polygon
 let aerialMap = null;
 let aerialMarkers = {};
+let aerialLayers = {}; // polylines, circles, labels
 let aerialGen = 0;
-let aerialPendingLatLng = null;
+let aerialWatchId = null;
+let aerialYou = null;          // {lat, lng, accuracy}
+let aerialGreen = null;        // {lat, lng} saved pin for current hole
+let aerialTarget = null;       // {lat, lng} measure / pending-green point
+let aerialHoleNum = 1;
+let aerialCourse = null;
+
+function stopAerialWatch(){
+  if(aerialWatchId != null && navigator.geolocation){
+    try{ navigator.geolocation.clearWatch(aerialWatchId); }catch(e){}
+  }
+  aerialWatchId = null;
+}
 
 function destroyAerialMap(){
+  stopAerialWatch();
   if(aerialMap){
-    try{ aerialMap.off(); aerialMap.remove(); }catch(e){}
+    try{
+      Object.values(aerialMarkers).forEach(m=>{ try{ aerialMap.removeLayer(m); }catch(e){} });
+      Object.values(aerialLayers).forEach(l=>{ try{ aerialMap.removeLayer(l); }catch(e){} });
+      aerialMap.off();
+      aerialMap.remove();
+    }catch(e){}
   }
   aerialMap = null;
   aerialMarkers = {};
-  aerialPendingLatLng = null;
+  aerialLayers = {};
+  aerialYou = null;
+  aerialGreen = null;
+  aerialTarget = null;
+  aerialCourse = null;
+  const hud = document.getElementById('aerialHud');
+  if(hud) hud.style.display = 'none';
 }
+
 function closeAerialView(){
   aerialGen++;
   const modal = document.getElementById('aerialModal');
@@ -3249,73 +3382,357 @@ function closeAerialView(){
   modal.setAttribute('aria-hidden','true');
   destroyAerialMap();
 }
+
+function rfYouIcon(){
+  return L.divIcon({
+    className: '',
+    html: '<div class="rf-you-dot"></div>',
+    iconSize: [16, 16],
+    iconAnchor: [8, 8]
+  });
+}
+function rfGreenIcon(){
+  return L.divIcon({
+    className: '',
+    html: '<div class="rf-green-flag">🚩</div>',
+    iconSize: [28, 28],
+    iconAnchor: [6, 26]
+  });
+}
+function rfTargetIcon(){
+  return L.divIcon({
+    className: '',
+    html: '<div class="rf-target-dot"></div>',
+    iconSize: [18, 18],
+    iconAnchor: [9, 9]
+  });
+}
+
+/** Destination point given start, bearing (deg), distance (yards). */
+function destPoint(lat, lng, bearingDeg, yards){
+  const R = 6371000;
+  const d = yards / 1.09361;
+  const br = bearingDeg * Math.PI / 180;
+  const lat1 = lat * Math.PI / 180;
+  const lng1 = lng * Math.PI / 180;
+  const lat2 = Math.asin(Math.sin(lat1)*Math.cos(d/R) + Math.cos(lat1)*Math.sin(d/R)*Math.cos(br));
+  const lng2 = lng1 + Math.atan2(Math.sin(br)*Math.sin(d/R)*Math.cos(lat1), Math.cos(d/R)-Math.sin(lat1)*Math.sin(lat2));
+  return { lat: lat2 * 180 / Math.PI, lng: lng2 * 180 / Math.PI };
+}
+
+function bearingDeg(lat1, lng1, lat2, lng2){
+  const toRad = d => d * Math.PI / 180;
+  const y = Math.sin(toRad(lng2-lng1)) * Math.cos(toRad(lat2));
+  const x = Math.cos(toRad(lat1))*Math.sin(toRad(lat2)) - Math.sin(toRad(lat1))*Math.cos(toRad(lat2))*Math.cos(toRad(lng2-lng1));
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
+function clearAerialOverlays(){
+  ['lineYouGreen','lineYouTarget','lineTargetGreen','ringMiddle','ringFront','labelYouGreen','labelYouTarget','labelTargetGreen'].forEach(k=>{
+    if(aerialLayers[k]){
+      try{ aerialMap.removeLayer(aerialLayers[k]); }catch(e){}
+      delete aerialLayers[k];
+    }
+  });
+}
+
+function updateRangefinderHud(){
+  const hud = document.getElementById('aerialHud');
+  if(!hud || !aerialMap) return;
+  hud.style.display = '';
+
+  const hasYou = !!aerialYou;
+  const hasGreen = !!aerialGreen;
+  const hasTarget = !!aerialTarget;
+
+  // Primary distance: prefer you → green, else you → target
+  let mainYds = null;
+  if(hasYou && hasGreen){
+    mainYds = distanceYards(aerialYou.lat, aerialYou.lng, aerialGreen.lat, aerialGreen.lng);
+  }else if(hasYou && hasTarget){
+    mainYds = distanceYards(aerialYou.lat, aerialYou.lng, aerialTarget.lat, aerialTarget.lng);
+  }
+
+  // Front / middle / back (approximate green depth along approach line)
+  if(hasYou && hasGreen && mainYds != null){
+    const half = GREEN_DEPTH_YDS / 2;
+    const front = Math.max(0, mainYds - half);
+    const back = mainYds + half;
+    document.getElementById('rfFront').textContent = Math.round(front);
+    document.getElementById('rfMiddle').textContent = Math.round(mainYds);
+    document.getElementById('rfBack').textContent = Math.round(back);
+    document.getElementById('rfFmb').style.display = '';
+  }else if(hasYou && hasTarget && mainYds != null){
+    // Measuring a spot only — show that single distance in middle slot
+    document.getElementById('rfFront').textContent = '—';
+    document.getElementById('rfMiddle').textContent = Math.round(mainYds);
+    document.getElementById('rfBack').textContent = '—';
+    document.getElementById('rfFmb').style.display = '';
+  }else{
+    document.getElementById('rfFront').textContent = '—';
+    document.getElementById('rfMiddle').textContent = '—';
+    document.getElementById('rfBack').textContent = '—';
+  }
+
+  // Club recommendation — show club name + stock distance (not the hole yardage)
+  const course = aerialCourse;
+  const rec = mainYds != null ? recommendClub(mainYds, course) : null;
+  if(rec){
+    document.getElementById('rfClubName').textContent = rec.club.name || 'Club';
+    document.getElementById('rfClubYds').textContent = Math.round(rec.club.d);
+    if(rec.elev != null && rec.elev >= 500){
+      document.getElementById('rfClubName').textContent = (rec.club.name || 'Club') + ' · plays';
+      document.getElementById('rfClubYds').textContent = Math.round(rec.playsLike);
+    }
+  }else{
+    document.getElementById('rfClubName').textContent = bag.some(c=>c.distance) ? '—' : 'Add bag';
+    document.getElementById('rfClubYds').textContent = '—';
+  }
+
+  // Measure panel: me → target and target → green
+  const measureEl = document.getElementById('rfMeasure');
+  if(hasTarget && hasYou){
+    const toSpot = distanceYards(aerialYou.lat, aerialYou.lng, aerialTarget.lat, aerialTarget.lng);
+    let html = `You → target: <strong>${Math.round(toSpot)} yds</strong>`;
+    if(hasGreen){
+      const toGreen = distanceYards(aerialTarget.lat, aerialTarget.lng, aerialGreen.lat, aerialGreen.lng);
+      html += ` · Target → green: <strong>${Math.round(toGreen)} yds</strong>`;
+    }else{
+      html += ` · <span style="opacity:0.7">No green pin yet — use “Save target as green”</span>`;
+    }
+    measureEl.innerHTML = html;
+    measureEl.classList.remove('hidden');
+  }else{
+    measureEl.textContent = hasGreen
+      ? 'Tap the map to drop a measure target (drag to move). Distances update live.'
+      : 'No saved green for this hole yet. Tap the map on the green, then “Save target as green”.';
+    measureEl.classList.toggle('hidden', !hasYou);
+  }
+
+  // Subtitle
+  const holeLabel = `Hole ${aerialHoleNum}`;
+  if(hasYou && hasGreen && mainYds != null){
+    document.getElementById('aerialSub').textContent = `${holeLabel} · ${Math.round(mainYds)} yds to middle · live GPS`;
+  }else if(hasYou && !hasGreen){
+    document.getElementById('aerialSub').textContent = `${holeLabel} · no green pin — tap map to set one`;
+  }else{
+    document.getElementById('aerialSub').textContent = `${holeLabel} · locating…`;
+  }
+
+  // Map overlays
+  clearAerialOverlays();
+  if(!aerialMap) return;
+
+  if(hasYou && hasGreen){
+    aerialLayers.lineYouGreen = L.polyline(
+      [[aerialYou.lat, aerialYou.lng], [aerialGreen.lat, aerialGreen.lng]],
+      { color: '#F5F0E6', weight: 2.5, opacity: 0.95, dashArray: null }
+    ).addTo(aerialMap);
+
+    // Distance rings at middle and front (visual like commercial rangefinders)
+    const ringStyle = { color: '#F5F0E6', weight: 1.25, opacity: 0.55, fill: false };
+    aerialLayers.ringMiddle = L.circle([aerialGreen.lat, aerialGreen.lng], {
+      radius: mainYds / 1.09361, ...ringStyle
+    }).addTo(aerialMap);
+    if(mainYds > GREEN_DEPTH_YDS){
+      aerialLayers.ringFront = L.circle([aerialGreen.lat, aerialGreen.lng], {
+        radius: Math.max(0, mainYds - GREEN_DEPTH_YDS/2) / 1.09361,
+        color: '#C7A876', weight: 1.25, opacity: 0.5, fill: false
+      }).addTo(aerialMap);
+    }
+
+    const mid = {
+      lat: (aerialYou.lat + aerialGreen.lat) / 2,
+      lng: (aerialYou.lng + aerialGreen.lng) / 2
+    };
+    aerialLayers.labelYouGreen = L.marker([mid.lat, mid.lng], {
+      icon: L.divIcon({
+        className: '',
+        html: `<div class="rf-dist-label">${Math.round(mainYds)}</div>`,
+        iconSize: [40, 20],
+        iconAnchor: [20, 10]
+      }),
+      interactive: false
+    }).addTo(aerialMap);
+  }
+
+  if(hasYou && hasTarget){
+    aerialLayers.lineYouTarget = L.polyline(
+      [[aerialYou.lat, aerialYou.lng], [aerialTarget.lat, aerialTarget.lng]],
+      { color: '#A4402F', weight: 2, opacity: 0.9, dashArray: '6 6' }
+    ).addTo(aerialMap);
+  }
+  if(hasTarget && hasGreen){
+    aerialLayers.lineTargetGreen = L.polyline(
+      [[aerialTarget.lat, aerialTarget.lng], [aerialGreen.lat, aerialGreen.lng]],
+      { color: '#C7A876', weight: 2, opacity: 0.85, dashArray: '4 6' }
+    ).addTo(aerialMap);
+  }
+}
+
+function setAerialTarget(lat, lng){
+  aerialTarget = { lat, lng };
+  if(!aerialMap) return;
+  if(aerialMarkers.target){
+    aerialMarkers.target.setLatLng([lat, lng]);
+  }else{
+    aerialMarkers.target = L.marker([lat, lng], {
+      icon: rfTargetIcon(),
+      draggable: true,
+      zIndexOffset: 600
+    }).addTo(aerialMap);
+    aerialMarkers.target.on('drag', e=>{
+      const ll = e.target.getLatLng();
+      aerialTarget = { lat: ll.lat, lng: ll.lng };
+      updateRangefinderHud();
+    });
+    aerialMarkers.target.on('dragend', e=>{
+      const ll = e.target.getLatLng();
+      aerialTarget = { lat: ll.lat, lng: ll.lng };
+      updateRangefinderHud();
+    });
+  }
+  updateRangefinderHud();
+}
+
+function clearAerialTarget(){
+  aerialTarget = null;
+  if(aerialMarkers.target){
+    try{ aerialMap.removeLayer(aerialMarkers.target); }catch(e){}
+    delete aerialMarkers.target;
+  }
+  updateRangefinderHud();
+}
+
+function onAerialPosition(pos, gen){
+  if(gen !== aerialGen) return;
+  const { latitude, longitude, accuracy } = pos.coords;
+  aerialYou = { lat: latitude, lng: longitude, accuracy: accuracy || null };
+
+  if(!aerialMap){
+    // First fix — build the map
+    const container = document.getElementById('aerialMap');
+    if(!container) return;
+    container.innerHTML = '';
+
+    const center = aerialGreen
+      ? [(latitude + aerialGreen.lat) / 2, (longitude + aerialGreen.lng) / 2]
+      : [latitude, longitude];
+
+    aerialMap = L.map(container, {
+      scrollWheelZoom: true,
+      zoomControl: true,
+      attributionControl: true
+    }).setView(center, 18);
+
+    // Hybrid-style: Esri World Imagery (cleaner labels than pure satellite alone)
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19,
+      attribution: 'Imagery © Esri'
+    }).addTo(aerialMap);
+    // Light reference labels overlay (roads/names) when available
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19,
+      opacity: 0.85,
+      attribution: ''
+    }).addTo(aerialMap);
+
+    aerialMarkers.you = L.marker([latitude, longitude], {
+      icon: rfYouIcon(),
+      zIndexOffset: 700
+    }).addTo(aerialMap);
+
+    if(aerialGreen){
+      aerialMarkers.green = L.marker([aerialGreen.lat, aerialGreen.lng], {
+        icon: rfGreenIcon(),
+        zIndexOffset: 500
+      }).addTo(aerialMap);
+      try{
+        aerialMap.fitBounds(
+          [[latitude, longitude], [aerialGreen.lat, aerialGreen.lng]],
+          { padding: [56, 56], maxZoom: 19 }
+        );
+      }catch(e){}
+    }
+
+    aerialMap.on('click', e=>{
+      setAerialTarget(e.latlng.lat, e.latlng.lng);
+    });
+
+    setTimeout(()=>{ if(aerialMap) aerialMap.invalidateSize(); }, 80);
+  }else if(aerialMarkers.you){
+    aerialMarkers.you.setLatLng([latitude, longitude]);
+  }
+
+  updateRangefinderHud();
+}
+
 document.getElementById('aerialViewBtn').addEventListener('click', ()=>{
   if(typeof L === 'undefined'){ alert('Map library failed to load. Check your connection and try again.'); return; }
   if(!navigator.geolocation){ alert('Geolocation not supported in this browser.'); return; }
+
   const gen = ++aerialGen;
+  destroyAerialMap();
+
+  const courseName = document.getElementById('pl-course').value;
+  aerialCourse = getCourseByName(courseName);
+  aerialHoleNum = playHoles[currentHole] ? playHoles[currentHole].hole : 1;
+  aerialGreen = (aerialCourse && Array.isArray(aerialCourse.greens) && aerialCourse.greens[aerialHoleNum-1])
+    ? { lat: +aerialCourse.greens[aerialHoleNum-1].lat, lng: +aerialCourse.greens[aerialHoleNum-1].lng }
+    : null;
+
   const modal = document.getElementById('aerialModal');
   modal.classList.add('open');
   modal.setAttribute('aria-hidden','false');
-  document.getElementById('aerialSub').textContent = 'Locating you…';
-  document.getElementById('aerialHint').textContent = '📍 = you · 🚩 = saved green (if any). Tap the satellite image anywhere to move the flag, then tap the button above to save it.';
-  destroyAerialMap();
+  document.getElementById('aerialSub').textContent = `Hole ${aerialHoleNum} · locating you…`;
+  document.getElementById('aerialHint').textContent = 'White dot = you · Flag = green · Orange = measure target (tap or drag).';
+  document.getElementById('aerialHud').style.display = 'none';
 
-  navigator.geolocation.getCurrentPosition(pos=>{
-    if(gen !== aerialGen) return; // modal was closed/reopened before this resolved
-    const {latitude, longitude} = pos.coords;
-    const courseName = document.getElementById('pl-course').value;
-    const course = getCourseByName(courseName);
-    const holeNum = playHoles[currentHole].hole;
-    const green = course && Array.isArray(course.greens) ? course.greens[holeNum-1] : null;
-
-    setTimeout(()=>{
+  // Continuous updates while the modal is open
+  aerialWatchId = navigator.geolocation.watchPosition(
+    pos => onAerialPosition(pos, gen),
+    err => {
       if(gen !== aerialGen) return;
-      const container = document.getElementById('aerialMap');
-      if(!container) return;
-      container.innerHTML = '';
-      const center = green ? [(latitude+green.lat)/2, (longitude+green.lng)/2] : [latitude, longitude];
-      aerialMap = L.map(container, { scrollWheelZoom: true }).setView(center, 18);
-      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-        maxZoom: 19, attribution: 'Imagery &copy; Esri'
-      }).addTo(aerialMap);
-
-      const youIcon = L.divIcon({ className:'', html:'<div style="font-size:22px;line-height:1;">📍</div>', iconSize:[24,24], iconAnchor:[12,20] });
-      aerialMarkers.you = L.marker([latitude, longitude], { icon: youIcon }).addTo(aerialMap).bindTooltip('You', {permanent:false});
-
-      if(green){
-        const flagIcon = L.divIcon({ className:'', html:'<div style="font-size:22px;line-height:1;">🚩</div>', iconSize:[24,24], iconAnchor:[4,20] });
-        aerialMarkers.green = L.marker([green.lat, green.lng], { icon: flagIcon }).addTo(aerialMap).bindTooltip('Saved green', {permanent:false});
-        const yds = distanceYards(latitude, longitude, green.lat, green.lng);
-        document.getElementById('aerialSub').textContent = `Hole ${holeNum} · \u2248 ${Math.round(yds)} yds to your saved green`;
-        try{ aerialMap.fitBounds([[latitude,longitude],[green.lat,green.lng]], { padding:[40,40], maxZoom:19 }); }catch(e){}
-      }else{
-        document.getElementById('aerialSub').textContent = `Hole ${holeNum} · no saved green yet — tap the image to set one`;
-      }
-
-      aerialMap.on('click', e=>{
-        aerialPendingLatLng = e.latlng;
-        if(aerialMarkers.pending) aerialMap.removeLayer(aerialMarkers.pending);
-        const pendingIcon = L.divIcon({ className:'', html:'<div style="font-size:22px;line-height:1;opacity:0.8;">🚩</div>', iconSize:[24,24], iconAnchor:[4,20] });
-        aerialMarkers.pending = L.marker(e.latlng, { icon: pendingIcon }).addTo(aerialMap);
-        document.getElementById('aerialHint').textContent = 'Tap "set the green here" below to save this spot, or tap elsewhere on the image to adjust it first.';
-      });
-
-      aerialMap.invalidateSize();
-    }, 60);
-  }, ()=>{
-    document.getElementById('aerialSub').textContent = 'Location permission denied or unavailable.';
-  }, {enableHighAccuracy:true, timeout:8000});
+      document.getElementById('aerialSub').textContent =
+        err && err.code === 1
+          ? 'Location permission denied.'
+          : 'Location unavailable — check GPS and try again.';
+    },
+    { enableHighAccuracy: true, maximumAge: 2000, timeout: 12000 }
+  );
 });
+
 document.getElementById('aerialSetGreenBtn').addEventListener('click', async ()=>{
-  if(!aerialPendingLatLng){ alert('Tap the satellite image first to choose a spot.'); return; }
-  const res = await saveGreenForCurrentHole(aerialPendingLatLng.lat, aerialPendingLatLng.lng, 'aerial');
-  if(res.ok){
-    document.getElementById('aerialSub').textContent = `Saved hole ${res.holeNum}'s green for ${res.course.name}.`;
-    aerialPendingLatLng = null;
-  }else{
-    alert(res.message);
+  if(!aerialTarget){
+    alert('Tap the map first to place the orange target on the green (or drag it).');
+    return;
   }
+  const res = await saveGreenForCurrentHole(aerialTarget.lat, aerialTarget.lng, 'aerial');
+  if(!res.ok){ alert(res.message); return; }
+
+  aerialGreen = { lat: aerialTarget.lat, lng: aerialTarget.lng };
+  aerialCourse = res.course;
+
+  if(aerialMap){
+    if(aerialMarkers.green){
+      aerialMarkers.green.setLatLng([aerialGreen.lat, aerialGreen.lng]);
+    }else{
+      aerialMarkers.green = L.marker([aerialGreen.lat, aerialGreen.lng], {
+        icon: rfGreenIcon(),
+        zIndexOffset: 500
+      }).addTo(aerialMap);
+    }
+  }
+  // Keep target so you can still measure from it; HUD refreshes to new green
+  updateRangefinderHud();
+  document.getElementById('aerialSub').textContent =
+    `Hole ${res.holeNum} · green saved for ${res.course.name}`;
 });
+
+document.getElementById('aerialClearTargetBtn')?.addEventListener('click', ()=>{
+  clearAerialTarget();
+});
+
 document.getElementById('aerialCloseBtn').addEventListener('click', closeAerialView);
 document.getElementById('aerialModal').addEventListener('click', e=>{
   if(e.target.id === 'aerialModal') closeAerialView();
@@ -3534,6 +3951,340 @@ let mapEditor = {
   gen: 0
 };
 
+// ---------- OpenStreetMap green auto-fill (Overpass) ----------
+// OpenGolfAPI doesn't ship green geometry. OSM often has golf=green polygons
+// and golf=hole ways with ref=hole number. We pull those and map centers to pins.
+const OVERPASS_URLS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter'
+];
+
+function osmParseRef(tags){
+  if(!tags) return null;
+  // Prefer explicit hole identifiers only — don't scrape random digits from long names.
+  const explicit = tags.ref || tags.hole || tags['hole:ref'] || tags['golf:hole'] || '';
+  if(explicit !== ''){
+    const m = String(explicit).trim().match(/^#?\s*([1-9]|1[0-8])\s*$/);
+    if(m) return +m[1];
+    const m2 = String(explicit).match(/\b([1-9]|1[0-8])\b/);
+    if(m2) return +m2[1];
+  }
+  const name = tags.name || '';
+  if(name){
+    const m3 = String(name).match(/\b(?:hole\s*)?#?\s*([1-9]|1[0-8])\b/i);
+    if(m3) return +m3[1];
+  }
+  return null;
+}
+
+function osmNodeMap(elements){
+  const nodes = {};
+  elements.forEach(el=>{
+    if(el.type === 'node' && el.lat != null && el.lon != null){
+      nodes[el.id] = { lat: +el.lat, lng: +el.lon };
+    }
+  });
+  return nodes;
+}
+
+function osmWayCentroid(way, nodes){
+  if(!way.nodes || !way.nodes.length) return null;
+  let sLat = 0, sLng = 0, n = 0;
+  way.nodes.forEach(id=>{
+    const p = nodes[id];
+    if(p){ sLat += p.lat; sLng += p.lng; n++; }
+  });
+  if(!n) return null;
+  return { lat: sLat / n, lng: sLng / n };
+}
+
+function osmWayEndpoint(way, nodes, which /* 'first'|'last' */){
+  if(!way.nodes || !way.nodes.length) return null;
+  const id = which === 'first' ? way.nodes[0] : way.nodes[way.nodes.length - 1];
+  return nodes[id] || null;
+}
+
+async function overpassFetch(query){
+  let lastErr = null;
+  for(const base of OVERPASS_URLS){
+    try{
+      const res = await fetch(base, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+        body: 'data=' + encodeURIComponent(query)
+      });
+      if(!res.ok){ lastErr = new Error('Overpass HTTP ' + res.status); continue; }
+      const data = await res.json();
+      return data.elements || [];
+    }catch(e){ lastErr = e; }
+  }
+  throw lastErr || new Error('Overpass unavailable');
+}
+
+async function nominatimCourseCenter(courseName){
+  const q = (courseName || '').trim();
+  if(!q) return null;
+  try{
+    const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q + ' golf course');
+    const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    if(!res.ok) return null;
+    const list = await res.json();
+    if(!list || !list.length) return null;
+    return { lat: +list[0].lat, lng: +list[0].lon };
+  }catch(e){ return null; }
+}
+
+async function resolveCourseCenter(course){
+  if(course.lat != null && course.lng != null) return { lat: +course.lat, lng: +course.lng };
+  const pinned = Array.isArray(course.greens) ? course.greens.find(Boolean) : null;
+  if(pinned) return { lat: +pinned.lat, lng: +pinned.lng };
+  return nominatimCourseCenter(course.name);
+}
+
+/**
+ * Returns { greens: Array(18) of {lat,lng,source}|null, matched: number, message }
+ */
+async function fetchOsmGreensAround(lat, lng, radiusM = 2800){
+  const query = `
+[out:json][timeout:50];
+(
+  way["golf"="green"](around:${radiusM},${lat},${lng});
+  relation["golf"="green"](around:${radiusM},${lat},${lng});
+  node["golf"="green"](around:${radiusM},${lat},${lng});
+  way["golf"="hole"](around:${radiusM},${lat},${lng});
+  node["golf"="pin"](around:${radiusM},${lat},${lng});
+);
+out body;
+>;
+out skel qt;
+`;
+  const elements = await overpassFetch(query);
+  const nodes = osmNodeMap(elements);
+
+  // Candidate green centers (deduped)
+  const greenCandidates = [];
+  const seen = new Set();
+  function addGreen(pt, source, ref){
+    if(!pt || pt.lat == null || pt.lng == null) return;
+    const key = pt.lat.toFixed(5) + ',' + pt.lng.toFixed(5);
+    if(seen.has(key)) return;
+    seen.add(key);
+    greenCandidates.push({
+      lat: +pt.lat,
+      lng: +pt.lng,
+      source: source || 'osm-green',
+      ref: (ref >= 1 && ref <= 18) ? ref : null
+    });
+  }
+
+  // Hole anchors: preferred end of golf=hole way (near the green)
+  const holeAnchors = []; // { hole, lat, lng }
+
+  elements.forEach(el=>{
+    const tags = el.tags || {};
+    if(tags.golf === 'pin' && el.type === 'node' && el.lat != null){
+      addGreen({ lat: +el.lat, lng: +el.lon }, 'osm-pin', osmParseRef(tags));
+      return;
+    }
+    if(tags.golf === 'green'){
+      let center = null;
+      if(el.type === 'node' && el.lat != null) center = { lat: +el.lat, lng: +el.lon };
+      else if(el.type === 'way') center = osmWayCentroid(el, nodes);
+      else if(el.type === 'relation' && Array.isArray(el.members)){
+        let sLat = 0, sLng = 0, n = 0;
+        el.members.forEach(m=>{
+          if(m.type !== 'way') return;
+          const way = elements.find(x => x.type === 'way' && x.id === m.ref);
+          const c = way ? osmWayCentroid(way, nodes) : null;
+          if(c){ sLat += c.lat; sLng += c.lng; n++; }
+        });
+        if(n) center = { lat: sLat / n, lng: sLng / n };
+      }
+      if(center) addGreen(center, 'osm-green', osmParseRef(tags));
+      return;
+    }
+    if(tags.golf === 'hole' && el.type === 'way'){
+      const end = osmWayEndpoint(el, nodes, 'last');
+      if(!end) return;
+      const ref = osmParseRef(tags);
+      holeAnchors.push({
+        hole: (ref >= 1 && ref <= 18) ? ref : null,
+        lat: end.lat,
+        lng: end.lng
+      });
+    }
+  });
+
+  const greens = Array(18).fill(null);
+  const used = new Set(); // indices into greenCandidates
+
+  function takeNearestGreen(fromLat, fromLng, maxYds){
+    let bestI = -1, bestD = Infinity;
+    greenCandidates.forEach((g, i)=>{
+      if(used.has(i)) return;
+      const d = distanceYards(fromLat, fromLng, g.lat, g.lng);
+      if(d < bestD){ bestD = d; bestI = i; }
+    });
+    if(bestI < 0) return null;
+    if(maxYds != null && bestD > maxYds) return null;
+    used.add(bestI);
+    const g = greenCandidates[bestI];
+    return {
+      lat: g.lat,
+      lng: g.lng,
+      savedAt: Date.now(),
+      source: g.source
+    };
+  }
+
+  // 1) Explicit ref on a green/pin wins
+  greenCandidates.forEach((g, i)=>{
+    if(g.ref == null) return;
+    if(greens[g.ref - 1]) return; // already filled
+    used.add(i);
+    greens[g.ref - 1] = {
+      lat: g.lat,
+      lng: g.lng,
+      savedAt: Date.now(),
+      source: g.source
+    };
+  });
+
+  // 2) Numbered hole ways → nearest unused green (must be close)
+  holeAnchors.filter(a => a.hole != null).forEach(a=>{
+    if(greens[a.hole - 1]) return;
+    const pin = takeNearestGreen(a.lat, a.lng, 150);
+    if(pin) greens[a.hole - 1] = pin;
+    else {
+      // hole path end is still a usable estimate
+      greens[a.hole - 1] = {
+        lat: a.lat,
+        lng: a.lng,
+        savedAt: Date.now(),
+        source: 'osm-hole-end'
+      };
+    }
+  });
+
+  // 3) Remaining numbered holes empty, but we have unlabeled hole anchors + greens:
+  //    greedy pair closest hole-anchor ↔ green for empty slots only.
+  const emptyHoles = [];
+  for(let h = 1; h <= 18; h++) if(!greens[h - 1]) emptyHoles.push(h);
+
+  const freeAnchors = holeAnchors.filter(a => a.hole == null);
+  // If anchors were all numbered already used above, freeAnchors may be empty;
+  // also allow re-using numbered anchors only as geometric hints when their hole is filled? no.
+
+  // Build pairs (anchor → nearest free green) sorted by distance, assign uniquely
+  const pairs = [];
+  const anchorsForPairing = [
+    ...holeAnchors.filter(a => a.hole != null && !greens[a.hole - 1]),
+    ...freeAnchors
+  ];
+  anchorsForPairing.forEach((a, ai)=>{
+    greenCandidates.forEach((g, gi)=>{
+      if(used.has(gi)) return;
+      const d = distanceYards(a.lat, a.lng, g.lat, g.lng);
+      if(d <= 150) pairs.push({ ai, gi, d, hole: a.hole });
+    });
+  });
+  pairs.sort((a, b) => a.d - b.d);
+  const usedAnchor = new Set();
+  pairs.forEach(p=>{
+    if(used.has(p.gi) || usedAnchor.has(p.ai)) return;
+    let holeNum = p.hole;
+    if(holeNum == null){
+      // assign to next empty hole number
+      holeNum = emptyHoles.find(h => !greens[h - 1]);
+    }
+    if(holeNum == null || greens[holeNum - 1]) return;
+    used.add(p.gi);
+    usedAnchor.add(p.ai);
+    const g = greenCandidates[p.gi];
+    greens[holeNum - 1] = {
+      lat: g.lat,
+      lng: g.lng,
+      savedAt: Date.now(),
+      source: g.source
+    };
+  });
+
+  // 4) Last resort: if we still have many empty holes and many free greens,
+  //    and we have at least as many free greens as empty holes (typical full course
+  //    with unlabeled geometry), assign by angular order around the course center
+  //    so they don't all collapse onto hole 1.
+  const stillEmpty = [];
+  for(let h = 1; h <= 18; h++) if(!greens[h - 1]) stillEmpty.push(h);
+  const freeGreens = greenCandidates.filter((_, i) => !used.has(i));
+  if(stillEmpty.length > 0 && freeGreens.length > 0 && freeGreens.length >= Math.min(9, stillEmpty.length)){
+    const withAngle = freeGreens.map(g=>{
+      const ang = Math.atan2(g.lat - lat, g.lng - lng);
+      return { g, ang };
+    }).sort((a, b) => a.ang - b.ang);
+    // Prefer matching count: 9 or 18
+    const n = Math.min(stillEmpty.length, withAngle.length);
+    for(let i = 0; i < n; i++){
+      const holeNum = stillEmpty[i];
+      const g = withAngle[i].g;
+      greens[holeNum - 1] = {
+        lat: g.lat,
+        lng: g.lng,
+        savedAt: Date.now(),
+        source: g.source + '-ordered'
+      };
+    }
+  }
+
+  const matched = greens.filter(Boolean).length;
+  return { greens, matched, unlabeledCount: greenCandidates.filter(g => g.ref == null).length, totalCandidates: greenCandidates.length };
+}
+
+async function autoFillGreensFromOsm(course, opts = {}){
+  const center = await resolveCourseCenter(course);
+  if(!center){
+    return {
+      ok: false,
+      message: 'Need a course location first. Look the course up via OpenGolfAPI (adds lat/lng), drop one pin on the map, or make sure the course name is searchable.'
+    };
+  }
+  if(course.lat == null || course.lng == null){
+    course.lat = center.lat;
+    course.lng = center.lng;
+  }
+
+  const { greens, matched, unlabeledCount, totalCandidates } = await fetchOsmGreensAround(center.lat, center.lng);
+  if(matched === 0){
+    return {
+      ok: false,
+      message: `OpenStreetMap has no usable golf greens near “${course.name}” (${totalCandidates || 0} features found). Map them once manually — many smaller courses simply aren’t drawn in OSM yet.`
+    };
+  }
+
+  const existing = Array.isArray(course.greens) ? course.greens : Array(18).fill(null);
+  const overwrite = opts.overwrite === true;
+  let filled = 0, kept = 0;
+  const merged = Array(18).fill(null);
+  for(let i = 0; i < 18; i++){
+    if(greens[i] && (overwrite || !existing[i])){
+      merged[i] = greens[i];
+      filled++;
+    }else if(existing[i]){
+      merged[i] = existing[i];
+      kept++;
+    }
+  }
+  course.greens = merged;
+
+  return {
+    ok: true,
+    matched,
+    filled,
+    message: `OpenStreetMap: placed ${filled} green pin(s) for “${course.name}”` +
+      (kept ? ` · kept ${kept} you already set` : '') +
+      `. Review in the map editor — OSM is community data and can be a few yards off.`
+  };
+}
+
 function destroyGreenMap(){
   if(mapEditor.map){
     try{
@@ -3588,8 +4339,8 @@ function openGreenMapEditor(courseId, courseName, idx){
   const nSaved = mapEditor.greens.filter(Boolean).length;
   document.getElementById('greenMapSub').textContent =
     nSaved
-      ? `${nSaved}/18 pins saved on “${course.name}”. Select a hole to edit, or Clear all pins to start over.`
-      : `No pins on “${course.name}” yet. Select a hole, then tap its green.`;
+      ? `${nSaved}/18 pins on “${course.name}”. Auto-fill, drag pins, or tap the map to adjust — then Save.`
+      : `No pins on “${course.name}” yet. Tap Auto-fill from map data, or select a hole and tap the green.`;
 
   const modal = document.getElementById('greenMapModal');
   modal.classList.add('open');
@@ -3717,6 +4468,54 @@ document.getElementById('greenMapCloseBtn')?.addEventListener('click', closeGree
 document.getElementById('greenMapModal')?.addEventListener('click', e=>{
   if(e.target.id === 'greenMapModal') closeGreenMapEditor();
 });
+document.getElementById('greenMapOsmBtn')?.addEventListener('click', async ()=>{
+  const course = courses.find(c => c.id === mapEditor.courseId);
+  if(!course){ alert('Could not find that course.'); return; }
+  const btn = document.getElementById('greenMapOsmBtn');
+  const prev = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Fetching…';
+  document.getElementById('greenMapHint').textContent = 'Querying OpenStreetMap for greens near this course…';
+  try{
+    const hasAny = mapEditor.greens.some(Boolean);
+    const overwrite = hasAny
+      ? confirm('Replace existing pins with OpenStreetMap data where available?\n\nOK = overwrite holes OSM knows about\nCancel = only fill empty holes')
+      : false;
+    // confirm returns true for OK (overwrite), false for Cancel (fill empty only)
+    // If no existing pins, overwrite flag unused.
+    const result = await autoFillGreensFromOsm(course, { overwrite: hasAny ? overwrite : true });
+    if(!result.ok){
+      document.getElementById('greenMapHint').textContent = result.message;
+      alert(result.message);
+    }else{
+      mapEditor.greens = (course.greens || []).map(g =>
+        g ? { lat: +g.lat, lng: +g.lng, savedAt: g.savedAt || Date.now(), source: g.source || 'osm' } : null
+      );
+      while(mapEditor.greens.length < 18) mapEditor.greens.push(null);
+      refreshMapMarkers();
+      document.querySelectorAll('#greenMapHoles .map-hole-btn').forEach(btn=>{
+        const hn = +btn.dataset.hole;
+        btn.classList.toggle('has', !!mapEditor.greens[hn-1]);
+      });
+      const n = mapEditor.greens.filter(Boolean).length;
+      document.getElementById('greenMapSub').textContent =
+        `${n}/18 pins on “${course.name}” (from OpenStreetMap). Drag to adjust, then Save greens.`;
+      updateMapHint();
+      const pts = mapEditor.greens.filter(Boolean).map(g => [g.lat, g.lng]);
+      if(pts.length >= 2 && mapEditor.map){
+        try{ mapEditor.map.fitBounds(pts, { padding: [30, 30], maxZoom: 17 }); }catch(e){}
+      }
+      document.getElementById('greenMapHint').textContent = result.message;
+    }
+  }catch(err){
+    const msg = 'OpenStreetMap fetch failed: ' + (err.message || err);
+    document.getElementById('greenMapHint').textContent = msg;
+    alert(msg);
+  }
+  btn.disabled = false;
+  btn.textContent = prev;
+});
+
 document.getElementById('greenMapClearHoleBtn')?.addEventListener('click', ()=>{
   mapEditor.greens[mapEditor.hole-1] = null;
   refreshMapMarkers();
@@ -3755,7 +4554,7 @@ document.getElementById('greenMapClearAllBtn')?.addEventListener('click', ()=>{
   const course = courses.find(c=>c.id===mapEditor.courseId);
   const name = course ? course.name : 'this course';
   document.getElementById('greenMapSub').textContent =
-    `No pins on “${name}” yet. Select a hole, then tap its green.`;
+    `No pins on “${name}” yet. Tap Auto-fill from map data, or select a hole and tap the green.`;
 });
 
 // ---------- NOTES ----------
