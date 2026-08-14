@@ -1171,7 +1171,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut,
   signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, enableIndexedDbPersistence, doc, getDoc, setDoc }
+import { getFirestore, doc, getDoc, setDoc }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -1186,9 +1186,6 @@ const firebaseConfig = {
 const fbApp = initializeApp(firebaseConfig);
 const auth = getAuth(fbApp);
 const db = getFirestore(fbApp);
-enableIndexedDbPersistence(db).catch(err => {
-  if (err.code !== 'failed-precondition') console.warn('Persistence error', err);
-});
 const googleProvider = new GoogleAuthProvider();
 
 // ---------- OFFLINE-FIRST STORAGE LAYER ----------
