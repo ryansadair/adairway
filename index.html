@@ -416,14 +416,16 @@
     }
     .putt-dist-row .chip,
     .putt-dist-row .chip-input {
-      min-width: 58px;
-      max-width: 58px;
-      width: 58px;
+      flex: 1 1 0;
+      width: auto;
+      min-width: 0;
+      max-width: none;
       padding: 6px 4px;
     }
     .chip-input input {
-      width: 18px;
-      min-width: 14px;
+      flex: 1 1 auto;
+      width: auto;
+      min-width: 0;
       font-size: 16px;
       padding: 0;
     }
