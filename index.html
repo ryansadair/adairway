@@ -620,7 +620,7 @@
     <div class="map-modal-head">
       <div>
         <h3 id="greenMapTitle">Set greens on map</h3>
-        <div class="sub" id="greenMapSub">Tap a hole, then tap the map on that green.</div>
+        <div class="sub" id="greenMapSub">Tap a hole, then tap the map on that green. API courses auto-map on save — use this to adjust.</div>
       </div>
       <button type="button" class="btn outline small" id="greenMapCloseBtn">Close</button>
     </div>
@@ -1126,7 +1126,7 @@
         <div class="field"><label>Slope rating (optional)</label><input type="number" id="co-slope" placeholder="e.g. 121"></div>
       </div>
       <div class="field"><label>Course elevation (ft, optional — club advice)</label><input type="number" id="co-elevation" placeholder="e.g. 450" min="0" max="14000"></div>
-      <div class="hint" style="margin-top:0;">Only courses with par data show up in the Rounds/Play quick-load dropdown — "Look up a course" above fills this in automatically, or enter it yourself below.</div>
+      <div class="hint" style="margin-top:0;">Only courses with par data show up in the Rounds/Play quick-load dropdown — "Look up a course" above fills this in automatically, or enter it yourself below. When you save a course pulled from the API, greens are auto-mapped from OpenStreetMap in the background (you can still edit them in the map editor if they're off).</div>
       <div class="field"><label>Par, 18 holes comma-separated (optional)</label><input type="text" id="co-par" placeholder="4,4,3,5,4,4,4,3,5,4,4,3,5,4,4,4,3,5"></div>
       <div class="field"><label>Yardage, 18 holes comma-separated (optional)</label><input type="text" id="co-yardage" placeholder="380,410,175,520,..."></div>
       <div class="field"><label>Strategy / quirks / holes to remember</label><textarea id="co-notes" placeholder="e.g. #7 plays long, favor left off the tee on #12, greens break toward the river..."></textarea></div>
@@ -4152,6 +4152,8 @@ document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
     else extra.yardage = ydResult.values;
   }
 
+  const wasApiCourse = pendingApiCourse && pendingApiCourse.apiCourseId;
+
   if(editingCourseId){
     const idx = courses.findIndex(c=>c.id===editingCourseId);
     if(idx>=0){
@@ -4181,6 +4183,22 @@ document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
   }
 
   await saveList('courses', courses);
+
+  // Auto-map greens from OSM for brand-new API courses
+  if(!editingCourseId && wasApiCourse){
+    const savedCourse = courses[courses.length - 1];
+    const hasGreens = Array.isArray(savedCourse.greens) && savedCourse.greens.some(Boolean);
+    if(!hasGreens){
+      autoFillGreensFromOsm(savedCourse, {overwrite: true}).then(async (result) => {
+        if(result.ok){
+          await saveList('courses', courses);
+          renderCourses();
+          populatePresetDropdown();
+        }
+      }).catch(() => {});
+    }
+  }
+
   clearCourseForm();
   setCourseEditorMode(false);
   closeForm('courseFormDetails');
