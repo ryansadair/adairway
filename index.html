@@ -135,35 +135,78 @@
   .miss-panel.show{display:flex;}
   .miss-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;}
   .miss-row .miss-label{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--turf);min-width:64px;}
-  .chip{
-    border:1px solid var(--line);background:#fff;color:var(--graphite);
-    font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;
-    padding:7px 11px;border-radius:999px;cursor:pointer;line-height:1;
-    display:inline-flex;align-items:center;justify-content:center;
-    vertical-align:middle;
+  
+  /* ---- CHIP & EXACT-DISTANCE INPUT (shared) ---- */
+  .chip,
+  .chip-input {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--graphite);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 7px 11px;
+    border-radius: 999px;
+    line-height: 1;
+    cursor: pointer;
+    min-height: 34px;
+    box-sizing: border-box;
+    vertical-align: middle;
+    margin: 0;
   }
-  .chip.on{background:var(--fairway-deep);border-color:var(--fairway-deep);color:var(--paper-light);}
-  /* Exact 1st-putt feet — same height/shape as chips, sits inline */
-  .chip-input{
-    display:inline-flex;align-items:center;justify-content:center;gap:3px;
-    border:1px solid var(--line);background:#fff;color:var(--graphite);
-    font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;
-    padding:7px 10px;border-radius:999px;line-height:1;cursor:text;
-    flex-shrink:1;min-width:0;
-    vertical-align:middle;
+  .chip.on {
+    background: var(--fairway-deep);
+    border-color: var(--fairway-deep);
+    color: var(--paper-light);
   }
-  .chip-input:focus-within{border-color:var(--turf);box-shadow:0 0 0 2px rgba(63,107,74,0.15);}
-  .chip-input.has-value{background:var(--fairway-deep);border-color:var(--fairway-deep);color:var(--paper-light);}
-  .chip-input input{
-    width:26px;min-width:16px;border:none;background:transparent;padding:0;margin:0;
-    font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;
-    color:inherit;text-align:right;-moz-appearance:textfield;appearance:textfield;
-    line-height:1;height:100%;
+  .chip-input {
+    cursor: text;
+    padding: 7px 10px;
   }
-  .chip-input input:focus{outline:none;}
+  .chip-input:focus-within {
+    border-color: var(--turf);
+    box-shadow: 0 0 0 2px rgba(63,107,74,0.15);
+  }
+  .chip-input.has-value {
+    background: var(--fairway-deep);
+    border-color: var(--fairway-deep);
+    color: var(--paper-light);
+  }
+  .chip-input input {
+    width: 26px;
+    min-width: 16px;
+    border: none;
+    background: transparent;
+    padding: 0;
+    margin: 0;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    color: inherit;
+    text-align: right;
+    -moz-appearance: textfield;
+    appearance: textfield;
+    line-height: 1;
+    height: 100%;
+    box-sizing: border-box;
+    outline: none;
+  }
   .chip-input input::-webkit-outer-spin-button,
-  .chip-input input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
-  .chip-input .chip-input-unit{opacity:0.7;font-size:9px;text-transform:uppercase;letter-spacing:0.04em;flex-shrink:0;}
+  .chip-input input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .chip-input .chip-input-unit {
+    opacity: 0.7;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    flex-shrink: 0;
+  }
+
   .putt-dist-row{justify-content:center;margin-top:10px;gap:6px;}
   table.sc input.puttdist-ft{
     width:28px;border:none;background:transparent;text-align:center;
@@ -361,21 +404,16 @@
       font-size:16px;padding:10px 12px;border-radius:6px;
     }
     /* Mobile fix: make the exact-distance chip match the others in size and keep inline */
-    .chip, .chip-input {
+    .chip,
+    .chip-input {
       font-size: 10px;
       padding: 6px 10px;
-      line-height: 1;
       min-height: 28px;
-      box-sizing: border-box;
     }
     .chip-input input {
       width: 20px;
       min-width: 16px;
       font-size: 10px;
-      line-height: 1;
-      padding: 0;
-      height: 100%;
-      box-sizing: border-box;
     }
     .putt-dist-row {
       gap: 4px;
