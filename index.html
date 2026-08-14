@@ -357,23 +357,30 @@
     input[type=text], input[type=date], input[type=number], textarea, select{
       font-size:16px;padding:10px 12px;border-radius:6px;
     }
-    /* Mobile fix: make the exact-distance chip match the others in size and keep inline */
-    .chip, .chip-input {
-      font-size: 10px;
-      padding: 6px 10px;
-    }
-    .chip-input input {
-      width: 20px;
-      min-width: 16px;
-      font-size: 10px;
-    }
-    .putt-dist-row {
-      gap: 4px;
-    }
-    .miss-row .miss-label {
-      min-width: 50px;
-      font-size: 9px;
-    }
+    /* Mobile: make exact-distance chip match others in size and keep inline */
+.chip, .chip-input {
+  font-size: 10px;
+  padding: 6px 10px;
+  line-height: 1;           /* ensures consistent vertical rhythm */
+  min-height: 28px;         /* same as chip's natural height */
+  box-sizing: border-box;
+}
+.chip-input input {
+  width: 20px;
+  min-width: 16px;
+  font-size: 10px;
+  line-height: 1;
+  padding: 0;
+  height: 100%;             /* fill the parent's height */
+  box-sizing: border-box;
+}
+.putt-dist-row {
+  gap: 4px;
+}
+.miss-row .miss-label {
+  min-width: 50px;
+  font-size: 9px;
+}
 
     /* Bottom tab bar */
     nav#tabs{
