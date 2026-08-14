@@ -410,18 +410,19 @@
       padding: 6px 10px;
       min-height: 28px;
     }
-    .chip-input input {
-      width: 20px;
-      min-width: 16px;
-      font-size: 10px;
-      padding: 0;
-    }
+
     .putt-dist-row {
       gap: 4px;
     }
     .putt-dist-row .chip,
     .putt-dist-row .chip-input {
       min-width: 64px;
+    }
+    .chip-input input {
+      width: 20px;
+      min-width: 16px;
+      font-size: 10px;
+      padding: 0;
     }
     .miss-row .miss-label {
       min-width: 50px;
@@ -718,6 +719,7 @@
     </div>
     <div style="text-align:right;">
       <div class="today" id="todayDate"></div>
+      <div id="syncStatus" style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--turf);margin-top:2px;opacity:0.8;min-height:14px;"></div>
       <div id="accountRow" style="display:none;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--turf);margin-top:4px;">
         <span id="accountEmail"></span> · <button id="openBackupBtn" class="del" type="button" style="padding:0;">backup</button> · <button id="signOutBtn" class="del" type="button" style="padding:0;">sign out</button>
       </div>
@@ -1168,7 +1170,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut,
   signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc }
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, getDoc, setDoc }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -1182,23 +1184,36 @@ const firebaseConfig = {
 };
 const fbApp = initializeApp(firebaseConfig);
 const auth = getAuth(fbApp);
-const db = getFirestore(fbApp);
+const db = initializeFirestore(fbApp, {
+  localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})
+});
 const googleProvider = new GoogleAuthProvider();
 
 // ---------- OFFLINE-FIRST STORAGE LAYER ----------
 const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
+let lastLoadFromCache = false;
 function getLocalCache(key) {
   try {
     const raw = localStorage.getItem('firestore_cache_' + key);
     if (!raw) return null;
     const data = JSON.parse(raw);
-    return data;
+    if (!data || Date.now() - data.ts > CACHE_TTL) return null;
+    return data.value;
   } catch(e) { return null; }
 }
 function setLocalCache(key, data) {
   try {
-    localStorage.setItem('firestore_cache_' + key, JSON.stringify(data));
+    localStorage.setItem('firestore_cache_' + key, JSON.stringify({ ts: Date.now(), value: data }));
   } catch(e) {}
+}
+function renderSyncIndicator(){
+  const el = document.getElementById('syncStatus');
+  if(!el) return;
+  if(lastLoadFromCache){
+    el.innerHTML = '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#C7A876;margin-right:4px;vertical-align:middle;"></span>local only';
+  } else {
+    el.innerHTML = '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#3F6B4A;margin-right:4px;vertical-align:middle;"></span>synced';
+  }
 }
 async function loadList(key) {
   if (!currentUser) return [];
@@ -1206,9 +1221,13 @@ async function loadList(key) {
     const snap = await getDoc(doc(db, 'users', currentUser.uid, 'store', key));
     const items = snap.exists() ? (snap.data().items || []) : [];
     setLocalCache(key, items);
+    lastLoadFromCache = false;
+    renderSyncIndicator();
     return items;
   } catch(e) {
     console.warn('Firestore read failed, using local cache', e);
+    lastLoadFromCache = true;
+    renderSyncIndicator();
     return getLocalCache(key) || [];
   }
 }
@@ -1217,10 +1236,14 @@ async function saveList(key, arr) {
   setLocalCache(key, arr);
   try {
     await setDoc(doc(db, 'users', currentUser.uid, 'store', key), { items: arr, updatedAt: Date.now() });
+    lastLoadFromCache = false;
+    renderSyncIndicator();
     return true;
   } catch(e) {
     console.error('Firestore write error, stored locally', e);
-    return true;
+    lastLoadFromCache = true;
+    renderSyncIndicator();
+    return false;
   }
 }
 // ---------- END STORAGE LAYER ----------
@@ -1390,6 +1413,7 @@ function populateTeeSelect(selectId, course, preferredName){
     if(prev){
       const o2 = document.createElement('option');
       o2.value = prev; o2.textContent = prev; o2.selected = true;
+      sel.appendChild(o2);
     }
     return;
   }
@@ -2377,6 +2401,7 @@ document.getElementById('roundsList').addEventListener('click', async e=>{
   }
   const btn = e.target.closest('button.del[data-kind="round"]');
   if(!btn) return;
+  if(!confirm('Delete this round?')) return;
   rounds = rounds.filter(r=>r.id!==btn.dataset.id);
   await saveList('rounds', rounds);
   renderRounds();
@@ -3053,6 +3078,7 @@ document.getElementById('practiceList').addEventListener('click', async e=>{
   const btn = e.target.closest('button.del[data-kind="practice"]');
   if(!btn) return;
   if(editingPracticeId === btn.dataset.id) clearPracticeForm();
+  if(!confirm('Delete this practice session?')) return;
   practice = practice.filter(p=>p.id!==btn.dataset.id);
   await saveList('practice', practice);
   renderPractice();
@@ -3144,6 +3170,7 @@ document.getElementById('bagList').addEventListener('click', async e=>{
   }
   const btn = e.target.closest('button.del[data-kind="club"]');
   if(!btn) return;
+  if(!confirm('Delete this club?')) return;
   bag = bag.filter(c=>c.id!==btn.dataset.id);
   await saveList('bag', bag);
   renderBag();
@@ -3551,6 +3578,7 @@ document.getElementById('gpsBtn').addEventListener('click', ()=>{
   const resultEl = document.getElementById('gpsResult');
   if(!navigator.geolocation){ resultEl.textContent = 'Geolocation not supported in this browser.'; return; }
   const courseName = document.getElementById('pl-course').value;
+  if(!courseName.trim()){ resultEl.textContent = 'Enter a course name first.'; return; }
   resultEl.textContent = 'Getting your location…';
   navigator.geolocation.getCurrentPosition(async pos=>{
     const {latitude, longitude} = pos.coords;
@@ -3933,6 +3961,8 @@ function onAerialPosition(pos, gen){
 
 document.getElementById('aerialViewBtn').addEventListener('click', async ()=>{
   if(!navigator.geolocation){ alert('Geolocation not supported in this browser.'); return; }
+  const courseName = document.getElementById('pl-course').value;
+  if(!courseName.trim()){ alert('Enter a course name first.'); return; }
   if (typeof L === 'undefined') {
     try {
       await import('leaflet');
@@ -4850,6 +4880,7 @@ document.getElementById('notesList').addEventListener('click', async e=>{
   const btn = e.target.closest('button.del[data-kind="note"]');
   if(!btn) return;
   if(editingNoteId === btn.dataset.id) clearNoteForm();
+  if(!confirm('Delete this journal entry?')) return;
   notes = notes.filter(n=>n.id!==btn.dataset.id);
   await saveList('notes', notes);
   renderNotes();
@@ -5030,6 +5061,7 @@ async function init(){
   renderNotes();
   updateCourseHandicapDisplay('pl');
   updateCourseHandicapDisplay('r');
+  renderSyncIndicator();
 }
 </script>
 </body>
