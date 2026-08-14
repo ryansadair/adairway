@@ -3576,8 +3576,7 @@ async function fetchGreenCenter(courseId, holeNum){
 document.getElementById('gpsBtn').addEventListener('click', ()=>{
   const resultEl = document.getElementById('gpsResult');
   if(!navigator.geolocation){ resultEl.textContent = 'Geolocation not supported in this browser.'; return; }
-  const courseName = document.getElementById('pl-course').value;
-  if(!courseName.trim()){ resultEl.textContent = 'Enter a course name first.'; return; }
+  if(!document.getElementById('pl-course').value.trim()){ resultEl.textContent = 'Enter a course name first.'; return; }
   resultEl.textContent = 'Getting your location…';
   navigator.geolocation.getCurrentPosition(async pos=>{
     const {latitude, longitude} = pos.coords;
@@ -3960,8 +3959,7 @@ function onAerialPosition(pos, gen){
 
 document.getElementById('aerialViewBtn').addEventListener('click', async ()=>{
   if(!navigator.geolocation){ alert('Geolocation not supported in this browser.'); return; }
-  const courseName = document.getElementById('pl-course').value;
-  if(!courseName.trim()){ alert('Enter a course name first.'); return; }
+  if(!document.getElementById('pl-course').value.trim()){ alert('Enter a course name first.'); return; }
   if (typeof L === 'undefined') {
     try {
       await import('leaflet');
