@@ -35,7 +35,6 @@
       repeating-linear-gradient(90deg, transparent, transparent 27px, rgba(51,49,44,0.035) 28px);
   }
   .wrap{max-width:980px;margin:0 auto;padding:28px 20px 80px;}
-  /* Desktop wider layout so the scorecard fits without horizontal scroll */
   @media (min-width: 1024px) {
     .wrap { max-width: 1200px; }
     table.sc { min-width: 100%; }
@@ -140,15 +139,18 @@
     border:1px solid var(--line);background:#fff;color:var(--graphite);
     font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;
     padding:7px 11px;border-radius:999px;cursor:pointer;line-height:1;
+    display:inline-flex;align-items:center;justify-content:center;
+    vertical-align:middle;
   }
   .chip.on{background:var(--fairway-deep);border-color:var(--fairway-deep);color:var(--paper-light);}
   /* Exact 1st-putt feet — same height/shape as chips, sits inline */
   .chip-input{
-    display:inline-flex;align-items:center;gap:3px;
+    display:inline-flex;align-items:center;justify-content:center;gap:3px;
     border:1px solid var(--line);background:#fff;color:var(--graphite);
     font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;
     padding:7px 10px;border-radius:999px;line-height:1;cursor:text;
     flex-shrink:1;min-width:0;
+    vertical-align:middle;
   }
   .chip-input:focus-within{border-color:var(--turf);box-shadow:0 0 0 2px rgba(63,107,74,0.15);}
   .chip-input.has-value{background:var(--fairway-deep);border-color:var(--fairway-deep);color:var(--paper-light);}
@@ -156,6 +158,7 @@
     width:26px;min-width:16px;border:none;background:transparent;padding:0;margin:0;
     font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;
     color:inherit;text-align:right;-moz-appearance:textfield;appearance:textfield;
+    line-height:1;height:100%;
   }
   .chip-input input:focus{outline:none;}
   .chip-input input::-webkit-outer-spin-button,
@@ -357,30 +360,30 @@
     input[type=text], input[type=date], input[type=number], textarea, select{
       font-size:16px;padding:10px 12px;border-radius:6px;
     }
-    /* Mobile: make exact-distance chip match others in size and keep inline */
-.chip, .chip-input {
-  font-size: 10px;
-  padding: 6px 10px;
-  line-height: 1;           /* ensures consistent vertical rhythm */
-  min-height: 28px;         /* same as chip's natural height */
-  box-sizing: border-box;
-}
-.chip-input input {
-  width: 20px;
-  min-width: 16px;
-  font-size: 10px;
-  line-height: 1;
-  padding: 0;
-  height: 100%;             /* fill the parent's height */
-  box-sizing: border-box;
-}
-.putt-dist-row {
-  gap: 4px;
-}
-.miss-row .miss-label {
-  min-width: 50px;
-  font-size: 9px;
-}
+    /* Mobile fix: make the exact-distance chip match the others in size and keep inline */
+    .chip, .chip-input {
+      font-size: 10px;
+      padding: 6px 10px;
+      line-height: 1;
+      min-height: 28px;
+      box-sizing: border-box;
+    }
+    .chip-input input {
+      width: 20px;
+      min-width: 16px;
+      font-size: 10px;
+      line-height: 1;
+      padding: 0;
+      height: 100%;
+      box-sizing: border-box;
+    }
+    .putt-dist-row {
+      gap: 4px;
+    }
+    .miss-row .miss-label {
+      min-width: 50px;
+      font-size: 9px;
+    }
 
     /* Bottom tab bar */
     nav#tabs{
@@ -974,6 +977,23 @@
         <div class="empty">Mark left/right/short/long or Bunker / Water / OB on holes while playing to unlock this.</div>
       </div>
     </div>
+
+    <!-- NEW STAT CARDS -->
+    <div class="card">
+      <h2>Scrambling & Sand Saves <small>up‑and‑down from trouble</small></h2>
+      <div class="stat-row" id="scrambleSandRow">
+        <div class="stat-box"><span class="num" id="scramblePct">—</span><span class="lbl">Scrambling %</span></div>
+        <div class="stat-box"><span class="num" id="sandSavePct">—</span><span class="lbl">Sand Save %</span></div>
+        <div class="stat-box"><span class="num" id="puttsGIR">—</span><span class="lbl">Putts (GIR)</span></div>
+        <div class="stat-box"><span class="num" id="puttsMissedGIR">—</span><span class="lbl">Putts (missed GIR)</span></div>
+      </div>
+      <div class="hint" style="margin-top:0;">
+        <strong>Scrambling</strong> = par or better when you miss the green in regulation.<br>
+        <strong>Sand Save</strong> = par or better from a bunker.<br>
+        <strong>Putts (GIR)</strong> = average putts on holes where you hit the green; <strong>(missed GIR)</strong> = average putts when you miss it. A big gap suggests your chipping/pitching isn't leaving you close enough.
+      </div>
+    </div>
+    <!-- end new stats -->
   </section>
 
   <!-- PRACTICE -->
@@ -1123,7 +1143,7 @@ const db = getFirestore(fbApp);
 const googleProvider = new GoogleAuthProvider();
 
 // ---------- OFFLINE-FIRST STORAGE LAYER ----------
-const CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
+const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 function getLocalCache(key) {
   try {
     const raw = localStorage.getItem('firestore_cache_' + key);
@@ -2723,6 +2743,52 @@ function renderPuttDistanceStats(withScores){
   block.innerHTML = `<div class="partype-row">${rows}</div>${scrambleLine}${exactLine}`;
 }
 
+// NEW: Scrambling, Sand Saves, Putts GIR vs non-GIR
+function renderAdvancedStats(withScores){
+  let scrambleHoles = 0; // missed GIR and made par or better
+  let missedGirTotal = 0;
+  let bunkerHoles = 0;
+  let bunkerSaves = 0; // from bunker, made par or better
+  let puttsGIR = 0, girHoles = 0;
+  let puttsMissedGIR = 0, missedGirHoles = 0;
+
+  withScores.forEach(r=>{
+    r.holes.forEach(h=>{
+      if(h.score <= 0) return;
+      // Scrambling: missed GIR and score <= par (i.e., par or better)
+      if(!h.gir){
+        missedGirTotal++;
+        if(h.score <= h.par) scrambleHoles++;
+        // only count putts on missed GIR holes where putts data exists
+        if(h.putts > 0){
+          puttsMissedGIR += h.putts;
+          missedGirHoles++;
+        }
+      } else {
+        if(h.putts > 0){
+          puttsGIR += h.putts;
+          girHoles++;
+        }
+      }
+      // Sand saves
+      if(h.bunker){
+        bunkerHoles++;
+        if(h.score <= h.par) bunkerSaves++;
+      }
+    });
+  });
+
+  const scramblePct = missedGirTotal > 0 ? (scrambleHoles / missedGirTotal * 100) : null;
+  const sandPct = bunkerHoles > 0 ? (bunkerSaves / bunkerHoles * 100) : null;
+  const avgPuttsGIR = girHoles > 0 ? (puttsGIR / girHoles) : null;
+  const avgPuttsMissedGIR = missedGirHoles > 0 ? (puttsMissedGIR / missedGirHoles) : null;
+
+  document.getElementById('scramblePct').textContent = scramblePct !== null ? scramblePct.toFixed(1) + '%' : '—';
+  document.getElementById('sandSavePct').textContent = sandPct !== null ? sandPct.toFixed(1) + '%' : '—';
+  document.getElementById('puttsGIR').textContent = avgPuttsGIR !== null ? avgPuttsGIR.toFixed(2) : '—';
+  document.getElementById('puttsMissedGIR').textContent = avgPuttsMissedGIR !== null ? avgPuttsMissedGIR.toFixed(2) : '—';
+}
+
 function renderStats(){
   populateStatsYearFilter();
   const year = (document.getElementById('statsYearFilter')||{}).value || 'all';
@@ -2860,6 +2926,8 @@ function renderStats(){
   renderStatsInsights(withScores, scoreToPar, pt, { threePuttPct, threePuttPerRound, puttHolesWithData, hazardHoles, hazardPerRound });
   renderPuttDistanceStats(withScores);
   renderMissTendencies(withScores);
+  // New advanced stats
+  renderAdvancedStats(withScores);
 }
 
 // ---------- PRACTICE ----------
@@ -3822,7 +3890,6 @@ function onAerialPosition(pos, gen){
 
 document.getElementById('aerialViewBtn').addEventListener('click', async ()=>{
   if(!navigator.geolocation){ alert('Geolocation not supported in this browser.'); return; }
-  // Lazy load Leaflet
   if (typeof L === 'undefined') {
     try {
       await import('leaflet');
@@ -3969,7 +4036,6 @@ document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
   const name = document.getElementById('co-name').value.trim();
   if(!name){ alert('Name the course.'); return; }
 
-  // Enforce unique course names per user (data integrity)
   const existing = courses.find(c => c.name.trim().toLowerCase() === name.toLowerCase() && c.id !== editingCourseId);
   if(existing) {
     alert(`A course named "${name}" already exists. Please use a different name or edit the existing course.`);
@@ -4822,7 +4888,7 @@ document.getElementById('statsYearFilter')?.addEventListener('change', ()=>{
   renderStats();
 });
 
-// ---------- Self-testing (suggestion 9) ----------
+// ---------- Self-testing ----------
 function runSelfTests(){
   console.assert(typeof distanceYards === 'function', 'distanceYards is defined');
   const testDist = distanceYards(44, -123, 44.1, -123.1);
@@ -4832,11 +4898,6 @@ function runSelfTests(){
   console.assert(deriveBucketFromFeet(10) === '5-15', 'deriveBucketFromFeet works for 5-15');
   console.assert(deriveBucketFromFeet(30) === '15+', 'deriveBucketFromFeet works for 15+');
 
-  const fakeRounds = [
-    { course: 'Test Course', holes: [{hole:1, score:4, par:4}, {hole:2, score:5, par:4}], date: '2025-01-01' }
-  ];
-  // Needs a course lookup to actually compute, but we can test the structure
-  console.assert(typeof computeHandicapIndex === 'function', 'computeHandicapIndex is defined');
   console.log('Self-tests passed.');
 }
 runSelfTests();
