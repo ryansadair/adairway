@@ -861,8 +861,8 @@
       <div class="stat-block">
         <div class="stat-name" style="text-align:center;">Distance to green</div>
         <div style="text-align:center;">
-          <button class="btn outline" id="gpsBtn" type="button">📍 Get distance</button>
-          <button class="btn outline" id="aerialViewBtn" type="button" style="margin-left:6px;">🛰️ Aerial view</button>
+          <button class="btn outline" id="gpsBtn" type="button">Get distance</button>
+          <button class="btn outline" id="aerialViewBtn" type="button" style="margin-left:6px;">Aerial view</button>
           <div id="gpsResult" class="hint" style="margin-top:8px;margin-bottom:8px;"></div>
           <button class="del" id="gpsSaveBtn" type="button">Save my current spot as this hole's green</button>
         </div>
@@ -2289,7 +2289,7 @@ function renderRounds(){
       <div style="text-align:right;">
         <div class="score">${totalScore||'—'}</div>
         <div class="meta">${toParStr}</div>
-        <button class="del" data-id="${r.id}" data-kind="round-edit" style="color:var(--turf);">edit</button>
+        <button class="edit-btn" data-id="${r.id}" data-kind="round-edit" type="button">edit</button>
         <button class="del" data-id="${r.id}" data-kind="round">delete</button>
       </div>
     </div>`;
@@ -2623,7 +2623,7 @@ function renderMissTendencies(withScores){
       if(h.bunker === true || h.bunker === 'true' || h.bunker === 1){
         bunkers++;
         sandOpps++;
-        if(h.par>0 && h.score <= h.par + 1) sandSaves++;
+        if(h.par>0 && h.score <= h.par) sandSaves++;
       }
       if(h.water === true || h.water === 'true' || h.water === 1) waters++;
       if(h.ob === true || h.ob === 'true' || h.ob === 1) obs++;
@@ -3102,8 +3102,10 @@ function renderBag(){
         <div class="meta">${c.shaft?('Shaft: '+escapeHtml(c.shaft)+' · '):''}${c.distance?('Avg '+c.distance+' yds'):'Distance not set'}</div>
         ${c.notes?`<div class="notes">${escapeHtml(c.notes)}</div>`:''}
       </div>
-      <button class="del" data-id="${c.id}" data-kind="club-edit" style="color:var(--turf);">edit</button>
-      <button class="del" data-id="${c.id}" data-kind="club">delete</button>
+      <div>
+        <button class="edit-btn" data-id="${c.id}" data-kind="club-edit" type="button">edit</button>
+        <button class="del" data-id="${c.id}" data-kind="club">delete</button>
+      </div>
     </div>
   `).join('');
 }
