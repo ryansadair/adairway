@@ -570,6 +570,7 @@
     .map-modal-body{padding:8px 10px 12px;}
   }
 </style>
+<base target="_blank">
 </head>
 <body>
 
@@ -1170,7 +1171,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut,
   signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, getDoc, setDoc }
+import { getFirestore, enableIndexedDbPersistence, doc, getDoc, setDoc }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -1184,8 +1185,9 @@ const firebaseConfig = {
 };
 const fbApp = initializeApp(firebaseConfig);
 const auth = getAuth(fbApp);
-const db = initializeFirestore(fbApp, {
-  localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})
+const db = getFirestore(fbApp);
+enableIndexedDbPersistence(db).catch(err => {
+  if (err.code !== 'failed-precondition') console.warn('Persistence error', err);
 });
 const googleProvider = new GoogleAuthProvider();
 
