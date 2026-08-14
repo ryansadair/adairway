@@ -416,13 +416,19 @@
     }
     .putt-dist-row .chip,
     .putt-dist-row .chip-input {
-      min-width: 64px;
+      min-width: 58px;
+      max-width: 58px;
+      width: 58px;
+      padding: 6px 4px;
     }
     .chip-input input {
-      width: 24px;
-      min-width: 20px;
+      width: 18px;
+      min-width: 14px;
       font-size: 16px;
       padding: 0;
+    }
+    .chip-input .chip-input-unit {
+      font-size: 8px;
     }
     .miss-row .miss-label {
       min-width: 50px;
@@ -721,7 +727,7 @@
     <div style="text-align:right;">
       <div class="today" id="todayDate"></div>
       <div id="accountRow" style="display:none;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--turf);margin-top:4px;">
-        <div id="syncStatus" style="font-size:10px;opacity:0.8;margin-bottom:2px;min-height:14px;"></div>
+        <div id="syncStatus" style="font-size:10px;opacity:0.8;margin-bottom:2px;min-height:14px;text-align:left;"></div>
         <span id="accountEmail"></span> · <button id="openBackupBtn" class="del" type="button" style="padding:0;">backup</button> · <button id="signOutBtn" class="del" type="button" style="padding:0;">sign out</button>
       </div>
     </div>
