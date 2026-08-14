@@ -141,22 +141,23 @@
   .chip.on{background:var(--fairway-deep);border-color:var(--fairway-deep);color:var(--paper-light);}
   /* Exact 1st-putt feet — same height/shape as chips, sits inline */
   .chip-input{
-    display:inline-flex;align-items:center;gap:4px;
+    display:inline-flex;align-items:center;gap:3px;
     border:1px solid var(--line);background:#fff;color:var(--graphite);
     font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;
-    padding:5px 10px;border-radius:999px;line-height:1;cursor:text;
+    padding:7px 10px;border-radius:999px;line-height:1;cursor:text;
+    flex-shrink:1;min-width:0;
   }
   .chip-input:focus-within{border-color:var(--turf);box-shadow:0 0 0 2px rgba(63,107,74,0.15);}
   .chip-input.has-value{background:var(--fairway-deep);border-color:var(--fairway-deep);color:var(--paper-light);}
   .chip-input input{
-    width:36px;border:none;background:transparent;padding:0;margin:0;
-    font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;
+    width:26px;min-width:16px;border:none;background:transparent;padding:0;margin:0;
+    font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;
     color:inherit;text-align:right;-moz-appearance:textfield;appearance:textfield;
   }
   .chip-input input:focus{outline:none;}
   .chip-input input::-webkit-outer-spin-button,
   .chip-input input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
-  .chip-input .chip-input-unit{opacity:0.7;font-size:10px;text-transform:uppercase;letter-spacing:0.04em;}
+  .chip-input .chip-input-unit{opacity:0.7;font-size:9px;text-transform:uppercase;letter-spacing:0.04em;flex-shrink:0;}
   .putt-dist-row{justify-content:center;margin-top:10px;gap:6px;}
   table.sc input.puttdist-ft{
     width:28px;border:none;background:transparent;text-align:center;
@@ -4323,7 +4324,7 @@ out skel qt;
   for(let h = 1; h <= 18; h++) if(!greens[h - 1]) emptyHoles.push(h);
 
   const freeAnchors = holeAnchors.filter(a => a.hole == null);
-  // If anchors were all numbered already used above, freeAnchors may be empty;
+  // If anchors were all numbered used above, freeAnchors may be empty;
   // also allow re-using numbered anchors only as geometric hints when their hole is filled? no.
 
   // Build pairs (anchor → nearest free green) sorted by distance, assign uniquely
@@ -4958,4 +4959,3 @@ async function init(){
 </script>
 </body>
 </html>
-
