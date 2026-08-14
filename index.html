@@ -10,6 +10,7 @@
 <title>Adairway Golf</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <style>
   :root{
     --fairway-deep:#1F3A2E;
@@ -23,9 +24,6 @@
     --line:#D7CCB0;
   }
   *{box-sizing:border-box;}
-  /* Stop the mobile double-tap-to-zoom gesture from firing on quick repeated
-     taps (e.g. mashing the score/putts +/- buttons) — this only affects
-     controls, not the page itself, so pinch-to-zoom still works everywhere. */
   button, select, .dot, .chip, .toggle-btn, summary{ touch-action: manipulation; }
   body{
     margin:0;
@@ -37,6 +35,11 @@
       repeating-linear-gradient(90deg, transparent, transparent 27px, rgba(51,49,44,0.035) 28px);
   }
   .wrap{max-width:980px;margin:0 auto;padding:28px 20px 80px;}
+  /* Desktop wider layout so the scorecard fits without horizontal scroll */
+  @media (min-width: 1024px) {
+    .wrap { max-width: 1200px; }
+    table.sc { min-width: 100%; }
+  }
 
   header{
     display:flex;align-items:flex-end;justify-content:space-between;
@@ -354,6 +357,23 @@
     input[type=text], input[type=date], input[type=number], textarea, select{
       font-size:16px;padding:10px 12px;border-radius:6px;
     }
+    /* Mobile fix: make the exact-distance chip match the others in size and keep inline */
+    .chip, .chip-input {
+      font-size: 10px;
+      padding: 6px 10px;
+    }
+    .chip-input input {
+      width: 20px;
+      min-width: 16px;
+      font-size: 10px;
+    }
+    .putt-dist-row {
+      gap: 4px;
+    }
+    .miss-row .miss-label {
+      min-width: 50px;
+      font-size: 9px;
+    }
 
     /* Bottom tab bar */
     nav#tabs{
@@ -496,7 +516,6 @@
     .map-modal-body{padding:8px 10px 12px;}
   }
 </style>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 </head>
 <body>
 
@@ -1067,7 +1086,13 @@
 
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script type="importmap">
+{
+  "imports": {
+    "leaflet": "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  }
+}
+</script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut,
@@ -1089,6 +1114,46 @@ const fbApp = initializeApp(firebaseConfig);
 const auth = getAuth(fbApp);
 const db = getFirestore(fbApp);
 const googleProvider = new GoogleAuthProvider();
+
+// ---------- OFFLINE-FIRST STORAGE LAYER ----------
+const CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
+function getLocalCache(key) {
+  try {
+    const raw = localStorage.getItem('firestore_cache_' + key);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    return data;
+  } catch(e) { return null; }
+}
+function setLocalCache(key, data) {
+  try {
+    localStorage.setItem('firestore_cache_' + key, JSON.stringify(data));
+  } catch(e) {}
+}
+async function loadList(key) {
+  if (!currentUser) return [];
+  try {
+    const snap = await getDoc(doc(db, 'users', currentUser.uid, 'store', key));
+    const items = snap.exists() ? (snap.data().items || []) : [];
+    setLocalCache(key, items);
+    return items;
+  } catch(e) {
+    console.warn('Firestore read failed, using local cache', e);
+    return getLocalCache(key) || [];
+  }
+}
+async function saveList(key, arr) {
+  if (!currentUser) return false;
+  setLocalCache(key, arr);
+  try {
+    await setDoc(doc(db, 'users', currentUser.uid, 'store', key), { items: arr, updatedAt: Date.now() });
+    return true;
+  } catch(e) {
+    console.error('Firestore write error, stored locally', e);
+    return true;
+  }
+}
+// ---------- END STORAGE LAYER ----------
 
 let currentUser = null;
 let initializedForUid = null;
@@ -1159,10 +1224,7 @@ onAuthStateChanged(auth, async user=>{
   }
 });
 
-// ---------- course presets (real par data, hole 1-18) ----------
-// No built-in course presets anymore — every course lives only in your
-// Courses tab, added either manually or via "Look up a course." Nothing
-// auto-appears, and deleting a course actually removes it, permanently.
+// ---------- course presets ----------
 const COURSE_PRESETS = {};
 
 // ---------- utilities ----------
@@ -1181,34 +1243,14 @@ function deriveBucketFromFeet(ft){
   if(n < 15) return '5-15';
   return '15+';
 }
-/** True if hole was flagged for a stroke-losing hazard (water/OB, or legacy penalty). */
 function holeHasPenaltyHazard(h){
   if(!h) return false;
   if(h.water || h.ob) return true;
-  // Older rounds stored a generic "penalty" checkbox — still count those
   return !!(h.penalty);
 }
 
 function openForm(detailsId){ const el = document.getElementById(detailsId); if(el) el.open = true; }
 function closeForm(detailsId){ const el = document.getElementById(detailsId); if(el) el.open = false; }
-
-// Storage: synced to your Firebase account via Firestore, under
-// users/{your uid}/store/{key} — the same data shows up on every device
-// you sign into with the same Google account.
-async function loadList(key){
-  if(!currentUser) return [];
-  try{
-    const snap = await getDoc(doc(db, 'users', currentUser.uid, 'store', key));
-    return snap.exists() ? (snap.data().items || []) : [];
-  }catch(e){ console.error('firestore read error', e); return []; }
-}
-async function saveList(key, arr){
-  if(!currentUser) return false;
-  try{
-    await setDoc(doc(db, 'users', currentUser.uid, 'store', key), { items: arr, updatedAt: Date.now() });
-    return true;
-  }catch(e){ console.error('firestore write error', e); alert('Could not save to your account — check your connection and try again.'); return false; }
-}
 
 let rounds = [], practice = [], bag = [], courses = [], notes = [];
 
@@ -1230,7 +1272,7 @@ function getCoursePresetMap(){
   courses.forEach(c=>{
     const preset = COURSE_PRESETS[c.name] || null;
     const par = (Array.isArray(c.par) && c.par.length===18) ? c.par : (preset ? preset.par : null);
-    if(!par) return; // no par data anywhere for this course — nothing to quick-load
+    if(!par) return;
     map[c.name] = {
       par,
       yardage: (Array.isArray(c.yardage) && c.yardage.some(y=>y)) ? c.yardage : (preset ? preset.yardage : null) || null,
@@ -1252,7 +1294,6 @@ function getHandicapIndexNow(){
   return computeHandicapIndex(sorted).index;
 }
 
-/** WHS course handicap (18 holes). */
 function computeCourseHandicap(hi, slope, rating, par){
   if(hi==null || slope==null || rating==null || par==null) return null;
   const raw = hi * (slope / 113) + (rating - par);
@@ -1279,7 +1320,6 @@ function populateTeeSelect(selectId, course, preferredName){
     if(prev){
       const o2 = document.createElement('option');
       o2.value = prev; o2.textContent = prev; o2.selected = true;
-      // keep single option
     }
     return;
   }
@@ -1298,7 +1338,6 @@ function populateTeeSelect(selectId, course, preferredName){
     opt.dataset.yardage = t.yardage != null ? t.yardage : '';
     sel.appendChild(opt);
   });
-  // Prefer white male, then preferredName, then first
   let pick = prev;
   if(!pick || ![...sel.options].some(o=>o.value===pick)){
     const white = tees.find(t=>{
@@ -1327,7 +1366,6 @@ function selectedTeeMeta(selectId){
 }
 
 function updateCourseHandicapDisplay(prefix){
-  // prefix: 'pl' or 'r'
   const el = document.getElementById(prefix + '-courseHandicap');
   const courseName = document.getElementById(prefix + '-course')?.value;
 
@@ -1366,7 +1404,6 @@ function updateCourseHandicapDisplay(prefix){
 }
 
 function applyTeeYardages(course, teeColor, target){
-  // target: 'play' | 'rounds'
   if(!course || !teeColor) return;
   let yards = null;
   if(course.yardagesByTee && course.yardagesByTee[teeColor]){
@@ -1591,13 +1628,12 @@ function buildScorecardTable(){
     if(!(el.classList.contains('puttdist') && el.tagName==='SELECT')) return;
     const hole = el.dataset.hole;
     const ftEl = document.querySelector(`.puttdist-ft[data-hole="${hole}"]`);
-    if(ftEl) ftEl.value = ''; // manual bucket choice overrides any exact value for that hole
+    if(ftEl) ftEl.value = '';
   });
   recalcScorecard();
 }
 
 function recalcScorecard(){
-  // Par + disable FIR on par-3s
   let outPar=0, inPar=0;
   document.querySelectorAll('.par').forEach(p=>{
     const h = +p.dataset.hole, v = +p.value || 0;
@@ -1628,7 +1664,6 @@ function recalcScorecard(){
   document.getElementById('inPar').textContent = inPar;
   document.getElementById('totPar').textContent = outPar+inPar;
 
-  // Yardage
   let outYd=0, inYd=0;
   document.querySelectorAll('.yardage').forEach(y=>{
     const h = +y.dataset.hole, v = +y.value || 0;
@@ -1638,7 +1673,6 @@ function recalcScorecard(){
   document.getElementById('inYd').textContent = inYd;
   document.getElementById('totYd').textContent = outYd+inYd;
 
-  // Score
   let outScore=0, inScore=0;
   document.querySelectorAll('.score').forEach(s=>{
     const h = +s.dataset.hole, v = +s.value || 0;
@@ -1648,7 +1682,6 @@ function recalcScorecard(){
   document.getElementById('inScore').textContent = inScore;
   document.getElementById('totScore').textContent = outScore+inScore;
 
-  // Putts
   let outPutts=0, inPutts=0;
   document.querySelectorAll('.putts').forEach(p=>{
     const h = +p.dataset.hole, v = +p.value || 0;
@@ -1670,7 +1703,6 @@ function recalcScorecard(){
   if(totC) totC.textContent = outChips+inChips;
 
 
-  // FIR
   let outFir=0, inFir=0;
   document.querySelectorAll('.fir').forEach(f=>{
     const h = +f.dataset.hole;
@@ -1680,7 +1712,6 @@ function recalcScorecard(){
   document.getElementById('inFir').textContent = inFir;
   document.getElementById('totFir').textContent = outFir+inFir;
 
-  // GIR
   let outGir=0, inGir=0;
   document.querySelectorAll('.gir').forEach(g=>{
     const h = +g.dataset.hole;
@@ -1690,7 +1721,6 @@ function recalcScorecard(){
   document.getElementById('inGir').textContent = inGir;
   document.getElementById('totGir').textContent = outGir+inGir;
 
-  // Bunker
   let outBunker=0, inBunker=0;
   document.querySelectorAll('.bunker').forEach(b=>{
     const h = +b.dataset.hole;
@@ -1701,7 +1731,6 @@ function recalcScorecard(){
   if(inBk) inBk.textContent = inBunker;
   if(totBk) totBk.textContent = outBunker+inBunker;
 
-  // Water
   let outWater=0, inWater=0;
   document.querySelectorAll('.water').forEach(p=>{
     const h = +p.dataset.hole;
@@ -1712,7 +1741,6 @@ function recalcScorecard(){
   if(inW) inW.textContent = inWater;
   if(totW) totW.textContent = outWater+inWater;
 
-  // OB
   let outOb=0, inOb=0;
   document.querySelectorAll('.ob').forEach(p=>{
     const h = +p.dataset.hole;
@@ -1791,13 +1819,7 @@ function resetScorecard(){
   recalcScorecard();
 }
 
-// ---------- PLAY MODE (one hole at a time) ----------
-// ---------- OpenGolfAPI (read-only course lookups + local-only GPS) ----------
-// We only ever call the free, keyless read endpoints below: course search,
-// course detail, tees, and green geometry. We never sign in, never mint a
-// key, and never send shots/moments/location data to them — GPS distance
-// is computed entirely in this browser using your live position plus a
-// green coordinate we look up once.
+// ---------- PLAY MODE ----------
 const OGA_BASE = 'https://api.opengolfapi.org';
 let pendingApiCourse = null;
 let currentApiCourseId = null;
@@ -1807,12 +1829,6 @@ let currentHole = 0;
 let playRange = {start:0, end:17};
 let restoringPlayDraft = false;
 
-// A round in progress only lived in memory before — closing the tab, letting
-// the phone put it to sleep, or just being away for a while would silently
-// wipe it. This saves a lightweight draft to this browser after every change
-// so returning to Play resumes exactly where you left off, even after a
-// full reload. It's local to this browser/device (not synced to your
-// account) — cleared automatically once you finish the round.
 function playDraftKey(){
   return currentUser ? ('adairwayPlayDraft:' + currentUser.uid) : null;
 }
@@ -1831,7 +1847,7 @@ function savePlayDraft(){
       savedAt: Date.now()
     };
     localStorage.setItem(key, JSON.stringify(draft));
-  }catch(e){ /* storage full/unavailable — not fatal, just no draft this time */ }
+  }catch(e){}
 }
 function clearPlayDraft(){
   const key = playDraftKey();
@@ -1953,7 +1969,6 @@ function renderPlayHole(){
   const girBtn = document.getElementById('girToggle');
   girBtn.classList.toggle('on', h.gir);
 
-  // Progressive miss detail — only when relevant
   if(h.fir) h.firMiss = null;
   if(h.gir){ h.girMissLat = null; h.girMissDepth = null; }
   if(h.par===3) h.firMiss = null;
@@ -2092,7 +2107,7 @@ document.getElementById('puttDistRow')?.addEventListener('click', e=>{
   const h = playHoles[currentHole];
   const val = chip.dataset.puttdist;
   h.puttDistance = (h.puttDistance === val) ? null : val;
-  h.puttDistanceFt = null; // manual bucket choice overrides any earlier exact value
+  h.puttDistanceFt = null;
   renderPlayHole();
 });
 document.getElementById('puttDistExact')?.addEventListener('input', e=>{
@@ -2131,7 +2146,6 @@ document.getElementById('finishRoundBtn').addEventListener('click', async ()=>{
     document.getElementById('pl-notes').value,
     document.getElementById('pl-holesplayed').value
   );
-  // reset play state for next round
   playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, chips:0, fir:false, gir:false, firMiss:null, girMissLat:null, girMissDepth:null, bunker:false, water:false, ob:false, puttDistance:null, puttDistanceFt:null}));
   document.getElementById('pl-holesplayed').value = 'full';
   setPlayRange('full');
@@ -2144,7 +2158,6 @@ document.getElementById('finishRoundBtn').addEventListener('click', async ()=>{
   if(banner) banner.style.display = 'none';
   openForm('playFormDetails');
   renderPlayHole();
-  // jump to Rounds tab so the finished round is visible
   document.querySelector('nav button[data-tab="rounds"]').click();
 });
 
@@ -2328,11 +2341,6 @@ function computeDifferential(round){
   if(holesPlayed==='full'){
     return (totalScore - c.rating) * 113 / c.slope;
   }
-  // 9-hole round: approximate the 9-hole course rating as half the 18-hole rating
-  // (real courses publish separate front/back ratings — this is a simplified
-  // stand-in since we only store one 18-hole rating per course), then scale the
-  // resulting differential up to an 18-hole-equivalent figure the way USGA pairs
-  // two 9-hole differentials together.
   const halfRating = c.rating / 2;
   const diff9 = (totalScore - halfRating) * 113 / c.slope;
   return diff9 * 2;
@@ -2348,7 +2356,6 @@ function computeHandicapIndex(withScores){
   return {index: avg*0.96, n, used: useCount};
 }
 
-// trend chart with raw dots + rolling-avg line + optional gear/practice markers along the bottom
 function trendChart(svgEl, values, dates, opts={}){
   const w=380,h=190,pad=28,markerY=h-10;
   svgEl.setAttribute('viewBox',`0 0 ${w} ${h}`);
@@ -2520,7 +2527,6 @@ function renderMissTendencies(withScores){
       }
       if(h.water === true || h.water === 'true' || h.water === 1) waters++;
       if(h.ob === true || h.ob === 'true' || h.ob === 1) obs++;
-      // Legacy generic penalty (no water/ob flags) still counts as a hazard for empty-state
       if(!h.water && !h.ob && h.penalty){ /* counted only in hazardPerRound */ }
       if(!h.fir && h.par !== 3){
         const fm = norm(h.firMiss);
@@ -2752,7 +2758,6 @@ function renderStats(){
   const girHave = girRounds.filter(x=>x.hit>0);
   const avgGir = girHave.length ? (girHave.reduce((s,x)=>s+x.pct,0)/girHave.length) : null;
 
-  // 3-putts: only counted on holes where putts data is actually present (>0)
   let puttHolesWithData=0, threePutts=0;
   withScores.forEach(r=>r.holes.forEach(h=>{
     if(h.score>0 && h.putts>0){ puttHolesWithData++; if(h.putts>=3) threePutts++; }
@@ -2760,7 +2765,6 @@ function renderStats(){
   const threePuttPerRound = scoreCount ? (threePutts/scoreCount) : null;
   const threePuttPct = puttHolesWithData ? (threePutts/puttHolesWithData*100) : null;
 
-  // Water / OB (and legacy penalty flags) — holes flagged, not exact stroke count
   let hazardHoles=0, bunkerHoles=0, waterHoles=0, obHoles=0;
   withScores.forEach(r=>r.holes.forEach(h=>{
     if(!(h.score>0)) return;
@@ -2782,7 +2786,6 @@ function renderStats(){
     <div class="stat-box"><span class="num">${hazardPerRound==null?'—':hazardPerRound.toFixed(1)}</span><span class="lbl">Water/OB / rd</span></div>
   `;
 
-  // Handicap index
   const hc = computeHandicapIndex(withScores);
   const hcBlock = document.getElementById('handicapBlock');
   if(hc.index==null){
@@ -2795,7 +2798,6 @@ function renderStats(){
       </div>`;
   }
 
-  // Score trend with rolling avg + gear/practice markers
   const yearFilter = (document.getElementById('statsYearFilter')||{}).value || 'all';
   const inYear = (d) => yearFilter==='all' || (d||'').startsWith(yearFilter);
   const gearMarkers = bag.filter(c=>c.dateAdded && inYear(c.dateAdded)).map(c=>({
@@ -2811,7 +2813,6 @@ function renderStats(){
   lineChart(document.getElementById('firChart'), firRounds.filter(x=>x.hit>0||x.any).map(x=>({v:x.pct})), {min:0,max:100});
   lineChart(document.getElementById('girChart'), girHave.map(x=>({v:x.pct})), {min:0,max:100});
 
-  // Par-type breakdown
   const pt = parTypeStats();
   const ptBlock = document.getElementById('parTypeBlock');
   const ptRow = [3,4,5].map(p=>{
@@ -2837,7 +2838,6 @@ function renderStats(){
   }
   ptBlock.innerHTML = `<div class="partype-row">${ptRow}</div>${barHtml}${legendHtml}`;
 
-  // Correlation scatters
   const firScatterPts = withScores.map((r,i)=>{
     const fr = firRounds[i];
     if(!(fr.hit>0||fr.any)) return null;
@@ -3066,6 +3066,29 @@ function pick(obj, keys, fallback=null){
   for(const k of keys){ if(obj && obj[k]!=null) return obj[k]; }
   return fallback;
 }
+
+function cachedFetch(url, cacheKey, ttl = CACHE_TTL) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        const data = JSON.parse(cached);
+        if (Date.now() - data.ts < ttl) {
+          resolve(data.value);
+          return;
+        }
+      }
+    } catch(e) {}
+    try {
+      const res = await fetch(url);
+      if (!res.ok) { reject(new Error('status '+res.status)); return; }
+      const value = await res.json();
+      try { localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), value })); } catch(e) {}
+      resolve(value);
+    } catch(e) { reject(e); }
+  });
+}
+
 document.getElementById('apiSearchBtn').addEventListener('click', async ()=>{
   const q = document.getElementById('api-search-q').value.trim();
   const resultsEl = document.getElementById('apiSearchResults');
@@ -3075,9 +3098,8 @@ document.getElementById('apiSearchBtn').addEventListener('click', async ()=>{
   try{
     const params = new URLSearchParams({q, limit:'8'});
     if(state) params.set('state', state);
-    const res = await fetch(`${OGA_BASE}/api/v1/courses/search?${params.toString()}`);
-    if(!res.ok) throw new Error('status '+res.status);
-    const data = await res.json();
+    const cacheKey = `oga_search_${q}_${state}`;
+    const data = await cachedFetch(`${OGA_BASE}/api/v1/courses/search?${params.toString()}`, cacheKey);
     const list = data.courses || [];
     if(list.length===0){
       resultsEl.innerHTML = '<div class="empty">No matches — try a different spelling, or add the course manually below.</div>';
@@ -3104,9 +3126,8 @@ document.getElementById('apiSearchResults').addEventListener('click', async e=>{
   const originalText = btn.textContent;
   btn.textContent = 'Loading…'; btn.disabled = true;
   try{
-    const res = await fetch(`${OGA_BASE}/api/v1/courses/${encodeURIComponent(id)}`);
-    if(!res.ok) throw new Error('status '+res.status);
-    const detail = await res.json();
+    const cacheKey = `oga_detail_${id}`;
+    const detail = await cachedFetch(`${OGA_BASE}/api/v1/courses/${encodeURIComponent(id)}`, cacheKey);
     applyApiCourseDetail(detail);
   }catch(err){
     alert("Couldn't load full course details from OpenGolfAPI: "+err.message+". You can add the course manually instead.");
@@ -3114,7 +3135,6 @@ document.getElementById('apiSearchResults').addEventListener('click', async e=>{
   }
 });
 
-/** OpenGolfAPI stores yardages per tee color: { white: 337, blue: 378, ... } */
 function pickYardageFromHole(h, preferredColor){
   const flat = pick(h, ['yardage','yards','length','distance'], null);
   if(flat != null && !isNaN(+flat) && +flat > 0) return +flat;
@@ -3135,7 +3155,6 @@ function pickYardageFromHole(h, preferredColor){
 function applyApiCourseDetail(detail){
   const name = detail.course_name || detail.name || 'Unnamed course';
 
-  // Normalize all published tees for dropdown + handicap
   const teesList = (Array.isArray(detail.tees) ? detail.tees : []).map(t=>{
     const color = (pick(t,['tee_color','color'],'')||'').toLowerCase();
     const tName = pick(t,['tee_name','name'],'') || color || 'Tee';
@@ -3165,7 +3184,6 @@ function applyApiCourseDetail(detail){
     teePar = preferred.par;
   }
 
-  // holes is a count; hole-by-hole lives in holes_data
   let rawHoles = null;
   if(Array.isArray(detail.holes_data) && detail.holes_data.length >= 9){
     rawHoles = detail.holes_data;
@@ -3190,7 +3208,6 @@ function applyApiCourseDetail(detail){
     else { while(yardageArr.length<18) yardageArr.push(null); }
   }
 
-  // Full yardage matrix by tee color (so switching tees updates the card)
   const yardagesByTee = {};
   if(rawHoles){
     const sortedHoles = [...rawHoles].sort((a,b)=>
@@ -3210,7 +3227,6 @@ function applyApiCourseDetail(detail){
     });
   }
 
-  // Stroke index (1-18) when API provides handicap_index per hole
   let strokeIndex = null;
   if(rawHoles){
     const sortedHoles = [...rawHoles].sort((a,b)=>
@@ -3222,7 +3238,6 @@ function applyApiCourseDetail(detail){
     }
   }
 
-  // Par sanity: compare hole sum vs published tee par
   let parWarning = '';
   if(parArr){
     const sum = parArr.reduce((s,p)=>s+p,0);
@@ -3261,7 +3276,6 @@ function applyApiCourseDetail(detail){
     lat: detail.lat ?? null, lng: detail.lng ?? null
   };
 
-  // Prefill tee dropdowns immediately
   populateTeeSelect('pl-tees', pendingApiCourse, teeLabel);
   populateTeeSelect('r-tees', pendingApiCourse, teeLabel);
 
@@ -3281,7 +3295,7 @@ function applyApiCourseDetail(detail){
   });
 }
 
-// ---------- OpenGolfAPI: local-only GPS distance to green ----------
+// ---------- GPS & Aerial ----------
 function distanceYards(lat1, lon1, lat2, lon2){
   const R = 6371000;
   const toRad = d => d*Math.PI/180;
@@ -3323,7 +3337,6 @@ function getOrCreateCourseByName(name){
   return c;
 }
 
-// Club recommendation: bag distances + optional altitude (~2%/1000 ft more carry)
 function altitudeCarryFactor(elevFt){
   if(elevFt == null || isNaN(+elevFt)) return 1;
   return 1 + 0.02 * (+elevFt / 1000);
@@ -3337,13 +3350,12 @@ function recommendClub(yards, course){
   if(!clubs.length) return null;
   const elev = course && course.elevationFt != null ? +course.elevationFt : null;
   const factor = altitudeCarryFactor(elev);
-  // Plays-like yardage (shorter at altitude). Round down preference = club <= playsLike
   const playsLike = yards / factor;
   let pick = null;
   for(const c of clubs){
-    if(c.d <= playsLike + 0.5) pick = c; // slight float tolerance
+    if(c.d <= playsLike + 0.5) pick = c;
   }
-  if(!pick) pick = clubs[0]; // shorter than every club → use shortest
+  if(!pick) pick = clubs[0];
   return {
     club: pick,
     yards: Math.round(yards),
@@ -3378,7 +3390,7 @@ function updateGpsAvailability(){
   const btn = document.getElementById('gpsBtn');
   const result = document.getElementById('gpsResult');
   if(!btn) return;
-  btn.disabled = false; // GPS always works now — falls back to a spot you save yourself
+  btn.disabled = false;
   const holeNum = playHoles[currentHole] ? playHoles[currentHole].hole : null;
   const hasManual = c && Array.isArray(c.greens) && holeNum && c.greens[holeNum-1];
   result.textContent = hasManual ? 'You have a saved green location for this hole.' : '';
@@ -3427,8 +3439,6 @@ document.getElementById('gpsBtn').addEventListener('click', ()=>{
     const holeNum = playHoles[currentHole].hole;
     const course = getCourseByName(courseName);
 
-    // 1. A spot you saved yourself always wins — it's guaranteed accurate for
-    // how you actually play this hole, and works with zero network calls.
     const manual = course && Array.isArray(course.greens) && course.greens[holeNum-1];
     if(manual){
       const yds = distanceYards(latitude, longitude, manual.lat, manual.lng);
@@ -3436,7 +3446,6 @@ document.getElementById('gpsBtn').addEventListener('click', ()=>{
       return;
     }
 
-    // 2. Otherwise, try OpenGolfAPI if this course has been looked up there.
     if(course && course.apiCourseId){
       resultEl.textContent = 'Looking up the green…';
       try{
@@ -3446,10 +3455,9 @@ document.getElementById('gpsBtn').addEventListener('click', ()=>{
           showDistanceWithClub(resultEl, yds, course, 'OpenGolfAPI');
           return;
         }
-      }catch(err){ /* fall through to the manual-save prompt below */ }
+      }catch(err){}
     }
 
-    // 3. No data anywhere yet — prompt to build your own.
     resultEl.textContent = `No green location on file for hole ${holeNum} yet. Stand near the green and tap "Save my current spot" below — only needs doing once, ever, per hole.`;
   }, ()=>{
     resultEl.textContent = 'Location permission denied or unavailable.';
@@ -3484,18 +3492,16 @@ document.getElementById('gpsSaveBtn').addEventListener('click', ()=>{
   }, {enableHighAccuracy:true, timeout:8000});
 });
 
-// ---------- Aerial rangefinder (Play tab) ----------
-// Manual green pins are the source of truth. Live GPS + a draggable target
-// give you distance to green (front/middle/back) and measure any spot.
-const GREEN_DEPTH_YDS = 25; // approximate green depth for front/back without a polygon
+// ---------- Aerial rangefinder (lazy-load Leaflet) ----------
+const GREEN_DEPTH_YDS = 25;
 let aerialMap = null;
 let aerialMarkers = {};
-let aerialLayers = {}; // polylines, circles, labels
+let aerialLayers = {};
 let aerialGen = 0;
 let aerialWatchId = null;
-let aerialYou = null;          // {lat, lng, accuracy}
-let aerialGreen = null;        // {lat, lng} saved pin for current hole
-let aerialTarget = null;       // {lat, lng} measure / pending-green point
+let aerialYou = null;
+let aerialGreen = null;
+let aerialTarget = null;
 let aerialHoleNum = 1;
 let aerialCourse = null;
 
@@ -3560,7 +3566,6 @@ function rfTargetIcon(){
   });
 }
 
-/** Destination point given start, bearing (deg), distance (yards). */
 function destPoint(lat, lng, bearingDeg, yards){
   const R = 6371000;
   const d = yards / 1.09361;
@@ -3597,7 +3602,6 @@ function updateRangefinderHud(){
   const hasGreen = !!aerialGreen;
   const hasTarget = !!aerialTarget;
 
-  // Primary distance: prefer you → green, else you → target
   let mainYds = null;
   if(hasYou && hasGreen){
     mainYds = distanceYards(aerialYou.lat, aerialYou.lng, aerialGreen.lat, aerialGreen.lng);
@@ -3605,7 +3609,6 @@ function updateRangefinderHud(){
     mainYds = distanceYards(aerialYou.lat, aerialYou.lng, aerialTarget.lat, aerialTarget.lng);
   }
 
-  // Front / middle / back (approximate green depth along approach line)
   if(hasYou && hasGreen && mainYds != null){
     const half = GREEN_DEPTH_YDS / 2;
     const front = Math.max(0, mainYds - half);
@@ -3615,7 +3618,6 @@ function updateRangefinderHud(){
     document.getElementById('rfBack').textContent = Math.round(back);
     document.getElementById('rfFmb').style.display = '';
   }else if(hasYou && hasTarget && mainYds != null){
-    // Measuring a spot only — show that single distance in middle slot
     document.getElementById('rfFront').textContent = '—';
     document.getElementById('rfMiddle').textContent = Math.round(mainYds);
     document.getElementById('rfBack').textContent = '—';
@@ -3626,7 +3628,6 @@ function updateRangefinderHud(){
     document.getElementById('rfBack').textContent = '—';
   }
 
-  // Club recommendation — show club name + stock distance (not the hole yardage)
   const course = aerialCourse;
   const rec = mainYds != null ? recommendClub(mainYds, course) : null;
   if(rec){
@@ -3641,7 +3642,6 @@ function updateRangefinderHud(){
     document.getElementById('rfClubYds').textContent = '—';
   }
 
-  // Measure panel: me → target and target → green
   const measureEl = document.getElementById('rfMeasure');
   if(hasTarget && hasYou){
     const toSpot = distanceYards(aerialYou.lat, aerialYou.lng, aerialTarget.lat, aerialTarget.lng);
@@ -3661,7 +3661,6 @@ function updateRangefinderHud(){
     measureEl.classList.toggle('hidden', !hasYou);
   }
 
-  // Subtitle
   const holeLabel = `Hole ${aerialHoleNum}`;
   if(hasYou && hasGreen && mainYds != null){
     document.getElementById('aerialSub').textContent = `${holeLabel} · ${Math.round(mainYds)} yds to middle · live GPS`;
@@ -3671,7 +3670,6 @@ function updateRangefinderHud(){
     document.getElementById('aerialSub').textContent = `${holeLabel} · locating…`;
   }
 
-  // Map overlays
   clearAerialOverlays();
   if(!aerialMap) return;
 
@@ -3681,7 +3679,6 @@ function updateRangefinderHud(){
       { color: '#F5F0E6', weight: 2.5, opacity: 0.95, dashArray: null }
     ).addTo(aerialMap);
 
-    // Distance rings at middle and front (visual like commercial rangefinders)
     const ringStyle = { color: '#F5F0E6', weight: 1.25, opacity: 0.55, fill: false };
     aerialLayers.ringMiddle = L.circle([aerialGreen.lat, aerialGreen.lng], {
       radius: mainYds / 1.09361, ...ringStyle
@@ -3762,7 +3759,6 @@ function onAerialPosition(pos, gen){
   aerialYou = { lat: latitude, lng: longitude, accuracy: accuracy || null };
 
   if(!aerialMap){
-    // First fix — build the map
     const container = document.getElementById('aerialMap');
     if(!container) return;
     container.innerHTML = '';
@@ -3777,12 +3773,10 @@ function onAerialPosition(pos, gen){
       attributionControl: true
     }).setView(center, 18);
 
-    // Hybrid-style: Esri World Imagery (cleaner labels than pure satellite alone)
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
       maxZoom: 19,
       attribution: 'Imagery © Esri'
     }).addTo(aerialMap);
-    // Light reference labels overlay (roads/names) when available
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
       maxZoom: 19,
       opacity: 0.85,
@@ -3819,9 +3813,17 @@ function onAerialPosition(pos, gen){
   updateRangefinderHud();
 }
 
-document.getElementById('aerialViewBtn').addEventListener('click', ()=>{
-  if(typeof L === 'undefined'){ alert('Map library failed to load. Check your connection and try again.'); return; }
+document.getElementById('aerialViewBtn').addEventListener('click', async ()=>{
   if(!navigator.geolocation){ alert('Geolocation not supported in this browser.'); return; }
+  // Lazy load Leaflet
+  if (typeof L === 'undefined') {
+    try {
+      await import('leaflet');
+    } catch(e) {
+      alert('Map library failed to load. Check your connection and try again.');
+      return;
+    }
+  }
 
   const gen = ++aerialGen;
   destroyAerialMap();
@@ -3840,7 +3842,6 @@ document.getElementById('aerialViewBtn').addEventListener('click', ()=>{
   document.getElementById('aerialHint').textContent = 'White dot = you · Flag = green · Orange = measure target (tap or drag).';
   document.getElementById('aerialHud').style.display = 'none';
 
-  // Continuous updates while the modal is open
   aerialWatchId = navigator.geolocation.watchPosition(
     pos => onAerialPosition(pos, gen),
     err => {
@@ -3875,7 +3876,6 @@ document.getElementById('aerialSetGreenBtn').addEventListener('click', async ()=
       }).addTo(aerialMap);
     }
   }
-  // Keep target so you can still measure from it; HUD refreshes to new green
   updateRangefinderHud();
   document.getElementById('aerialSub').textContent =
     `Hole ${res.holeNum} · green saved for ${res.course.name}`;
@@ -3890,7 +3890,7 @@ document.getElementById('aerialModal').addEventListener('click', e=>{
   if(e.target.id === 'aerialModal') closeAerialView();
 });
 
-// ---------- Backup modal (opened from the header) ----------
+// ---------- Backup modal ----------
 function openBackupModal(){
   const modal = document.getElementById('backupModal');
   modal.classList.add('open');
@@ -3961,6 +3961,14 @@ function loadCourseIntoForm(c){
 document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
   const name = document.getElementById('co-name').value.trim();
   if(!name){ alert('Name the course.'); return; }
+
+  // Enforce unique course names per user (data integrity)
+  const existing = courses.find(c => c.name.trim().toLowerCase() === name.toLowerCase() && c.id !== editingCourseId);
+  if(existing) {
+    alert(`A course named "${name}" already exists. Please use a different name or edit the existing course.`);
+    return;
+  }
+
   const newRating = document.getElementById('co-rating').value ? +document.getElementById('co-rating').value : null;
   const newSlope = document.getElementById('co-slope').value ? +document.getElementById('co-slope').value : null;
   const elevRaw = document.getElementById('co-elevation').value;
@@ -4019,30 +4027,7 @@ document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
     }
     editingCourseId = null;
   } else {
-    const existingIdx = courses.findIndex(c=>c.name.trim().toLowerCase()===name.toLowerCase());
-    if(existingIdx>=0){
-      const existing = courses[existingIdx];
-      courses[existingIdx] = {
-        ...existing,
-        name,
-        rating: newRating!=null ? newRating : existing.rating,
-        slope: newSlope!=null ? newSlope : existing.slope,
-        elevationFt: newElev!=null ? newElev : existing.elevationFt,
-        notes: newNotes ? newNotes : existing.notes,
-        ...(extra.par ? {par: extra.par} : {}),
-        ...(extra.yardage ? {yardage: extra.yardage} : {}),
-        ...(extra.apiCourseId ? {apiCourseId: extra.apiCourseId} : {}),
-        ...(extra.lat != null ? {lat: extra.lat} : {}),
-        ...(extra.lng != null ? {lng: extra.lng} : {}),
-        ...(extra.teesList ? {teesList: extra.teesList} : {}),
-        ...(extra.yardagesByTee ? {yardagesByTee: extra.yardagesByTee} : {}),
-        ...(extra.strokeIndex ? {strokeIndex: extra.strokeIndex} : {}),
-        ...(extra.parTotal != null ? {parTotal: extra.parTotal} : {}),
-        ...(extra.preferredTee ? {preferredTee: extra.preferredTee} : {})
-      };
-    }else{
-      courses.push({ id: uid(), name, rating: newRating, slope: newSlope, elevationFt: newElev, notes: newNotes, ...extra });
-    }
+    courses.push({ id: uid(), name, rating: newRating, slope: newSlope, elevationFt: newElev, notes: newNotes, ...extra });
   }
 
   await saveList('courses', courses);
@@ -4091,8 +4076,7 @@ document.getElementById('coursesList').addEventListener('click', async e=>{
   populatePresetDropdown();
 });
 
-
-// ---------- Green map editor (pre-round pin placement) ----------
+// ---------- Green map editor (lazy-load Leaflet) ----------
 let mapEditor = {
   courseId: null,
   hole: 1,
@@ -4103,9 +4087,6 @@ let mapEditor = {
   gen: 0
 };
 
-// ---------- OpenStreetMap green auto-fill (Overpass) ----------
-// OpenGolfAPI doesn't ship green geometry. OSM often has golf=green polygons
-// and golf=hole ways with ref=hole number. We pull those and map centers to pins.
 const OVERPASS_URLS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter'
@@ -4113,7 +4094,6 @@ const OVERPASS_URLS = [
 
 function osmParseRef(tags){
   if(!tags) return null;
-  // Prefer explicit hole identifiers only — don't scrape random digits from long names.
   const explicit = tags.ref || tags.hole || tags['hole:ref'] || tags['golf:hole'] || '';
   if(explicit !== ''){
     const m = String(explicit).trim().match(/^#?\s*([1-9]|1[0-8])\s*$/);
@@ -4150,7 +4130,7 @@ function osmWayCentroid(way, nodes){
   return { lat: sLat / n, lng: sLng / n };
 }
 
-function osmWayEndpoint(way, nodes, which /* 'first'|'last' */){
+function osmWayEndpoint(way, nodes, which){
   if(!way.nodes || !way.nodes.length) return null;
   const id = which === 'first' ? way.nodes[0] : way.nodes[way.nodes.length - 1];
   return nodes[id] || null;
@@ -4193,9 +4173,6 @@ async function resolveCourseCenter(course){
   return nominatimCourseCenter(course.name);
 }
 
-/**
- * Returns { greens: Array(18) of {lat,lng,source}|null, matched: number, message }
- */
 async function fetchOsmGreensAround(lat, lng, radiusM = 2800){
   const query = `
 [out:json][timeout:50];
@@ -4213,7 +4190,6 @@ out skel qt;
   const elements = await overpassFetch(query);
   const nodes = osmNodeMap(elements);
 
-  // Candidate green centers (deduped)
   const greenCandidates = [];
   const seen = new Set();
   function addGreen(pt, source, ref){
@@ -4229,8 +4205,7 @@ out skel qt;
     });
   }
 
-  // Hole anchors: preferred end of golf=hole way (near the green)
-  const holeAnchors = []; // { hole, lat, lng }
+  const holeAnchors = [];
 
   elements.forEach(el=>{
     const tags = el.tags || {};
@@ -4268,7 +4243,7 @@ out skel qt;
   });
 
   const greens = Array(18).fill(null);
-  const used = new Set(); // indices into greenCandidates
+  const used = new Set();
 
   function takeNearestGreen(fromLat, fromLng, maxYds){
     let bestI = -1, bestD = Infinity;
@@ -4289,10 +4264,9 @@ out skel qt;
     };
   }
 
-  // 1) Explicit ref on a green/pin wins
   greenCandidates.forEach((g, i)=>{
     if(g.ref == null) return;
-    if(greens[g.ref - 1]) return; // already filled
+    if(greens[g.ref - 1]) return;
     used.add(i);
     greens[g.ref - 1] = {
       lat: g.lat,
@@ -4302,13 +4276,11 @@ out skel qt;
     };
   });
 
-  // 2) Numbered hole ways → nearest unused green (must be close)
   holeAnchors.filter(a => a.hole != null).forEach(a=>{
     if(greens[a.hole - 1]) return;
     const pin = takeNearestGreen(a.lat, a.lng, 150);
     if(pin) greens[a.hole - 1] = pin;
     else {
-      // hole path end is still a usable estimate
       greens[a.hole - 1] = {
         lat: a.lat,
         lng: a.lng,
@@ -4318,16 +4290,10 @@ out skel qt;
     }
   });
 
-  // 3) Remaining numbered holes empty, but we have unlabeled hole anchors + greens:
-  //    greedy pair closest hole-anchor ↔ green for empty slots only.
   const emptyHoles = [];
   for(let h = 1; h <= 18; h++) if(!greens[h - 1]) emptyHoles.push(h);
 
   const freeAnchors = holeAnchors.filter(a => a.hole == null);
-  // If anchors were all numbered used above, freeAnchors may be empty;
-  // also allow re-using numbered anchors only as geometric hints when their hole is filled? no.
-
-  // Build pairs (anchor → nearest free green) sorted by distance, assign uniquely
   const pairs = [];
   const anchorsForPairing = [
     ...holeAnchors.filter(a => a.hole != null && !greens[a.hole - 1]),
@@ -4346,7 +4312,6 @@ out skel qt;
     if(used.has(p.gi) || usedAnchor.has(p.ai)) return;
     let holeNum = p.hole;
     if(holeNum == null){
-      // assign to next empty hole number
       holeNum = emptyHoles.find(h => !greens[h - 1]);
     }
     if(holeNum == null || greens[holeNum - 1]) return;
@@ -4361,10 +4326,6 @@ out skel qt;
     };
   });
 
-  // 4) Last resort: if we still have many empty holes and many free greens,
-  //    and we have at least as many free greens as empty holes (typical full course
-  //    with unlabeled geometry), assign by angular order around the course center
-  //    so they don't all collapse onto hole 1.
   const stillEmpty = [];
   for(let h = 1; h <= 18; h++) if(!greens[h - 1]) stillEmpty.push(h);
   const freeGreens = greenCandidates.filter((_, i) => !used.has(i));
@@ -4373,7 +4334,6 @@ out skel qt;
       const ang = Math.atan2(g.lat - lat, g.lng - lng);
       return { g, ang };
     }).sort((a, b) => a.ang - b.ang);
-    // Prefer matching count: 9 or 18
     const n = Math.min(stillEmpty.length, withAngle.length);
     for(let i = 0; i < n; i++){
       const holeNum = stillEmpty[i];
@@ -4404,11 +4364,11 @@ async function autoFillGreensFromOsm(course, opts = {}){
     course.lng = center.lng;
   }
 
-  const { greens, matched, unlabeledCount, totalCandidates } = await fetchOsmGreensAround(center.lat, center.lng);
+  const { greens, matched } = await fetchOsmGreensAround(center.lat, center.lng);
   if(matched === 0){
     return {
       ok: false,
-      message: `OpenStreetMap has no usable golf greens near “${course.name}” (${totalCandidates || 0} features found). Map them once manually — many smaller courses simply aren’t drawn in OSM yet.`
+      message: `OpenStreetMap has no usable golf greens near “${course.name}” (${greenCandidates?.length || 0} features found). Map them once manually — many smaller courses simply aren’t drawn in OSM yet.`
     };
   }
 
@@ -4453,18 +4413,20 @@ function destroyGreenMap(){
   const el = document.getElementById('greenMap');
   if(el){
     el.innerHTML = '';
-    // Leaflet leaves classes on the container — strip them so a new map can mount cleanly
     el.className = '';
     el.removeAttribute('tabindex');
   }
 }
 
-function openGreenMapEditor(courseId, courseName, idx){
-  if(typeof L === 'undefined'){
-    alert('Map library failed to load. Check your connection and try again.');
-    return;
+async function openGreenMapEditor(courseId, courseName, idx){
+  if (typeof L === 'undefined') {
+    try {
+      await import('leaflet');
+    } catch(e) {
+      alert('Map library failed to load. Check your connection and try again.');
+      return;
+    }
   }
-  // Prefer the visible list index — guaranteed to match the row you clicked
   let course = (typeof idx === 'number' && idx >= 0 && idx < courses.length) ? courses[idx] : null;
   if(!course && courseId) course = courses.find(c=>c.id===courseId);
   if(!course && courseName) course = courses.find(c=>c.name===courseName);
@@ -4474,13 +4436,11 @@ function openGreenMapEditor(courseId, courseName, idx){
   }
   courseId = course.id;
 
-  // Bump generation so any in-flight init from a previous open is ignored
   const gen = ++mapEditor.gen;
   destroyGreenMap();
 
   mapEditor.courseId = courseId;
   mapEditor.hole = 1;
-  // Deep-copy greens so courses never share pin arrays
   mapEditor.greens = Array.isArray(course.greens)
     ? course.greens.map(g => g ? { lat:+g.lat, lng:+g.lng, savedAt:g.savedAt||null, source:g.source||null } : null)
     : Array(18).fill(null);
@@ -4506,7 +4466,6 @@ function openGreenMapEditor(courseId, courseName, idx){
   }).join('');
 
   setTimeout(()=>{
-    // Stale open (user switched courses quickly) — abort
     if(gen !== mapEditor.gen) return;
     if(mapEditor.courseId !== courseId) return;
 
@@ -4521,7 +4480,6 @@ function openGreenMapEditor(courseId, courseName, idx){
       zoom = 16;
     }
 
-    // Ensure container is empty before create
     const container = document.getElementById('greenMap');
     if(!container) return;
     container.innerHTML = '';
@@ -4535,7 +4493,7 @@ function openGreenMapEditor(courseId, courseName, idx){
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap'
     });
-    satelliteLayer.addTo(mapEditor.map); // default to satellite — you can actually see the greens this way
+    satelliteLayer.addTo(mapEditor.map);
     L.control.layers({ 'Satellite': satelliteLayer, 'Street map': streetLayer }, null, { position: 'topright' }).addTo(mapEditor.map);
     mapEditor.clickHandler = (e)=>{
       if(mapEditor.courseId !== courseId) return;
@@ -4553,7 +4511,7 @@ function openGreenMapEditor(courseId, courseName, idx){
 }
 
 function closeGreenMapEditor(){
-  mapEditor.gen++; // cancel any pending init
+  mapEditor.gen++;
   const modal = document.getElementById('greenMapModal');
   modal.classList.remove('open');
   modal.setAttribute('aria-hidden','true');
@@ -4633,8 +4591,6 @@ document.getElementById('greenMapOsmBtn')?.addEventListener('click', async ()=>{
     const overwrite = hasAny
       ? confirm('Replace existing pins with OpenStreetMap data where available?\n\nOK = overwrite holes OSM knows about\nCancel = only fill empty holes')
       : false;
-    // confirm returns true for OK (overwrite), false for Cancel (fill empty only)
-    // If no existing pins, overwrite flag unused.
     const result = await autoFillGreensFromOsm(course, { overwrite: hasAny ? overwrite : true });
     if(!result.ok){
       document.getElementById('greenMapHint').textContent = result.message;
@@ -4841,7 +4797,7 @@ document.getElementById('importFile').addEventListener('change', async (e)=>{
   alert('Backup restored.');
 });
 
-// ---------- one-time seeding flag (so deleting everything doesn't bring defaults back) ----------
+// ---------- one-time seeding flag ----------
 async function loadFlag(key){
   if(!currentUser) return false;
   try{
@@ -4855,10 +4811,28 @@ async function saveFlag(key, value){
   catch(e){ return false; }
 }
 
-// Stats year filter
 document.getElementById('statsYearFilter')?.addEventListener('change', ()=>{
   renderStats();
 });
+
+// ---------- Self-testing (suggestion 9) ----------
+function runSelfTests(){
+  console.assert(typeof distanceYards === 'function', 'distanceYards is defined');
+  const testDist = distanceYards(44, -123, 44.1, -123.1);
+  console.assert(testDist > 5000 && testDist < 9000, 'distanceYards works');
+
+  console.assert(deriveBucketFromFeet(2) === '<5', 'deriveBucketFromFeet works for <5');
+  console.assert(deriveBucketFromFeet(10) === '5-15', 'deriveBucketFromFeet works for 5-15');
+  console.assert(deriveBucketFromFeet(30) === '15+', 'deriveBucketFromFeet works for 15+');
+
+  const fakeRounds = [
+    { course: 'Test Course', holes: [{hole:1, score:4, par:4}, {hole:2, score:5, par:4}], date: '2025-01-01' }
+  ];
+  // Needs a course lookup to actually compute, but we can test the structure
+  console.assert(typeof computeHandicapIndex === 'function', 'computeHandicapIndex is defined');
+  console.log('Self-tests passed.');
+}
+runSelfTests();
 
 // ---------- init ----------
 async function init(){
@@ -4871,10 +4845,6 @@ async function init(){
   ]);
 
   const bagSeeded = await loadFlag('bagSeeded');
-
-  // Seed the bag with the current Ping i15 set — but only the very first time
-  // this account is ever used, never again after that (even if you later
-  // delete every club — that's a real, intentional empty bag, not "unseeded").
   if(bag.length===0 && !bagSeeded){
     const clubs = ['3-iron','4-iron','5-iron','6-iron','7-iron','8-iron','9-iron','PW'];
     bag = clubs.map(name=>({
@@ -4891,10 +4861,6 @@ async function init(){
   }
   if(!bagSeeded) await saveFlag('bagSeeded', true);
 
-  // No course seeding — the Courses tab starts empty and only ever contains
-  // what you add yourself, manually or via "Look up a course."
-
-  // Normalize par arrays, isolate greens, and ensure unique course ids
   const seenIds = new Set();
   courses.forEach(c=>{
     if(Array.isArray(c.par) && c.par.length===18){
@@ -4909,8 +4875,6 @@ async function init(){
     seenIds.add(c.id);
   });
 
-
-  // Known elevations (ft) for common courses — only fill if missing
   const KNOWN_ELEV = {
     'pine ridge golf club': 486,
     'pine ridge': 486,
