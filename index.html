@@ -861,8 +861,8 @@
       <div class="stat-block">
         <div class="stat-name" style="text-align:center;">Distance to green</div>
         <div style="text-align:center;">
-          <button class="btn outline" id="gpsBtn" type="button">Get distance</button>
-          <button class="btn outline" id="aerialViewBtn" type="button" style="margin-left:6px;">Aerial view</button>
+          <button class="btn outline" id="gpsBtn" type="button" style="min-width:132px;">Get distance</button>
+          <button class="btn outline" id="aerialViewBtn" type="button" style="margin-left:6px;min-width:132px;">Aerial view</button>
           <div id="gpsResult" class="hint" style="margin-top:8px;margin-bottom:8px;"></div>
           <button class="del" id="gpsSaveBtn" type="button">Save my current spot as this hole's green</button>
         </div>
@@ -3042,7 +3042,7 @@ function renderPractice(){
         <div class="title">${escapeHtml(p.focus||'Practice session')}</div>
         ${p.notes?`<div class="notes">${escapeHtml(p.notes)}</div>`:''}
       </div>
-      <div>
+      <div style="text-align:right;">
         <button class="edit-btn" data-id="${p.id}" data-kind="practice-edit" type="button">edit</button>
         <button class="del" data-id="${p.id}" data-kind="practice">delete</button>
       </div>
@@ -3102,7 +3102,7 @@ function renderBag(){
         <div class="meta">${c.shaft?('Shaft: '+escapeHtml(c.shaft)+' · '):''}${c.distance?('Avg '+c.distance+' yds'):'Distance not set'}</div>
         ${c.notes?`<div class="notes">${escapeHtml(c.notes)}</div>`:''}
       </div>
-      <div>
+      <div style="text-align:right;">
         <button class="edit-btn" data-id="${c.id}" data-kind="club-edit" type="button">edit</button>
         <button class="del" data-id="${c.id}" data-kind="club">delete</button>
       </div>
@@ -3205,7 +3205,7 @@ function renderCourses(){
         <div class="meta">Par: ${hasPar?'set':'not set'} · Yardage: ${hasYardage?'set':'not available'} · GPS: ${gpsLabel}</div>
         ${c.notes?`<div class="notes">${escapeHtml(c.notes)}</div>`:''}
       </div>
-      <div>
+      <div style="text-align:right;">
         <button class="edit-btn" data-idx="${idx}" data-id="${c.id}" data-name="${escapeHtml(c.name)}" data-kind="course-map" type="button">map greens</button>
         <button class="edit-btn" data-id="${c.id}" data-kind="course-edit" type="button">edit</button>
         <button class="del" data-id="${c.id}" data-kind="course">delete</button>
@@ -4869,7 +4869,7 @@ function renderNotes(){
         <div class="meta">${n.date}</div>
         <div class="notes" style="margin-top:2px;">${escapeHtml(n.text)}</div>
       </div>
-      <div>
+      <div style="text-align:right;">
         <button class="edit-btn" data-id="${n.id}" data-kind="note-edit" type="button">edit</button>
         <button class="del" data-id="${n.id}" data-kind="note">delete</button>
       </div>
