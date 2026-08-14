@@ -708,6 +708,9 @@
           <button type="button" class="chip" data-puttdist="&lt;5">&lt; 5 ft</button>
           <button type="button" class="chip" data-puttdist="5-15">5-15 ft</button>
           <button type="button" class="chip" data-puttdist="15+">15+ ft</button>
+          <span class="miss-label" style="margin-left:6px;">or exact</span>
+          <input type="number" id="puttDistExact" min="0" max="150" step="1" placeholder="ft"
+                 style="width:56px;text-align:center;padding:6px 4px;">
         </div>
       </div>
 
@@ -880,10 +883,12 @@
       <h2>Putts by distance</h2>
       <div class="hint" style="margin-top:0;">
         Logged from the "1st putt" tag in Play/Rounds — how far your first putt was on
-        each green, whether you got there in regulation or scrambled after a miss.
-        This is the difference between a GIR-and-2-putt from 25 feet (normal — very few
-        golfers make those) and a missed green where a sharp chip left you a tap-in.
-        The distance is what should drive whether a 2-putt feels like a miss or not.
+        each green, whether you got there in regulation or scrambled after a miss. Tap a
+        bucket, or type an exact number of feet and the right bucket gets picked for you
+        automatically. This is the difference between a GIR-and-2-putt from 25 feet
+        (normal — very few golfers make those) and a missed green where a sharp chip left
+        you a tap-in. The distance is what should drive whether a 2-putt feels like a miss
+        or not.
       </div>
       <div id="puttDistBlock"></div>
     </div>
@@ -1140,6 +1145,14 @@ document.getElementById('p-date').value = todayISO();
 document.getElementById('n-date').value = todayISO();
 document.getElementById('pl-date').value = todayISO();
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+
+function deriveBucketFromFeet(ft){
+  if(ft == null || ft === '' || isNaN(ft)) return null;
+  const n = +ft;
+  if(n < 5) return '<5';
+  if(n < 15) return '5-15';
+  return '15+';
+}
 
 function openForm(detailsId){ const el = document.getElementById(detailsId); if(el) el.open = true; }
 function closeForm(detailsId){ const el = document.getElementById(detailsId); if(el) el.open = false; }
@@ -1491,6 +1504,12 @@ function buildScorecardTable(){
   for(let i=10;i<=18;i++) puttDistRow += `<td class="back9"><select class="sc-miss puttdist" data-hole="${i}">${puttDistOpts}</select></td>`;
   puttDistRow += `<td class="total"></td><td class="total"></td></tr>`;
 
+  let puttDistFtRow = '<tr class="detail-row"><td class="rowlabel">1st Putt (ft)</td>';
+  for(let i=1;i<=9;i++) puttDistFtRow += `<td class="front9"><input type="number" class="puttdist-ft" data-hole="${i}" min="0" max="150" style="width:32px;"></td>`;
+  puttDistFtRow += `<td class="total"></td>`;
+  for(let i=10;i<=18;i++) puttDistFtRow += `<td class="back9"><input type="number" class="puttdist-ft" data-hole="${i}" min="0" max="150" style="width:32px;"></td>`;
+  puttDistFtRow += `<td class="total"></td><td class="total"></td></tr>`;
+
   let firMissRow = '<tr class="detail-row"><td class="rowlabel">Tee L/R</td>';
   for(let i=1;i<=9;i++) firMissRow += `<td class="front9"><select class="sc-miss fir-miss" data-hole="${i}">${firMissOpts}</select></td>`;
   firMissRow += `<td class="total"></td>`;
@@ -1521,9 +1540,24 @@ function buildScorecardTable(){
   for(let i=10;i<=18;i++) penaltyRow += `<td class="back9"><input type="checkbox" class="penalty" data-hole="${i}"></td>`;
   penaltyRow += `<td class="total" id="inPenalty">0</td><td class="total" id="totPenalty">0</td></tr>`;
 
-  t.innerHTML = holeHeader + parRow + ydRow + scoreRow + puttsRow + puttDistRow + chipsRow + firRow + girRow + firMissRow + girLatRow + girDepthRow + bunkerRow + penaltyRow;
+  t.innerHTML = holeHeader + parRow + ydRow + scoreRow + puttsRow + puttDistRow + puttDistFtRow + chipsRow + firRow + girRow + firMissRow + girLatRow + girDepthRow + bunkerRow + penaltyRow;
   t.addEventListener('input', recalcScorecard);
   t.addEventListener('change', recalcScorecard);
+  t.addEventListener('input', e=>{
+    const el = e.target;
+    if(!el.classList.contains('puttdist-ft')) return;
+    const hole = el.dataset.hole;
+    const bucket = deriveBucketFromFeet(el.value === '' ? null : +el.value);
+    const sel = document.querySelector(`.puttdist[data-hole="${hole}"]`);
+    if(sel) sel.value = bucket || '';
+  });
+  t.addEventListener('change', e=>{
+    const el = e.target;
+    if(!(el.classList.contains('puttdist') && el.tagName==='SELECT')) return;
+    const hole = el.dataset.hole;
+    const ftEl = document.querySelector(`.puttdist-ft[data-hole="${hole}"]`);
+    if(ftEl) ftEl.value = ''; // manual bucket choice overrides any exact value for that hole
+  });
   recalcScorecard();
 }
 
@@ -1661,13 +1695,15 @@ function readScorecard(){
     const bunkerEl = document.querySelector(`.bunker[data-hole="${i}"]`);
     const penaltyEl = document.querySelector(`.penalty[data-hole="${i}"]`);
     const puttDistEl = document.querySelector(`.puttdist[data-hole="${i}"]`);
+    const puttDistFtEl = document.querySelector(`.puttdist-ft[data-hole="${i}"]`);
     const firMiss = (!fir && firMissEl && firMissEl.value) ? firMissEl.value : null;
     const girMissLat = (!gir && girLatEl && girLatEl.value) ? girLatEl.value : null;
     const girMissDepth = (!gir && girDepthEl && girDepthEl.value) ? girDepthEl.value : null;
     const bunker = !!(bunkerEl && bunkerEl.checked);
     const penalty = !!(penaltyEl && penaltyEl.checked);
     const puttDistance = (puttDistEl && puttDistEl.value) ? puttDistEl.value : null;
-    holes.push({hole:i, par, yardage, score, putts, chips, fir, gir, firMiss, girMissLat, girMissDepth, bunker, penalty, puttDistance});
+    const puttDistanceFt = (puttDistFtEl && puttDistFtEl.value !== '') ? +puttDistFtEl.value : null;
+    holes.push({hole:i, par, yardage, score, putts, chips, fir, gir, firMiss, girMissLat, girMissDepth, bunker, penalty, puttDistance, puttDistanceFt});
   }
   return holes;
 }
@@ -1682,7 +1718,7 @@ function applyHolesPlayedToScorecard(mode){
       const td = el.closest('td');
       if(td) td.classList.toggle('holes-excluded', !inRange);
     });
-    ['fir-miss','gir-lat','gir-depth','puttdist'].forEach(cls=>{
+    ['fir-miss','gir-lat','gir-depth','puttdist','puttdist-ft'].forEach(cls=>{
       const el = document.querySelector(`.${cls}[data-hole="${h}"]`);
       if(!el) return;
       el.disabled = !inRange;
@@ -1718,7 +1754,7 @@ const OGA_BASE = 'https://api.opengolfapi.org';
 let pendingApiCourse = null;
 let currentApiCourseId = null;
 
-let playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, chips:0, fir:false, gir:false, firMiss:null, girMissLat:null, girMissDepth:null, bunker:false, penalty:false, puttDistance:null}));
+let playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, chips:0, fir:false, gir:false, firMiss:null, girMissLat:null, girMissDepth:null, bunker:false, penalty:false, puttDistance:null, puttDistanceFt:null}));
 let currentHole = 0;
 let playRange = {start:0, end:17};
 let restoringPlayDraft = false;
@@ -1782,7 +1818,7 @@ function restorePlayDraftIfAny(){
 document.getElementById('discardPlayDraftBtn')?.addEventListener('click', ()=>{
   if(!confirm('Discard the round in progress? This only clears the unsaved draft — nothing already saved to your history is affected.')) return;
   clearPlayDraft();
-  playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, chips:0, fir:false, gir:false, firMiss:null, girMissLat:null, girMissDepth:null, bunker:false, penalty:false, puttDistance:null}));
+  playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, chips:0, fir:false, gir:false, firMiss:null, girMissLat:null, girMissDepth:null, bunker:false, penalty:false, puttDistance:null, puttDistanceFt:null}));
   currentHole = 0;
   setPlayRange('full');
   document.getElementById('pl-course').value='';
@@ -1802,10 +1838,10 @@ document.getElementById('discardPlayDraftBtn')?.addEventListener('click', ()=>{
 function setPlayRange(mode){
   if(mode==='front'){
     playRange = {start:0, end:8};
-    for(let i=9;i<18;i++){ playHoles[i].score=0; playHoles[i].putts=0; playHoles[i].chips=0; playHoles[i].fir=false; playHoles[i].gir=false; playHoles[i].firMiss=null; playHoles[i].girMissLat=null; playHoles[i].girMissDepth=null; playHoles[i].bunker=false; playHoles[i].penalty=false; playHoles[i].puttDistance=null; }
+    for(let i=9;i<18;i++){ playHoles[i].score=0; playHoles[i].putts=0; playHoles[i].chips=0; playHoles[i].fir=false; playHoles[i].gir=false; playHoles[i].firMiss=null; playHoles[i].girMissLat=null; playHoles[i].girMissDepth=null; playHoles[i].bunker=false; playHoles[i].penalty=false; playHoles[i].puttDistance=null; playHoles[i].puttDistanceFt=null; }
   }else if(mode==='back'){
     playRange = {start:9, end:17};
-    for(let i=0;i<9;i++){ playHoles[i].score=0; playHoles[i].putts=0; playHoles[i].chips=0; playHoles[i].fir=false; playHoles[i].gir=false; playHoles[i].firMiss=null; playHoles[i].girMissLat=null; playHoles[i].girMissDepth=null; playHoles[i].bunker=false; playHoles[i].penalty=false; playHoles[i].puttDistance=null; }
+    for(let i=0;i<9;i++){ playHoles[i].score=0; playHoles[i].putts=0; playHoles[i].chips=0; playHoles[i].fir=false; playHoles[i].gir=false; playHoles[i].firMiss=null; playHoles[i].girMissLat=null; playHoles[i].girMissDepth=null; playHoles[i].bunker=false; playHoles[i].penalty=false; playHoles[i].puttDistance=null; playHoles[i].puttDistanceFt=null; }
   }else{
     playRange = {start:0, end:17};
   }
@@ -1900,6 +1936,10 @@ function renderPlayHole(){
   document.querySelectorAll('#puttDistRow .chip').forEach(btn=>{
     btn.classList.toggle('on', h.puttDistance === btn.dataset.puttdist);
   });
+  const puttDistExactEl = document.getElementById('puttDistExact');
+  if(puttDistExactEl && document.activeElement !== puttDistExactEl){
+    puttDistExactEl.value = (h.puttDistanceFt != null) ? h.puttDistanceFt : '';
+  }
 
   document.getElementById('playPrev').disabled = (currentHole===playRange.start);
   document.getElementById('playNext').disabled = (currentHole===playRange.end);
@@ -1995,7 +2035,23 @@ document.getElementById('puttDistRow')?.addEventListener('click', e=>{
   const h = playHoles[currentHole];
   const val = chip.dataset.puttdist;
   h.puttDistance = (h.puttDistance === val) ? null : val;
+  h.puttDistanceFt = null; // manual bucket choice overrides any earlier exact value
   renderPlayHole();
+});
+document.getElementById('puttDistExact')?.addEventListener('input', e=>{
+  const h = playHoles[currentHole];
+  const raw = e.target.value;
+  if(raw === ''){
+    h.puttDistanceFt = null;
+    return;
+  }
+  const ft = +raw;
+  if(isNaN(ft)) return;
+  h.puttDistanceFt = ft;
+  h.puttDistance = deriveBucketFromFeet(ft);
+  document.querySelectorAll('#puttDistRow .chip').forEach(btn=>{
+    btn.classList.toggle('on', h.puttDistance === btn.dataset.puttdist);
+  });
 });
 document.getElementById('playPrev').addEventListener('click', ()=>{
   if(currentHole>playRange.start){ currentHole--; renderPlayHole(); }
@@ -2015,7 +2071,7 @@ document.getElementById('finishRoundBtn').addEventListener('click', async ()=>{
     document.getElementById('pl-holesplayed').value
   );
   // reset play state for next round
-  playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, chips:0, fir:false, gir:false, firMiss:null, girMissLat:null, girMissDepth:null, bunker:false, penalty:false, puttDistance:null}));
+  playHoles = Array.from({length:18}, (_,i)=>({hole:i+1, par:4, score:4, putts:2, chips:0, fir:false, gir:false, firMiss:null, girMissLat:null, girMissDepth:null, bunker:false, penalty:false, puttDistance:null, puttDistanceFt:null}));
   document.getElementById('pl-holesplayed').value = 'full';
   setPlayRange('full');
   document.getElementById('pl-course').value='';
@@ -2101,6 +2157,8 @@ function startEditRound(round){
     if(penaltyEl) penaltyEl.checked = !!h.penalty;
     const puttDistEl = document.querySelector(`.puttdist[data-hole="${h.hole}"]`);
     if(puttDistEl) puttDistEl.value = h.puttDistance || '';
+    const puttDistFtEl = document.querySelector(`.puttdist-ft[data-hole="${h.hole}"]`);
+    if(puttDistFtEl) puttDistFtEl.value = (h.puttDistanceFt != null) ? h.puttDistanceFt : '';
   });
   applyHolesPlayedToScorecard(round.holesPlayed || 'full');
   document.getElementById('r-notes').value = round.notes || '';
@@ -2515,6 +2573,7 @@ function renderPuttDistanceStats(withScores){
   if(!block) return;
   const buckets = { '<5': {n:0, onePutt:0, sumPutts:0}, '5-15': {n:0, onePutt:0, sumPutts:0}, '15+': {n:0, onePutt:0, sumPutts:0} };
   let missedGirWithDist = 0, missedGirClose = 0, missedGirCloseSaved = 0;
+  let madeFt=[], missedFt=[];
 
   withScores.forEach(r=>r.holes.forEach(h=>{
     if(h.score<=0 || !h.puttDistance || !buckets[h.puttDistance]) return;
@@ -2528,6 +2587,10 @@ function renderPuttDistanceStats(withScores){
         missedGirClose++;
         if(h.putts===1) missedGirCloseSaved++;
       }
+    }
+    if(h.puttDistanceFt != null && h.putts>0){
+      if(h.putts===1) madeFt.push(h.puttDistanceFt);
+      else missedFt.push(h.puttDistanceFt);
     }
   }));
 
@@ -2561,7 +2624,15 @@ function renderPuttDistanceStats(withScores){
     scrambleLine += '</p>';
   }
 
-  block.innerHTML = `<div class="partype-row">${rows}</div>${scrambleLine}`;
+  let exactLine = '';
+  if(madeFt.length + missedFt.length >= 8){
+    const avgMade = madeFt.length ? (madeFt.reduce((s,v)=>s+v,0)/madeFt.length) : null;
+    const avgMissed = missedFt.length ? (missedFt.reduce((s,v)=>s+v,0)/missedFt.length) : null;
+    exactLine = `<p style="font-size:13.5px;margin:8px 0 0;">From exact distances logged: you make putts averaging <strong>${avgMade==null?'—':avgMade.toFixed(0)+' ft'}</strong>` +
+      `${avgMissed!=null ? ` and miss putts averaging <strong>${avgMissed.toFixed(0)} ft</strong>` : ''} — a rough read on your effective range.</p>`;
+  }
+
+  block.innerHTML = `<div class="partype-row">${rows}</div>${scrambleLine}${exactLine}`;
 }
 
 function renderStats(){
