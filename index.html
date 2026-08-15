@@ -1528,11 +1528,23 @@ function applyTeeYardages(course, teeColor, target){
 }
 
 function populatePresetDropdown(){
+  const presetMap = getCoursePresetMap();
+  const playCounts = {};
+  rounds.forEach(r=>{
+    const n = (r.course || '').trim().toLowerCase();
+    if(n) playCounts[n] = (playCounts[n] || 0) + 1;
+  });
+  // Most-played first, alphabetical as the tiebreak (and for everything never played)
+  const names = Object.keys(presetMap).sort((a, b)=>{
+    const diff = (playCounts[b.trim().toLowerCase()] || 0) - (playCounts[a.trim().toLowerCase()] || 0);
+    if(diff !== 0) return diff;
+    return a.localeCompare(b, undefined, {sensitivity: 'base'});
+  });
   ['r-preset','pl-preset'].forEach(id=>{
     const sel = document.getElementById(id);
     const current = sel.value;
     while(sel.options.length>1) sel.remove(1);
-    Object.keys(getCoursePresetMap()).forEach(name=>{
+    names.forEach(name=>{
       const opt = document.createElement('option');
       opt.value = name; opt.textContent = name;
       sel.appendChild(opt);
@@ -3191,7 +3203,10 @@ function renderCourses(){
   if(courses.length===0){ list.innerHTML = '<div class="empty">No course notes yet.</div>'; return; }
   const nameCounts = {};
   courses.forEach(c=>{ const n=c.name.trim().toLowerCase(); nameCounts[n]=(nameCounts[n]||0)+1; });
-  list.innerHTML = courses.map((c, idx)=>{
+  const ordered = courses
+    .map((c, idx)=>({ c, idx }))
+    .sort((a, b)=> a.c.name.localeCompare(b.c.name, undefined, {sensitivity:'base'}));
+  list.innerHTML = ordered.map(({c, idx})=>{
     const hasPar = Array.isArray(c.par) && c.par.length===18;
     const hasYardage = Array.isArray(c.yardage) && c.yardage.some(y=>y);
     const apiGps = !!c.apiCourseId;
