@@ -610,6 +610,21 @@
     cursor:pointer;
     white-space:nowrap;
   }
+
+  .avatar-badge{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    border-radius:50%;
+    font-family:'IBM Plex Mono',monospace;
+    font-weight:700;
+    color:#fff;
+    flex-shrink:0;
+    user-select:none;
+    width:26px;
+    height:26px;
+    font-size:11px;
+  }
 </style>
 <base target="_blank">
 </head>
@@ -810,7 +825,10 @@
       <div class="today" id="todayDate"></div>
       <div id="accountRow" style="display:none;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--turf);margin-top:4px;">
         <div id="syncStatus" style="font-size:10px;opacity:0.8;margin-bottom:2px;min-height:14px;text-align:left;"></div>
-        <span id="accountEmail"></span> · <button id="openBackupBtn" class="del" type="button" style="padding:0;">backup</button> · <button id="signOutBtn" class="del" type="button" style="padding:0;">sign out</button>
+        <div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap;">
+          <span id="accountEmail"></span> · <button id="openBackupBtn" class="del" type="button" style="padding:0;">backup</button> · <button id="signOutBtn" class="del" type="button" style="padding:0;">sign out</button>
+          <div id="headerAvatarBadge" class="avatar-badge" style="cursor:pointer;" title="Profile"></div>
+        </div>
       </div>
     </div>
   </header>
@@ -822,6 +840,7 @@
     <button data-tab="practice"><span class="peg">3</span>Practice</button>
     <button data-tab="bag"><span class="peg">4</span>Bag</button>
     <button data-tab="courses"><span class="peg">5</span>Courses</button>
+    <button data-tab="profile"><span class="peg">6</span>Profile</button>
   </nav>
 
   <!-- PLAY (on-course, one hole at a time) -->
@@ -1238,6 +1257,31 @@
     </div>
   </section>
 
+  <!-- PROFILE -->
+  <section id="tab-profile">
+    <div class="card">
+      <h2>Your profile</h2>
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;">
+        <div id="profileAvatarPreview" class="avatar-badge" style="width:56px;height:56px;font-size:20px;"></div>
+        <div class="hint" style="margin:0;">Your avatar is generated from your name — no photo upload needed.</div>
+      </div>
+      <div class="field"><label>Name</label><input type="text" id="profile-name" placeholder="e.g. Ryan M." maxlength="40"></div>
+      <div class="field"><label>Location</label><input type="text" id="profile-location" placeholder="e.g. Springfield, OR" maxlength="60"></div>
+      <button class="btn" id="saveProfileBtn" type="button">Save profile</button>
+      <span id="profileSaveStatus" style="margin-left:10px;font-size:12px;color:var(--turf);font-family:'IBM Plex Mono',monospace;"></span>
+    </div>
+    <div class="card">
+      <h2>Friends</h2>
+      <p class="hint" style="margin-top:0;">Add a friend by the email they use to sign in. They'll need to have opened the app and saved a profile at least once so you can find them.</p>
+      <div class="grid2">
+        <div class="field"><label>Friend's email</label><input type="text" id="friend-email" placeholder="e.g. jordan@email.com"></div>
+      </div>
+      <button class="btn" id="addFriendBtn" type="button">Add friend</button>
+      <span id="friendAddStatus" style="margin-left:10px;font-size:12px;color:var(--turf);font-family:'IBM Plex Mono',monospace;"></span>
+      <div id="friendsList" style="margin-top:16px;"></div>
+    </div>
+  </section>
+
   <!-- BACKUP moved to header trigger — modal defined near the top with the other modals -->
 
 </div>
@@ -1254,7 +1298,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut,
   signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc }
+import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -1394,6 +1438,8 @@ onAuthStateChanged(auth, async user=>{
   }else{
     currentUser = null;
     initializedForUid = null;
+    currentProfile = { name: '', location: '' };
+    currentFriends = [];
     showAuthGate(true);
     document.getElementById('accountRow').style.display = 'none';
   }
@@ -4152,6 +4198,166 @@ document.getElementById('backupModal').addEventListener('click', e=>{
   if(e.target.id === 'backupModal') closeBackupModal();
 });
 
+// ---------- Profile & Friends ----------
+let currentProfile = { name: '', location: '' };
+let currentFriends = [];
+
+function initialsFromName(name){
+  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
+  if(parts.length === 0) return '?';
+  if(parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+function avatarColorFromName(name){
+  const palette = ['#1F3A2E', '#3F6B4A', '#A4402F', '#8FA89A', '#C7A876', '#33312C'];
+  const str = (name || '').trim().toLowerCase() || 'golfer';
+  let hash = 0;
+  for(let i = 0; i < str.length; i++){ hash = (hash * 31 + str.charCodeAt(i)) >>> 0; }
+  return palette[hash % palette.length];
+}
+function renderAvatarBadge(el, name){
+  if(!el) return;
+  el.textContent = initialsFromName(name);
+  el.style.background = avatarColorFromName(name);
+}
+function renderHeaderAvatar(){
+  const label = currentProfile.name || (currentUser && currentUser.email) || '';
+  renderAvatarBadge(document.getElementById('headerAvatarBadge'), label);
+}
+document.getElementById('headerAvatarBadge')?.addEventListener('click', ()=>{
+  document.querySelector('nav button[data-tab="profile"]')?.click();
+});
+
+async function loadProfile(){
+  if(!currentUser) return { name: '', location: '' };
+  try{
+    const snap = await getDoc(doc(db, 'users', currentUser.uid, 'meta', 'profile'));
+    return snap.exists() ? { name: snap.data().name || '', location: snap.data().location || '' } : { name: '', location: '' };
+  }catch(e){ return { name: '', location: '' }; }
+}
+async function saveProfile(profile){
+  if(!currentUser) return false;
+  try{
+    await setDoc(doc(db, 'users', currentUser.uid, 'meta', 'profile'), {
+      name: profile.name || '', location: profile.location || '', updatedAt: Date.now()
+    });
+    await syncDirectoryEntry();
+    return true;
+  }catch(e){ return false; }
+}
+function renderProfileTab(){
+  const nameEl = document.getElementById('profile-name');
+  const locEl = document.getElementById('profile-location');
+  if(nameEl) nameEl.value = currentProfile.name;
+  if(locEl) locEl.value = currentProfile.location;
+  renderAvatarBadge(document.getElementById('profileAvatarPreview'), currentProfile.name || (currentUser && currentUser.email) || '');
+}
+document.getElementById('profile-name')?.addEventListener('input', e=>{
+  renderAvatarBadge(document.getElementById('profileAvatarPreview'), e.target.value || (currentUser && currentUser.email) || '');
+});
+document.getElementById('saveProfileBtn')?.addEventListener('click', async ()=>{
+  const name = document.getElementById('profile-name').value.trim();
+  const location = document.getElementById('profile-location').value.trim();
+  const status = document.getElementById('profileSaveStatus');
+  status.textContent = 'Saving...';
+  const ok = await saveProfile({ name, location });
+  if(ok) currentProfile = { name, location };
+  renderHeaderAvatar();
+  status.textContent = ok ? 'Saved.' : 'Could not save — check connection.';
+  setTimeout(()=>{ status.textContent = ''; }, 2500);
+});
+
+// The "directory" collection is a small public index (email -> uid/name) so a friend
+// can be found by email without needing Firebase Admin access. Every user writes only
+// their own entry; anyone signed in can read entries to look someone up.
+async function syncDirectoryEntry(){
+  if(!currentUser || !currentUser.email) return;
+  try{
+    const emailKey = currentUser.email.trim().toLowerCase();
+    await setDoc(doc(db, 'directory', emailKey), {
+      uid: currentUser.uid,
+      name: currentProfile.name || '',
+      updatedAt: Date.now()
+    });
+  }catch(e){ /* non-fatal — friend lookups just won't find this user yet */ }
+}
+async function loadFriends(){
+  if(!currentUser) return [];
+  try{
+    const snap = await getDocs(collection(db, 'users', currentUser.uid, 'friends'));
+    const list = [];
+    snap.forEach(d=> list.push({ uid: d.id, ...d.data() }));
+    list.sort((a, b)=> (a.name || a.email).localeCompare(b.name || b.email, undefined, {sensitivity:'base'}));
+    return list;
+  }catch(e){ return []; }
+}
+function renderFriendsList(){
+  const el = document.getElementById('friendsList');
+  if(!el) return;
+  if(currentFriends.length === 0){
+    el.innerHTML = '<div class="empty">No friends added yet.</div>';
+    return;
+  }
+  el.innerHTML = currentFriends.map(f=>{
+    const label = f.name || f.email;
+    return `
+    <div class="round-item">
+      <div style="flex:1;display:flex;align-items:center;gap:10px;">
+        <div class="avatar-badge" style="background:${avatarColorFromName(label)};">${escapeHtml(initialsFromName(label))}</div>
+        <div>
+          <div class="title">${escapeHtml(f.name || f.email)}</div>
+          ${f.name ? `<div class="meta">${escapeHtml(f.email)}</div>` : ''}
+        </div>
+      </div>
+      <button class="del" data-uid="${f.uid}" data-kind="friend" type="button">remove</button>
+    </div>`;
+  }).join('');
+}
+document.getElementById('friendsList')?.addEventListener('click', async e=>{
+  const btn = e.target.closest('button[data-kind="friend"]');
+  if(!btn) return;
+  const friendUid = btn.dataset.uid;
+  if(!confirm('Remove this friend?')) return;
+  try{
+    await deleteDoc(doc(db, 'users', currentUser.uid, 'friends', friendUid));
+    currentFriends = currentFriends.filter(f=> f.uid !== friendUid);
+    renderFriendsList();
+  }catch(e){ alert('Could not remove friend — check your connection and try again.'); }
+});
+document.getElementById('addFriendBtn')?.addEventListener('click', async ()=>{
+  const input = document.getElementById('friend-email');
+  const status = document.getElementById('friendAddStatus');
+  const email = (input.value || '').trim().toLowerCase();
+  if(!email){ status.textContent = 'Enter an email first.'; return; }
+  if(currentUser && email === (currentUser.email || '').trim().toLowerCase()){
+    status.textContent = "That's your own email.";
+    return;
+  }
+  if(currentFriends.some(f=> (f.email || '').toLowerCase() === email)){
+    status.textContent = 'Already a friend.';
+    return;
+  }
+  status.textContent = 'Looking up...';
+  try{
+    const dirSnap = await getDoc(doc(db, 'directory', email));
+    if(!dirSnap.exists()){
+      status.textContent = "No one's found with that email yet — they need to open the app and save a profile first.";
+      return;
+    }
+    const info = dirSnap.data();
+    await setDoc(doc(db, 'users', currentUser.uid, 'friends', info.uid), {
+      email, name: info.name || '', addedAt: Date.now()
+    });
+    currentFriends = await loadFriends();
+    renderFriendsList();
+    input.value = '';
+    status.textContent = 'Added.';
+  }catch(e){
+    status.textContent = 'Could not add friend — check your connection and try again.';
+  }
+  setTimeout(()=>{ status.textContent = ''; }, 4000);
+});
+
 function parseCsvNumbers(str, expectedLen){
   const trimmed = (str||'').trim();
   if(!trimmed) return null;
@@ -5096,6 +5302,11 @@ async function init(){
   buildScorecardTable();
   restorePlayDraftIfAny();
   renderPlayHole();
+  currentProfile = await loadProfile();
+  renderHeaderAvatar();
+  renderProfileTab();
+  syncDirectoryEntry();
+  loadFriends().then(list=>{ currentFriends = list; renderFriendsList(); });
   [rounds, practice, bag, courses, notes] = await Promise.all([
     loadList('rounds'), loadList('practice'), loadList('bag'), loadList('courses'), loadList('notes')
   ]);
