@@ -4156,8 +4156,6 @@ document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
     else extra.yardage = ydResult.values;
   }
 
-  const wasApiCourse = pendingApiCourse && pendingApiCourse.apiCourseId;
-
   if(editingCourseId){
     const idx = courses.findIndex(c=>c.id===editingCourseId);
     if(idx>=0){
@@ -4188,8 +4186,8 @@ document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
 
   await saveList('courses', courses);
 
-  // Auto-map greens from OSM for brand-new API courses
-  if(!editingCourseId && wasApiCourse){
+  // Auto-map greens from OSM for every brand-new course (API-sourced or manually entered)
+  if(!editingCourseId){
     const savedCourse = courses[courses.length - 1];
     const hasGreens = Array.isArray(savedCourse.greens) && savedCourse.greens.some(Boolean);
     if(!hasGreens){
