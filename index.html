@@ -7,6 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Adairway Golf">
+<meta name="app-version" content="2026-08-15.1">
 <title>Adairway Golf</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -577,10 +578,89 @@
     #aerialMap.rf-map{height:min(62vh, calc(100vh - 220px));border-radius:0;}
     .map-modal-body{padding:8px 10px 12px;}
   }
+
+  #updateBanner{
+    display:none;
+    position:fixed;
+    left:0; right:0; bottom:0;
+    z-index:9999;
+    background:var(--fairway-deep);
+    color:#fff;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12.5px;
+    letter-spacing:0.02em;
+    padding:12px 16px;
+    padding-bottom:calc(12px + env(safe-area-inset-bottom));
+    display:none;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    box-shadow:0 -2px 12px rgba(0,0,0,0.25);
+  }
+  #updateBanner.show{ display:flex; }
+  #updateBanner button{
+    background:#fff;
+    color:var(--fairway-deep);
+    border:none;
+    border-radius:4px;
+    padding:8px 14px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    font-weight:600;
+    cursor:pointer;
+    white-space:nowrap;
+  }
 </style>
 <base target="_blank">
 </head>
 <body>
+
+<div id="updateBanner">
+  <span>A new version of Adairway Golf is available.</span>
+  <button id="updateBannerBtn" type="button">Refresh</button>
+</div>
+<script>
+(function(){
+  var CURRENT_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '';
+  var CHECK_DELAY_MS = 2000;
+  var MIN_RECHECK_GAP_MS = 60000;
+  var lastCheck = 0;
+
+  function showBanner(){
+    var el = document.getElementById('updateBanner');
+    if(el) el.classList.add('show');
+  }
+
+  function checkForUpdate(){
+    var now = Date.now();
+    if(now - lastCheck < MIN_RECHECK_GAP_MS) return;
+    lastCheck = now;
+    fetch(location.pathname + '?_=' + now, { cache: 'no-store' })
+      .then(function(res){ return res.ok ? res.text() : null; })
+      .then(function(html){
+        if(!html) return;
+        var match = html.match(/<meta\s+name=["']app-version["']\s+content=["']([^"']+)["']/i);
+        var remoteVersion = match ? match[1] : null;
+        if(remoteVersion && CURRENT_VERSION && remoteVersion !== CURRENT_VERSION){
+          showBanner();
+        }
+      })
+      .catch(function(){ /* offline or blocked — ignore, will try again later */ });
+  }
+
+  var btn = document.getElementById('updateBannerBtn');
+  if(btn){
+    btn.addEventListener('click', function(){
+      location.href = location.pathname + '?_=' + Date.now();
+    });
+  }
+
+  setTimeout(checkForUpdate, CHECK_DELAY_MS);
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState === 'visible') checkForUpdate();
+  });
+})();
+</script>
 
 <div id="authGate" class="auth-gate">
   <div class="auth-box">
@@ -742,7 +822,6 @@
     <button data-tab="practice"><span class="peg">3</span>Practice</button>
     <button data-tab="bag"><span class="peg">4</span>Bag</button>
     <button data-tab="courses"><span class="peg">5</span>Courses</button>
-    <button data-tab="notes"><span class="peg">6</span>Notes</button>
   </nav>
 
   <!-- PLAY (on-course, one hole at a time) -->
@@ -1071,6 +1150,21 @@
       <h2>Practice history</h2>
       <div id="practiceList"></div>
     </div>
+    <div class="card">
+      <details class="form-toggle" id="noteFormDetails">
+        <summary><span class="marker"></span>Journal entry</summary>
+        <div class="form-body">
+          <div class="field"><label>Date</label><input type="date" id="n-date"></div>
+          <div class="field"><label>Thought</label><textarea id="n-text" placeholder="Anything — a swing thought, gear decision, mental game note, goal for the season..."></textarea></div>
+          <button class="btn" id="saveNoteBtn">Add entry</button>
+          <button class="btn outline" id="cancelEditNoteBtn" type="button" style="display:none;margin-left:8px;">Cancel edit</button>
+        </div>
+      </details>
+    </div>
+    <div class="card">
+      <h2>Journal</h2>
+      <div id="notesList"></div>
+    </div>
   </section>
 
   <!-- BAG -->
@@ -1141,25 +1235,6 @@
     <div class="card">
       <h2>Course book</h2>
       <div id="coursesList"></div>
-    </div>
-  </section>
-
-  <!-- NOTES -->
-  <section id="tab-notes">
-    <div class="card">
-      <details class="form-toggle" id="noteFormDetails">
-        <summary><span class="marker"></span>Journal entry</summary>
-        <div class="form-body">
-          <div class="field"><label>Date</label><input type="date" id="n-date"></div>
-          <div class="field"><label>Thought</label><textarea id="n-text" placeholder="Anything — a swing thought, gear decision, mental game note, goal for the season..."></textarea></div>
-          <button class="btn" id="saveNoteBtn">Add entry</button>
-          <button class="btn outline" id="cancelEditNoteBtn" type="button" style="display:none;margin-left:8px;">Cancel edit</button>
-        </div>
-      </details>
-    </div>
-    <div class="card">
-      <h2>Journal</h2>
-      <div id="notesList"></div>
     </div>
   </section>
 
