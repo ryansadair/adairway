@@ -940,17 +940,20 @@
       <details class="form-toggle" id="playFormDetails" open>
         <summary><span class="marker"></span>Playing now</summary>
         <div class="form-body">
-          <div class="preset-row">
-            <div class="field">
-              <label>Quick-load a course (fills in par)</label>
-              <select id="pl-preset">
-                <option value="">— Select a saved course —</option>
-              </select>
-            </div>
+          <div class="field">
+            <label>Course</label>
+            <select id="pl-preset">
+              <option value="">— Select a course —</option>
+            </select>
+            <p class="hint" id="pl-noCoursesHint" style="display:none;margin:8px 0 0;">
+              No courses yet. Add one on the
+              <button type="button" class="del" id="pl-goCoursesBtn" style="padding:0;font-size:inherit;vertical-align:baseline;">Courses</button>
+              tab (with par), then pick it here to play.
+            </p>
+            <input type="hidden" id="pl-course" value="">
           </div>
-          <div class="grid3">
+          <div class="grid2">
             <div class="field"><label>Date</label><input type="date" id="pl-date"></div>
-            <div class="field"><label>Course</label><input type="text" id="pl-course" placeholder="e.g. Pine Ridge Golf Club"></div>
             <div class="field"><label>Tees</label>
               <select id="pl-tees"><option value="">— Tees —</option></select>
             </div>
@@ -1068,17 +1071,20 @@
       <details class="form-toggle" id="roundFormDetails">
         <summary><span class="marker"></span>New round <small id="roundSavePill" class="savepill">saved</small></summary>
         <div class="form-body">
-          <div class="preset-row">
-            <div class="field">
-              <label>Quick-load a course (fills in par)</label>
-              <select id="r-preset">
-                <option value="">— Select a saved course —</option>
-              </select>
-            </div>
+          <div class="field">
+            <label>Course</label>
+            <select id="r-preset">
+              <option value="">— Select a course —</option>
+            </select>
+            <p class="hint" id="r-noCoursesHint" style="display:none;margin:8px 0 0;">
+              No courses yet. Add one on the
+              <button type="button" class="del" id="r-goCoursesBtn" style="padding:0;font-size:inherit;vertical-align:baseline;">Courses</button>
+              tab (with par), then pick it here to log a round.
+            </p>
+            <input type="hidden" id="r-course" value="">
           </div>
-          <div class="grid3">
+          <div class="grid2">
             <div class="field"><label>Date</label><input type="date" id="r-date"></div>
-            <div class="field"><label>Course</label><input type="text" id="r-course" placeholder="e.g. Pine Ridge Golf Club"></div>
             <div class="field"><label>Tees</label>
               <select id="r-tees"><option value="">— Tees —</option></select>
             </div>
@@ -1092,7 +1098,7 @@
             </select>
           </div>
           <div id="r-courseHandicap" class="hint" style="margin-top:-2px;margin-bottom:12px;"></div>
-          <div class="hint">Par row auto-loads from your preset. Fairway hit checkboxes disable on par-3s (driving accuracy isn't scored there). If you only played 9, pick that above — the other 9 will grey out so they don't count toward your stats or handicap.</div>
+          <div class="hint">Par and yardage load from the course you pick. Fairway hit checkboxes disable on par-3s. If you only played 9, pick that above — the other 9 will grey out so they don't count toward stats or handicap.</div>
           <div class="course-label" id="roundCourseLabel"></div>
           <div class="scorecard">
             <table class="sc" id="scorecardTable"></table>
@@ -1790,56 +1796,134 @@ function applyTeeYardages(course, teeColor, target){
   }
 }
 
+function getRecentCourseNames(limit = 3){
+  // Most recently played unique course names (by round date, newest first)
+  const seen = new Set();
+  const recent = [];
+  const sorted = [...rounds].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  for(const r of sorted){
+    const name = (r.course || '').trim();
+    if(!name) continue;
+    const key = name.toLowerCase();
+    if(seen.has(key)) continue;
+    seen.add(key);
+    recent.push(name);
+    if(recent.length >= limit) break;
+  }
+  return recent;
+}
+
 function populatePresetDropdown(){
   const presetMap = getCoursePresetMap();
-  const playCounts = {};
-  rounds.forEach(r=>{
-    const n = (r.course || '').trim().toLowerCase();
-    if(n) playCounts[n] = (playCounts[n] || 0) + 1;
-  });
-  // Most-played first, alphabetical as the tiebreak (and for everything never played)
-  const names = Object.keys(presetMap).sort((a, b)=>{
-    const diff = (playCounts[b.trim().toLowerCase()] || 0) - (playCounts[a.trim().toLowerCase()] || 0);
-    if(diff !== 0) return diff;
-    return a.localeCompare(b, undefined, {sensitivity: 'base'});
-  });
-  ['r-preset','pl-preset'].forEach(id=>{
+  const allNames = Object.keys(presetMap).sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: 'base' })
+  );
+  // Recent only among courses that are actually in the preset map (have par)
+  const recentRaw = getRecentCourseNames(3);
+  const recentNames = recentRaw.filter(n =>
+    allNames.some(a => a.toLowerCase() === n.toLowerCase())
+  ).map(n => allNames.find(a => a.toLowerCase() === n.toLowerCase()) || n);
+
+  ['r-preset', 'pl-preset'].forEach(id => {
     const sel = document.getElementById(id);
+    if(!sel) return;
     const current = sel.value;
-    while(sel.options.length>1) sel.remove(1);
-    names.forEach(name=>{
-      const opt = document.createElement('option');
-      opt.value = name; opt.textContent = name;
-      sel.appendChild(opt);
-    });
-    if([...sel.options].some(o=>o.value===current)) sel.value = current;
+    sel.innerHTML = '';
+
+    const ph = document.createElement('option');
+    ph.value = '';
+    ph.textContent = allNames.length ? '— Select a course —' : '— No courses yet —';
+    sel.appendChild(ph);
+
+    if(recentNames.length){
+      const og = document.createElement('optgroup');
+      og.label = 'Most recent';
+      recentNames.forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        og.appendChild(opt);
+      });
+      sel.appendChild(og);
+    }
+
+    if(allNames.length){
+      const ogAll = document.createElement('optgroup');
+      ogAll.label = 'All courses';
+      allNames.forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        ogAll.appendChild(opt);
+      });
+      sel.appendChild(ogAll);
+    }
+
+    if([...sel.options].some(o => o.value === current)) sel.value = current;
   });
+
+  // Empty-state hints
+  const showHint = allNames.length === 0;
+  const plHint = document.getElementById('pl-noCoursesHint');
+  const rHint = document.getElementById('r-noCoursesHint');
+  if(plHint) plHint.style.display = showHint ? '' : 'none';
+  if(rHint) rHint.style.display = showHint ? '' : 'none';
+  const plSel = document.getElementById('pl-preset');
+  const rSel = document.getElementById('r-preset');
+  if(plSel) plSel.disabled = showHint;
+  if(rSel) rSel.disabled = showHint;
 }
-document.getElementById('r-preset').addEventListener('change', e=>{
-  const name = e.target.value;
-  if(!name) return;
-  document.getElementById('r-course').value = name;
+
+function applyCourseSelection(prefix, name){
+  const courseEl = document.getElementById(prefix + '-course');
+  if(courseEl) courseEl.value = name || '';
+  if(!name){
+    populateTeeSelect(prefix + '-tees', null, '');
+    updateCourseHandicapDisplay(prefix);
+    if(prefix === 'pl') updateGpsAvailability();
+    return;
+  }
   const course = findCourseByName(name);
   const preset = getCoursePresetMap()[name];
-  populateTeeSelect('r-tees', course || preset, (course||preset)?.preferredTee);
-  if(preset && preset.par){
-    preset.par.forEach((p,i)=>{
-      const el = document.querySelector(`.par[data-hole="${i+1}"]`);
-      if(el) el.value = p;
-    });
-    const tee = selectedTeeMeta('r-tees');
-    if(tee?.color && course) applyTeeYardages(course, tee.color, 'rounds');
-    else {
-      for(let i=1;i<=18;i++){
-        const el = document.querySelector(`.yardage[data-hole="${i}"]`);
-        if(!el) continue;
-        const y = Array.isArray(preset.yardage) ? preset.yardage[i-1] : null;
-        el.value = (y != null && y > 0) ? y : '';
+  populateTeeSelect(prefix + '-tees', course || preset, (course || preset)?.preferredTee);
+  if(prefix === 'r'){
+    if(preset && preset.par){
+      preset.par.forEach((p, i) => {
+        const el = document.querySelector(`.par[data-hole="${i + 1}"]`);
+        if(el) el.value = p;
+      });
+      const tee = selectedTeeMeta('r-tees');
+      if(tee?.color && course) applyTeeYardages(course, tee.color, 'rounds');
+      else {
+        for(let i = 1; i <= 18; i++){
+          const el = document.querySelector(`.yardage[data-hole="${i}"]`);
+          if(!el) continue;
+          const y = Array.isArray(preset.yardage) ? preset.yardage[i - 1] : null;
+          el.value = (y != null && y > 0) ? y : '';
+        }
       }
+      recalcScorecard();
     }
-    recalcScorecard();
+    updateCourseHandicapDisplay('r');
+  } else {
+    if(preset && preset.par){
+      preset.par.forEach((p, i) => { playHoles[i].par = p; playHoles[i].score = p; });
+    }
+    const tee = selectedTeeMeta('pl-tees');
+    if(course && tee?.color) applyTeeYardages(course, tee.color, 'play');
+    else if(preset && Array.isArray(preset.yardage)){
+      preset.yardage.forEach((y, i) => { playHoles[i].yardage = y || null; });
+    } else {
+      playHoles.forEach(h => { h.yardage = null; });
+    }
+    renderPlayHole();
+    updateGpsAvailability();
+    updateCourseHandicapDisplay('pl');
   }
-  updateCourseHandicapDisplay('r');
+}
+
+document.getElementById('r-preset').addEventListener('change', e=>{
+  applyCourseSelection('r', e.target.value);
 });
 document.getElementById('r-tees')?.addEventListener('change', ()=>{
   const name = document.getElementById('r-course').value;
@@ -1848,31 +1932,8 @@ document.getElementById('r-tees')?.addEventListener('change', ()=>{
   if(course && tee?.color) applyTeeYardages(course, tee.color, 'rounds');
   updateCourseHandicapDisplay('r');
 });
-document.getElementById('r-course')?.addEventListener('change', ()=>{
-  const name = document.getElementById('r-course').value;
-  const course = findCourseByName(name);
-  if(course) populateTeeSelect('r-tees', course, course.preferredTee);
-  updateCourseHandicapDisplay('r');
-});
 document.getElementById('pl-preset').addEventListener('change', e=>{
-  const name = e.target.value;
-  if(!name) return;
-  document.getElementById('pl-course').value = name;
-  const course = findCourseByName(name);
-  const preset = getCoursePresetMap()[name];
-  populateTeeSelect('pl-tees', course || preset, (course||preset)?.preferredTee);
-  if(preset && preset.par){
-    preset.par.forEach((p,i)=>{ playHoles[i].par = p; playHoles[i].score = p; });
-  }
-  const tee = selectedTeeMeta('pl-tees');
-  if(course && tee?.color) applyTeeYardages(course, tee.color, 'play');
-  else if(preset && Array.isArray(preset.yardage)){
-    preset.yardage.forEach((y,i)=>{ playHoles[i].yardage = y || null; });
-  } else {
-    playHoles.forEach(h=>{ h.yardage = null; });
-  }
-  renderPlayHole();
-  updateCourseHandicapDisplay('pl');
+  applyCourseSelection('pl', e.target.value);
 });
 document.getElementById('pl-tees')?.addEventListener('change', ()=>{
   const name = document.getElementById('pl-course').value;
@@ -1882,13 +1943,12 @@ document.getElementById('pl-tees')?.addEventListener('change', ()=>{
   updateGpsAvailability();
   updateCourseHandicapDisplay('pl');
 });
-document.getElementById('pl-course')?.addEventListener('change', ()=>{
-  const name = document.getElementById('pl-course').value;
-  const course = findCourseByName(name);
-  if(course) populateTeeSelect('pl-tees', course, course.preferredTee);
-  updateGpsAvailability();
-  updateCourseHandicapDisplay('pl');
-});
+function goToCoursesTab(){
+  document.querySelector('nav button[data-tab="courses"]')?.click();
+  openForm('courseFormDetails');
+}
+document.getElementById('pl-goCoursesBtn')?.addEventListener('click', goToCoursesTab);
+document.getElementById('r-goCoursesBtn')?.addEventListener('click', goToCoursesTab);
 
 // ---------- scorecard ----------
 function buildScorecardTable(){
@@ -2247,6 +2307,11 @@ function restorePlayDraftIfAny(){
   currentHole = draft.currentHole || 0;
   playRange = draft.playRange || {start:0, end:17};
   document.getElementById('pl-course').value = draft.course || '';
+  const plPreset = document.getElementById('pl-preset');
+  if(plPreset && draft.course){
+    const match = [...plPreset.options].find(o => o.value && o.value.toLowerCase() === draft.course.trim().toLowerCase());
+    if(match) plPreset.value = match.value;
+  }
   document.getElementById('pl-date').value = draft.date || todayISO();
   document.getElementById('pl-tees').value = draft.tees || '';
   document.getElementById('pl-notes').value = draft.notes || '';
@@ -2513,11 +2578,18 @@ document.getElementById('playNext').addEventListener('click', ()=>{
   if(currentHole<playRange.end){ currentHole++; renderPlayHole(); }
 });
 document.getElementById('finishRoundBtn').addEventListener('click', async ()=>{
+  const courseName = (document.getElementById('pl-course').value || '').trim();
+  if(!courseName){
+    alert('Select a course from the list first. Add courses on the Courses tab if the list is empty.');
+    openForm('playFormDetails');
+    document.getElementById('pl-preset')?.focus();
+    return;
+  }
   const totalScore = playHoles.reduce((s,h)=>s+h.score,0);
   if(totalScore===0){ alert('Enter at least one hole score.'); return; }
   await commitRound(
     playHoles.map(h=>({...h})),
-    document.getElementById('pl-course').value,
+    courseName,
     document.getElementById('pl-tees').value,
     document.getElementById('pl-date').value,
     document.getElementById('pl-notes').value,
@@ -2583,7 +2655,14 @@ function setRoundFormEditMode(on){
 function startEditRound(round){
   editingRoundId = round.id;
   document.getElementById('r-date').value = round.date;
-  document.getElementById('r-course').value = round.course;
+  document.getElementById('r-course').value = round.course || '';
+  // Sync dropdown to the saved course name when possible
+  const rPreset = document.getElementById('r-preset');
+  if(rPreset && round.course){
+    const match = [...rPreset.options].find(o => o.value && o.value.toLowerCase() === round.course.trim().toLowerCase());
+    rPreset.value = match ? match.value : '';
+    if(match) applyCourseSelection('r', match.value);
+  }
   const _rc = findCourseByName(round.course);
   populateTeeSelect('r-tees', _rc, round.tees);
   if(round.tees) document.getElementById('r-tees').value = round.tees;
@@ -2619,11 +2698,12 @@ function startEditRound(round){
   setRoundFormEditMode(true);
   document.querySelector('nav button[data-tab="rounds"]').click();
   openForm('roundFormDetails');
-  document.getElementById('r-course').scrollIntoView({behavior:'smooth', block:'start'});
+  document.getElementById('r-preset')?.scrollIntoView({behavior:'smooth', block:'start'});
 }
 document.getElementById('cancelEditRoundBtn').addEventListener('click', ()=>{
   editingRoundId = null;
   document.getElementById('r-course').value='';
+  document.getElementById('r-preset').value='';
   document.getElementById('r-tees').value='';
   document.getElementById('r-notes').value='';
   resetScorecard();
@@ -2643,7 +2723,13 @@ document.getElementById('saveRoundBtn').addEventListener('click', async ()=>{
   const holes = readScorecard();
   const totalScore = holes.reduce((s,h)=>s+h.score,0);
   if(totalScore===0){ alert('Enter at least one hole score.'); return; }
-  const course = document.getElementById('r-course').value;
+  const course = (document.getElementById('r-course').value || '').trim();
+  if(!course){
+    alert('Select a course from the list first. Add courses on the Courses tab if the list is empty.');
+    openForm('roundFormDetails');
+    document.getElementById('r-preset')?.focus();
+    return;
+  }
   const tees = document.getElementById('r-tees').value;
   const date = document.getElementById('r-date').value;
   const notes = document.getElementById('r-notes').value;
@@ -2652,7 +2738,7 @@ document.getElementById('saveRoundBtn').addEventListener('click', async ()=>{
   if(editingRoundId){
     const idx = rounds.findIndex(r=>r.id===editingRoundId);
     if(idx>=0){
-      rounds[idx] = { ...rounds[idx], holes, course: course.trim(), tees: tees.trim(), date: date||todayISO(), notes: notes.trim(), holesPlayed };
+      rounds[idx] = { ...rounds[idx], holes, course, tees: tees.trim(), date: date||todayISO(), notes: notes.trim(), holesPlayed };
       await saveList('rounds', rounds);
       renderRounds();
     }
@@ -2662,6 +2748,7 @@ document.getElementById('saveRoundBtn').addEventListener('click', async ()=>{
     await commitRound(holes, course, tees, date, notes, holesPlayed);
   }
   document.getElementById('r-course').value='';
+  document.getElementById('r-preset').value='';
   document.getElementById('r-tees').value='';
   document.getElementById('r-notes').value='';
   resetScorecard();
@@ -3890,7 +3977,7 @@ document.getElementById('gpsBtn').addEventListener('click', ()=>{
   const resultEl = document.getElementById('gpsResult');
   if(!navigator.geolocation){ resultEl.textContent = 'Geolocation not supported in this browser.'; return; }
   const courseName = document.getElementById('pl-course').value;
-  if(!courseName.trim()){ resultEl.textContent = 'Enter a course name first.'; return; }
+  if(!courseName.trim()){ resultEl.textContent = 'Select a course above first.'; return; }
   resultEl.textContent = 'Getting your location…';
   navigator.geolocation.getCurrentPosition(async pos=>{
     const {latitude, longitude} = pos.coords;
@@ -3924,7 +4011,7 @@ document.getElementById('gpsBtn').addEventListener('click', ()=>{
 
 async function saveGreenForCurrentHole(lat, lng, source){
   const courseName = document.getElementById('pl-course').value;
-  if(!courseName.trim()) return { ok:false, message:'Enter a course name above first.' };
+  if(!courseName.trim()) return { ok:false, message:'Select a course above first.' };
   const holeNum = playHoles[currentHole].hole;
   const course = getOrCreateCourseByName(courseName);
   if(!Array.isArray(course.greens)) course.greens = Array(18).fill(null);
@@ -3937,7 +4024,7 @@ async function saveGreenForCurrentHole(lat, lng, source){
 document.getElementById('gpsSaveBtn').addEventListener('click', ()=>{
   const resultEl = document.getElementById('gpsResult');
   if(!navigator.geolocation){ resultEl.textContent = 'Geolocation not supported in this browser.'; return; }
-  if(!document.getElementById('pl-course').value.trim()){ resultEl.textContent = 'Enter a course name above first.'; return; }
+  if(!document.getElementById('pl-course').value.trim()){ resultEl.textContent = 'Select a course above first.'; return; }
   resultEl.textContent = 'Getting your location…';
   navigator.geolocation.getCurrentPosition(async pos=>{
     const {latitude, longitude} = pos.coords;
@@ -4274,7 +4361,7 @@ function onAerialPosition(pos, gen){
 
 document.getElementById('aerialViewBtn').addEventListener('click', async ()=>{
   if(!navigator.geolocation){ alert('Geolocation not supported in this browser.'); return; }
-  if(!document.getElementById('pl-course').value.trim()){ alert('Enter a course name first.'); return; }
+  if(!document.getElementById('pl-course').value.trim()){ alert('Select a course above first.'); return; }
   if (typeof L === 'undefined') {
     try {
       await import('leaflet');
