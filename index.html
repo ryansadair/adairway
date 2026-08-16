@@ -1282,22 +1282,55 @@
       </div>
       <div class="field"><label>Name</label><input type="text" id="profile-name" placeholder="e.g. Ryan M." maxlength="40"></div>
       <div class="field"><label>Location</label><input type="text" id="profile-location" placeholder="e.g. Springfield, OR" maxlength="60"></div>
+      <div style="margin:14px 0 10px;padding-top:12px;border-top:1px solid var(--line);">
+        <div class="hint" style="margin:0 0 10px;">Privacy &amp; sharing with friends</div>
+        <label style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;text-transform:none;letter-spacing:0;font-size:13.5px;font-weight:500;color:var(--graphite);cursor:pointer;">
+          <input type="checkbox" id="profile-discoverable" checked style="width:18px;height:18px;margin-top:2px;flex-shrink:0;">
+          <span><strong>Discoverable by name</strong><br><span style="opacity:0.75;font-size:12px;">Others can find you by searching your name (they still need your acceptance to become friends).</span></span>
+        </label>
+        <label style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;text-transform:none;letter-spacing:0;font-size:13.5px;font-weight:500;color:var(--graphite);cursor:pointer;">
+          <input type="checkbox" id="profile-shareStats" checked style="width:18px;height:18px;margin-top:2px;flex-shrink:0;">
+          <span><strong>Share handicap &amp; stats with friends</strong><br><span style="opacity:0.75;font-size:12px;">Friends can see your index and averages on the leaderboard.</span></span>
+        </label>
+        <label style="display:flex;align-items:flex-start;gap:10px;margin-bottom:4px;text-transform:none;letter-spacing:0;font-size:13.5px;font-weight:500;color:var(--graphite);cursor:pointer;">
+          <input type="checkbox" id="profile-shareActivity" checked style="width:18px;height:18px;margin-top:2px;flex-shrink:0;">
+          <span><strong>Share activity with friends</strong><br><span style="opacity:0.75;font-size:12px;">Rounds you share appear in friends’ activity feeds.</span></span>
+        </label>
+      </div>
       <button class="btn" id="saveProfileBtn" type="button">Save profile</button>
       <span id="profileSaveStatus" style="margin-left:10px;font-size:12px;color:var(--turf);font-family:'IBM Plex Mono',monospace;"></span>
     </div>
     <div class="card">
       <h2>Friends</h2>
-      <p class="hint" style="margin-top:0;">Add a friend by the email they use to sign in. They'll need to have opened the app and saved a profile at least once so you can find them.</p>
-      <div class="grid2">
-        <div class="field"><label>Friend's email</label><input type="text" id="friend-email" placeholder="e.g. jordan@email.com"></div>
+      <p class="hint" style="margin-top:0;">Search by name to find people. Location helps you pick the right person. They must accept before you’re friends.</p>
+      <div class="field"><label>Search by name</label><input type="text" id="friend-search-q" placeholder="e.g. Ryan" maxlength="40"></div>
+      <button class="btn" id="friendSearchBtn" type="button">Search</button>
+      <span id="friendSearchStatus" style="margin-left:10px;font-size:12px;color:var(--turf);font-family:'IBM Plex Mono',monospace;"></span>
+      <div id="friendSearchResults" style="margin-top:12px;"></div>
+
+      <div id="incomingRequestsWrap" style="margin-top:18px;display:none;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--turf);margin-bottom:8px;">Friend requests</div>
+        <div id="incomingRequestsList"></div>
       </div>
-      <button class="btn" id="addFriendBtn" type="button">Add friend</button>
-      <span id="friendAddStatus" style="margin-left:10px;font-size:12px;color:var(--turf);font-family:'IBM Plex Mono',monospace;"></span>
-      <div id="friendsList" style="margin-top:16px;"></div>
+
+      <div style="margin-top:18px;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--turf);margin-bottom:8px;">Your friends</div>
+        <div id="friendsList"></div>
+      </div>
+
+      <details style="margin-top:16px;">
+        <summary style="cursor:pointer;font-size:12px;color:var(--turf);font-family:'IBM Plex Mono',monospace;">Add by email instead</summary>
+        <div style="margin-top:10px;">
+          <p class="hint" style="margin-top:0;">Fallback if you already know their sign-in email. Still sends an invite they must accept.</p>
+          <div class="field"><label>Friend's email</label><input type="text" id="friend-email" placeholder="e.g. jordan@email.com"></div>
+          <button class="btn outline small" id="addFriendBtn" type="button">Send invite by email</button>
+          <span id="friendAddStatus" style="margin-left:10px;font-size:12px;color:var(--turf);font-family:'IBM Plex Mono',monospace;"></span>
+        </div>
+      </details>
     </div>
     <div class="card">
       <h2>Leaderboard</h2>
-      <p class="hint" style="margin-top:0;">Handicap index and season stats among you and your friends.</p>
+      <p class="hint" style="margin-top:0;">Handicap index and season stats among you and your friends (only those who share stats).</p>
       <div id="leaderboardList"></div>
     </div>
     <div class="card">
@@ -1464,8 +1497,15 @@ onAuthStateChanged(auth, async user=>{
   }else{
     currentUser = null;
     initializedForUid = null;
-    currentProfile = { name: '', location: '' };
+    currentProfile = {
+      name: '', location: '',
+      discoverable: true,
+      shareStatsWithFriends: true,
+      shareActivityWithFriends: true
+    };
     currentFriends = [];
+    currentIncomingRequests = [];
+    currentOutgoingRequestUids = new Set();
     showAuthGate(true);
     document.getElementById('accountRow').style.display = 'none';
   }
@@ -4251,8 +4291,17 @@ document.getElementById('backupModal').addEventListener('click', e=>{
 });
 
 // ---------- Profile & Friends ----------
-let currentProfile = { name: '', location: '' };
+// Profile privacy defaults: discoverable + share stats/activity with accepted friends.
+let currentProfile = {
+  name: '',
+  location: '',
+  discoverable: true,
+  shareStatsWithFriends: true,
+  shareActivityWithFriends: true
+};
 let currentFriends = [];
+let currentIncomingRequests = [];
+let currentOutgoingRequestUids = new Set();
 
 function initialsFromName(name){
   const parts = (name || '').trim().split(/\s+/).filter(Boolean);
@@ -4280,20 +4329,40 @@ document.getElementById('headerAvatarBadge')?.addEventListener('click', ()=>{
   document.querySelector('nav button[data-tab="profile"]')?.click();
 });
 
+function normalizeProfile(data){
+  data = data || {};
+  return {
+    name: data.name || '',
+    location: data.location || '',
+    discoverable: data.discoverable !== false,
+    shareStatsWithFriends: data.shareStatsWithFriends !== false,
+    shareActivityWithFriends: data.shareActivityWithFriends !== false
+  };
+}
+
 async function loadProfile(){
-  if(!currentUser) return { name: '', location: '' };
+  if(!currentUser) return normalizeProfile();
   try{
     const snap = await getDoc(doc(db, 'users', currentUser.uid, 'meta', 'profile'));
-    return snap.exists() ? { name: snap.data().name || '', location: snap.data().location || '' } : { name: '', location: '' };
-  }catch(e){ return { name: '', location: '' }; }
+    return normalizeProfile(snap.exists() ? snap.data() : null);
+  }catch(e){ return normalizeProfile(); }
 }
 async function saveProfile(profile){
   if(!currentUser) return false;
   try{
-    await setDoc(doc(db, 'users', currentUser.uid, 'meta', 'profile'), {
-      name: profile.name || '', location: profile.location || '', updatedAt: Date.now()
-    });
+    const payload = {
+      name: profile.name || '',
+      location: profile.location || '',
+      discoverable: profile.discoverable !== false,
+      shareStatsWithFriends: profile.shareStatsWithFriends !== false,
+      shareActivityWithFriends: profile.shareActivityWithFriends !== false,
+      updatedAt: Date.now()
+    };
+    await setDoc(doc(db, 'users', currentUser.uid, 'meta', 'profile'), payload);
     await syncDirectoryEntry();
+    await syncPublicProfile();
+    // Keep statsSummary flags in sync so friends' leaderboards/feeds respect privacy
+    await publishStatsSummary();
     return true;
   }catch(e){ return false; }
 }
@@ -4302,6 +4371,12 @@ function renderProfileTab(){
   const locEl = document.getElementById('profile-location');
   if(nameEl) nameEl.value = currentProfile.name;
   if(locEl) locEl.value = currentProfile.location;
+  const disc = document.getElementById('profile-discoverable');
+  const shareStats = document.getElementById('profile-shareStats');
+  const shareAct = document.getElementById('profile-shareActivity');
+  if(disc) disc.checked = currentProfile.discoverable !== false;
+  if(shareStats) shareStats.checked = currentProfile.shareStatsWithFriends !== false;
+  if(shareAct) shareAct.checked = currentProfile.shareActivityWithFriends !== false;
   renderAvatarBadge(document.getElementById('profileAvatarPreview'), currentProfile.name || (currentUser && currentUser.email) || '');
 }
 document.getElementById('profile-name')?.addEventListener('input', e=>{
@@ -4310,18 +4385,21 @@ document.getElementById('profile-name')?.addEventListener('input', e=>{
 document.getElementById('saveProfileBtn')?.addEventListener('click', async ()=>{
   const name = document.getElementById('profile-name').value.trim();
   const location = document.getElementById('profile-location').value.trim();
+  const discoverable = !!document.getElementById('profile-discoverable')?.checked;
+  const shareStatsWithFriends = !!document.getElementById('profile-shareStats')?.checked;
+  const shareActivityWithFriends = !!document.getElementById('profile-shareActivity')?.checked;
   const status = document.getElementById('profileSaveStatus');
   status.textContent = 'Saving...';
-  const ok = await saveProfile({ name, location });
-  if(ok) currentProfile = { name, location };
+  const next = { name, location, discoverable, shareStatsWithFriends, shareActivityWithFriends };
+  const ok = await saveProfile(next);
+  if(ok) currentProfile = next;
   renderHeaderAvatar();
   status.textContent = ok ? 'Saved.' : 'Could not save — check connection.';
   setTimeout(()=>{ status.textContent = ''; }, 2500);
 });
 
-// The "directory" collection is a small public index (email -> uid/name) so a friend
-// can be found by email without needing Firebase Admin access. Every user writes only
-// their own entry; anyone signed in can read entries to look someone up.
+// Email directory (legacy lookup) + publicProfiles (name search).
+// publicProfiles/{uid} is only written when discoverable=true so private users stay hidden.
 async function syncDirectoryEntry(){
   if(!currentUser || !currentUser.email) return;
   try{
@@ -4329,55 +4407,349 @@ async function syncDirectoryEntry(){
     await setDoc(doc(db, 'directory', emailKey), {
       uid: currentUser.uid,
       name: currentProfile.name || '',
+      location: currentProfile.location || '',
       updatedAt: Date.now()
     });
-  }catch(e){ /* non-fatal — friend lookups just won't find this user yet */ }
+  }catch(e){ /* non-fatal */ }
 }
+async function syncPublicProfile(){
+  if(!currentUser) return;
+  try{
+    const ref = doc(db, 'publicProfiles', currentUser.uid);
+    if(currentProfile.discoverable === false || !(currentProfile.name || '').trim()){
+      // Remove from search index when not discoverable or no name set
+      try{ await deleteDoc(ref); }catch(e){}
+      return;
+    }
+    await setDoc(ref, {
+      uid: currentUser.uid,
+      name: currentProfile.name || '',
+      nameLower: (currentProfile.name || '').trim().toLowerCase(),
+      location: currentProfile.location || '',
+      updatedAt: Date.now()
+    });
+  }catch(e){ /* non-fatal */ }
+}
+
 async function loadFriends(){
   if(!currentUser) return [];
   try{
     const snap = await getDocs(collection(db, 'users', currentUser.uid, 'friends'));
     const list = [];
     snap.forEach(d=> list.push({ uid: d.id, ...d.data() }));
-    list.sort((a, b)=> (a.name || a.email).localeCompare(b.name || b.email, undefined, {sensitivity:'base'}));
+    list.sort((a, b)=> (a.name || a.email || '').localeCompare(b.name || b.email || '', undefined, {sensitivity:'base'}));
     return list;
   }catch(e){ return []; }
 }
+async function loadIncomingRequests(){
+  if(!currentUser) return [];
+  try{
+    const snap = await getDocs(collection(db, 'users', currentUser.uid, 'incomingRequests'));
+    const list = [];
+    snap.forEach(d=> list.push({ uid: d.id, ...d.data() }));
+    list.sort((a, b)=> (b.sentAt || 0) - (a.sentAt || 0));
+    return list;
+  }catch(e){ return []; }
+}
+async function loadOutgoingRequestUids(){
+  if(!currentUser) return new Set();
+  try{
+    const snap = await getDocs(collection(db, 'users', currentUser.uid, 'outgoingRequests'));
+    const set = new Set();
+    snap.forEach(d=> set.add(d.id));
+    return set;
+  }catch(e){ return new Set(); }
+}
+
 function renderFriendsList(){
   const el = document.getElementById('friendsList');
   if(!el) return;
   if(currentFriends.length === 0){
-    el.innerHTML = '<div class="empty">No friends added yet.</div>';
+    el.innerHTML = '<div class="empty">No friends yet — search by name above to send an invite.</div>';
     return;
   }
   el.innerHTML = currentFriends.map(f=>{
-    const label = f.name || f.email;
+    const label = f.name || f.email || 'Friend';
     return `
     <div class="round-item">
       <div style="flex:1;display:flex;align-items:center;gap:10px;">
         <div class="avatar-badge" style="background:${avatarColorFromName(label)};">${escapeHtml(initialsFromName(label))}</div>
         <div>
-          <div class="title">${escapeHtml(f.name || f.email)}</div>
-          ${f.name ? `<div class="meta">${escapeHtml(f.email)}</div>` : ''}
+          <div class="title">${escapeHtml(label)}</div>
+          ${f.location ? `<div class="meta">${escapeHtml(f.location)}</div>` : (f.email ? `<div class="meta">${escapeHtml(f.email)}</div>` : '')}
         </div>
       </div>
       <button class="del" data-uid="${f.uid}" data-kind="friend" type="button">remove</button>
     </div>`;
   }).join('');
 }
+
+function renderIncomingRequests(){
+  const wrap = document.getElementById('incomingRequestsWrap');
+  const el = document.getElementById('incomingRequestsList');
+  if(!wrap || !el) return;
+  if(!currentIncomingRequests.length){
+    wrap.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+  wrap.style.display = '';
+  el.innerHTML = currentIncomingRequests.map(r=>{
+    const label = r.name || 'Someone';
+    return `
+    <div class="round-item">
+      <div style="flex:1;display:flex;align-items:center;gap:10px;">
+        <div class="avatar-badge" style="background:${avatarColorFromName(label)};">${escapeHtml(initialsFromName(label))}</div>
+        <div>
+          <div class="title">${escapeHtml(label)}</div>
+          ${r.location ? `<div class="meta">${escapeHtml(r.location)}</div>` : ''}
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0;">
+        <button class="btn small" data-uid="${r.uid}" data-kind="accept-request" type="button">Accept</button>
+        <button class="btn outline small" data-uid="${r.uid}" data-kind="decline-request" type="button">Decline</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
 document.getElementById('friendsList')?.addEventListener('click', async e=>{
   const btn = e.target.closest('button[data-kind="friend"]');
   if(!btn) return;
   const friendUid = btn.dataset.uid;
-  if(!confirm('Remove this friend?')) return;
+  if(!confirm('Remove this friend? They will also lose you on their list.')) return;
   try{
+    // Best-effort mutual remove
     await deleteDoc(doc(db, 'users', currentUser.uid, 'friends', friendUid));
+    try{ await deleteDoc(doc(db, 'users', friendUid, 'friends', currentUser.uid)); }catch(e){}
     currentFriends = currentFriends.filter(f=> f.uid !== friendUid);
     renderFriendsList();
     renderLeaderboard();
     renderFeed();
   }catch(e){ alert('Could not remove friend — check your connection and try again.'); }
 });
+
+document.getElementById('incomingRequestsList')?.addEventListener('click', async e=>{
+  const acceptBtn = e.target.closest('button[data-kind="accept-request"]');
+  const declineBtn = e.target.closest('button[data-kind="decline-request"]');
+  if(acceptBtn){
+    const otherUid = acceptBtn.dataset.uid;
+    acceptBtn.disabled = true;
+    const ok = await acceptFriendRequest(otherUid);
+    if(!ok){ acceptBtn.disabled = false; alert('Could not accept — check connection.'); return; }
+    currentIncomingRequests = await loadIncomingRequests();
+    currentFriends = await loadFriends();
+    currentOutgoingRequestUids = await loadOutgoingRequestUids();
+    renderIncomingRequests();
+    renderFriendsList();
+    renderLeaderboard();
+    renderFeed();
+    return;
+  }
+  if(declineBtn){
+    const otherUid = declineBtn.dataset.uid;
+    declineBtn.disabled = true;
+    const ok = await declineFriendRequest(otherUid);
+    if(!ok){ declineBtn.disabled = false; alert('Could not decline — check connection.'); return; }
+    currentIncomingRequests = currentIncomingRequests.filter(r=> r.uid !== otherUid);
+    renderIncomingRequests();
+  }
+});
+
+async function sendFriendRequest(target){
+  // target: { uid, name, location, email? }
+  if(!currentUser || !target?.uid) return { ok:false, message:'Missing user.' };
+  if(target.uid === currentUser.uid) return { ok:false, message:"That's you." };
+  if(currentFriends.some(f=> f.uid === target.uid)) return { ok:false, message:'Already friends.' };
+  if(currentOutgoingRequestUids.has(target.uid)) return { ok:false, message:'Invite already sent.' };
+
+  const myName = currentProfile.name || currentUser.email || 'A golfer';
+  const myLoc = currentProfile.location || '';
+  const payload = {
+    name: myName,
+    location: myLoc,
+    email: currentUser.email || '',
+    sentAt: Date.now()
+  };
+  const theirView = {
+    name: target.name || '',
+    location: target.location || '',
+    email: target.email || '',
+    sentAt: Date.now()
+  };
+  try{
+    await setDoc(doc(db, 'users', currentUser.uid, 'outgoingRequests', target.uid), theirView);
+    await setDoc(doc(db, 'users', target.uid, 'incomingRequests', currentUser.uid), payload);
+    currentOutgoingRequestUids.add(target.uid);
+    return { ok:true };
+  }catch(e){
+    return { ok:false, message:'Could not send invite — check connection.' };
+  }
+}
+
+async function acceptFriendRequest(fromUid){
+  if(!currentUser || !fromUid) return false;
+  const req = currentIncomingRequests.find(r=> r.uid === fromUid);
+  const theirName = req?.name || '';
+  const theirLoc = req?.location || '';
+  const theirEmail = req?.email || '';
+  const myName = currentProfile.name || currentUser.email || '';
+  const myLoc = currentProfile.location || '';
+  try{
+    // Mutual friends entries
+    await setDoc(doc(db, 'users', currentUser.uid, 'friends', fromUid), {
+      name: theirName, location: theirLoc, email: theirEmail, since: Date.now()
+    });
+    await setDoc(doc(db, 'users', fromUid, 'friends', currentUser.uid), {
+      name: myName, location: myLoc, email: currentUser.email || '', since: Date.now()
+    });
+    // Clear request docs both sides
+    await deleteDoc(doc(db, 'users', currentUser.uid, 'incomingRequests', fromUid));
+    try{ await deleteDoc(doc(db, 'users', fromUid, 'outgoingRequests', currentUser.uid)); }catch(e){}
+    return true;
+  }catch(e){ return false; }
+}
+
+async function declineFriendRequest(fromUid){
+  if(!currentUser || !fromUid) return false;
+  try{
+    await deleteDoc(doc(db, 'users', currentUser.uid, 'incomingRequests', fromUid));
+    try{ await deleteDoc(doc(db, 'users', fromUid, 'outgoingRequests', currentUser.uid)); }catch(e){}
+    return true;
+  }catch(e){ return false; }
+}
+
+async function searchPublicProfilesByName(q){
+  const queryStr = (q || '').trim().toLowerCase();
+  if(queryStr.length < 2) return { error: 'Type at least 2 characters.' };
+  try{
+    // Client-side filter of publicProfiles. Fine for a personal/small user base.
+    // Only discoverable users with a name are written here.
+    const snap = await getDocs(collection(db, 'publicProfiles'));
+    const results = [];
+    snap.forEach(d=>{
+      const data = d.data();
+      const nameLower = (data.nameLower || data.name || '').toLowerCase();
+      if(!nameLower) return;
+      if(nameLower.includes(queryStr) || nameLower.split(/\s+/).some(p=> p.startsWith(queryStr))){
+        results.push({
+          uid: data.uid || d.id,
+          name: data.name || '',
+          location: data.location || ''
+        });
+      }
+    });
+    results.sort((a, b)=> a.name.localeCompare(b.name, undefined, {sensitivity:'base'}));
+    // Cap results so the list stays usable
+    return { results: results.slice(0, 30) };
+  }catch(e){
+    return { error: 'Search failed — check connection.' };
+  }
+}
+
+function renderFriendSearchResults(results){
+  const el = document.getElementById('friendSearchResults');
+  if(!el) return;
+  if(!results || results.length === 0){
+    el.innerHTML = '<div class="empty">No matching people found. They need a name on their profile and “Discoverable by name” turned on.</div>';
+    return;
+  }
+  el.innerHTML = results.map(r=>{
+    if(r.uid === currentUser?.uid){
+      return `
+      <div class="round-item">
+        <div style="flex:1;display:flex;align-items:center;gap:10px;">
+          <div class="avatar-badge" style="background:${avatarColorFromName(r.name)};">${escapeHtml(initialsFromName(r.name))}</div>
+          <div>
+            <div class="title">${escapeHtml(r.name)} <span class="meta">(you)</span></div>
+            ${r.location ? `<div class="meta">${escapeHtml(r.location)}</div>` : ''}
+          </div>
+        </div>
+      </div>`;
+    }
+    const alreadyFriend = currentFriends.some(f=> f.uid === r.uid);
+    const pending = currentOutgoingRequestUids.has(r.uid);
+    const theyRequested = currentIncomingRequests.some(x=> x.uid === r.uid);
+    let action = '';
+    if(alreadyFriend){
+      action = `<span class="meta">Friends</span>`;
+    }else if(theyRequested){
+      action = `<button class="btn small" data-uid="${r.uid}" data-kind="accept-request" type="button">Accept their invite</button>`;
+    }else if(pending){
+      action = `<span class="meta">Invite sent</span>`;
+    }else{
+      action = `<button class="btn small" data-uid="${r.uid}" data-name="${escapeHtml(r.name)}" data-location="${escapeHtml(r.location || '')}" data-kind="send-invite" type="button">Invite</button>`;
+    }
+    return `
+    <div class="round-item">
+      <div style="flex:1;display:flex;align-items:center;gap:10px;">
+        <div class="avatar-badge" style="background:${avatarColorFromName(r.name)};">${escapeHtml(initialsFromName(r.name))}</div>
+        <div>
+          <div class="title">${escapeHtml(r.name)}</div>
+          ${r.location ? `<div class="meta">${escapeHtml(r.location)}</div>` : '<div class="meta">No location set</div>'}
+        </div>
+      </div>
+      <div style="flex-shrink:0;">${action}</div>
+    </div>`;
+  }).join('');
+}
+
+async function runFriendSearch(){
+  const q = document.getElementById('friend-search-q')?.value || '';
+  const status = document.getElementById('friendSearchStatus');
+  const resultsEl = document.getElementById('friendSearchResults');
+  if(status) status.textContent = 'Searching...';
+  if(resultsEl) resultsEl.innerHTML = '';
+  const out = await searchPublicProfilesByName(q);
+  if(status) status.textContent = '';
+  if(out.error){
+    if(resultsEl) resultsEl.innerHTML = `<div class="empty">${escapeHtml(out.error)}</div>`;
+    return;
+  }
+  renderFriendSearchResults(out.results || []);
+}
+document.getElementById('friendSearchBtn')?.addEventListener('click', runFriendSearch);
+document.getElementById('friend-search-q')?.addEventListener('keydown', e=>{
+  if(e.key === 'Enter'){ e.preventDefault(); runFriendSearch(); }
+});
+
+document.getElementById('friendSearchResults')?.addEventListener('click', async e=>{
+  const inviteBtn = e.target.closest('button[data-kind="send-invite"]');
+  if(inviteBtn){
+    inviteBtn.disabled = true;
+    const target = {
+      uid: inviteBtn.dataset.uid,
+      name: inviteBtn.dataset.name || '',
+      location: inviteBtn.dataset.location || ''
+    };
+    const res = await sendFriendRequest(target);
+    if(res.ok){
+      inviteBtn.replaceWith(Object.assign(document.createElement('span'), { className:'meta', textContent:'Invite sent' }));
+    }else{
+      inviteBtn.disabled = false;
+      alert(res.message || 'Could not send invite.');
+    }
+    return;
+  }
+  // Allow accepting from search results too
+  const acceptBtn = e.target.closest('button[data-kind="accept-request"]');
+  if(acceptBtn){
+    acceptBtn.disabled = true;
+    const ok = await acceptFriendRequest(acceptBtn.dataset.uid);
+    if(!ok){ acceptBtn.disabled = false; alert('Could not accept — check connection.'); return; }
+    currentIncomingRequests = await loadIncomingRequests();
+    currentFriends = await loadFriends();
+    currentOutgoingRequestUids = await loadOutgoingRequestUids();
+    renderIncomingRequests();
+    renderFriendsList();
+    // Refresh search row state
+    document.getElementById('friendSearchBtn')?.click();
+    renderLeaderboard();
+    renderFeed();
+  }
+});
+
+// Email fallback still sends a *request* (not auto-friend) so acceptance is required.
 document.getElementById('addFriendBtn')?.addEventListener('click', async ()=>{
   const input = document.getElementById('friend-email');
   const status = document.getElementById('friendAddStatus');
@@ -4385,10 +4757,6 @@ document.getElementById('addFriendBtn')?.addEventListener('click', async ()=>{
   if(!email){ status.textContent = 'Enter an email first.'; return; }
   if(currentUser && email === (currentUser.email || '').trim().toLowerCase()){
     status.textContent = "That's your own email.";
-    return;
-  }
-  if(currentFriends.some(f=> (f.email || '').toLowerCase() === email)){
-    status.textContent = 'Already a friend.';
     return;
   }
   status.textContent = 'Looking up...';
@@ -4399,19 +4767,26 @@ document.getElementById('addFriendBtn')?.addEventListener('click', async ()=>{
       return;
     }
     const info = dirSnap.data();
-    await setDoc(doc(db, 'users', currentUser.uid, 'friends', info.uid), {
-      email, name: info.name || '', addedAt: Date.now()
+    if(currentFriends.some(f=> f.uid === info.uid)){
+      status.textContent = 'Already friends.';
+      return;
+    }
+    const res = await sendFriendRequest({
+      uid: info.uid,
+      name: info.name || '',
+      location: info.location || '',
+      email
     });
-    currentFriends = await loadFriends();
-    renderFriendsList();
-    input.value = '';
-    status.textContent = 'Added.';
-    renderLeaderboard();
-    renderFeed();
+    if(res.ok){
+      input.value = '';
+      status.textContent = 'Invite sent — they need to accept.';
+    }else{
+      status.textContent = res.message || 'Could not send invite.';
+    }
   }catch(e){
-    status.textContent = 'Could not add friend — check your connection and try again.';
+    status.textContent = 'Could not look up — check your connection and try again.';
   }
-  setTimeout(()=>{ status.textContent = ''; }, 4000);
+  setTimeout(()=>{ status.textContent = ''; }, 5000);
 });
 
 // ---------- Leaderboard ----------
@@ -4429,6 +4804,9 @@ function computeStatsSummary(){
     handicapIndex: hc.index,
     roundsLogged: scoreCount,
     avgToPar,
+    // Privacy flags so friends' clients can respect them without another round-trip
+    shareStatsWithFriends: currentProfile.shareStatsWithFriends !== false,
+    shareActivityWithFriends: currentProfile.shareActivityWithFriends !== false,
     updatedAt: Date.now()
   };
 }
@@ -4450,16 +4828,20 @@ async function loadLeaderboardData(){
   for(const f of currentFriends){
     try{
       const snap = await getDoc(doc(db, 'users', f.uid, 'meta', 'statsSummary'));
+      const data = snap.exists() ? snap.data() : {};
+      // Respect their privacy: if they turned off sharing stats, show name only
+      const allowsStats = data.shareStatsWithFriends !== false;
       entries.push({
         uid: f.uid,
-        name: f.name || f.email,
+        name: f.name || f.email || 'Friend',
         isSelf: false,
-        handicapIndex: snap.exists() ? snap.data().handicapIndex : null,
-        roundsLogged: snap.exists() ? (snap.data().roundsLogged || 0) : null,
-        avgToPar: snap.exists() ? snap.data().avgToPar : null
+        handicapIndex: allowsStats ? (data.handicapIndex ?? null) : null,
+        roundsLogged: allowsStats ? (data.roundsLogged ?? null) : null,
+        avgToPar: allowsStats ? (data.avgToPar ?? null) : null,
+        statsHidden: !allowsStats
       });
     }catch(e){
-      entries.push({ uid: f.uid, name: f.name || f.email, isSelf: false, handicapIndex: null, roundsLogged: null, avgToPar: null });
+      entries.push({ uid: f.uid, name: f.name || f.email || 'Friend', isSelf: false, handicapIndex: null, roundsLogged: null, avgToPar: null });
     }
   }
   entries.sort((a, b)=>{
@@ -4478,6 +4860,18 @@ async function renderLeaderboard(){
   if(entries.length === 0){ el.innerHTML = '<div class="empty">Add some friends to compare.</div>'; return; }
   el.innerHTML = entries.map(e=>{
     const label = e.name + (e.isSelf ? ' (you)' : '');
+    if(e.statsHidden){
+      return `
+      <div class="round-item">
+        <div style="flex:1;display:flex;align-items:center;gap:10px;">
+          <div class="avatar-badge" style="background:${avatarColorFromName(e.name)};">${escapeHtml(initialsFromName(e.name))}</div>
+          <div class="title">${escapeHtml(label)}</div>
+        </div>
+        <div style="text-align:right;font-family:'IBM Plex Mono',monospace;font-size:12px;">
+          <div class="meta">Stats hidden</div>
+        </div>
+      </div>`;
+    }
     const hc = e.handicapIndex != null ? e.handicapIndex.toFixed(1) : '—';
     const rounds = e.roundsLogged != null ? e.roundsLogged : '—';
     const toPar = e.avgToPar != null ? ((e.avgToPar >= 0 ? '+' : '') + e.avgToPar.toFixed(1)) : '—';
@@ -4498,6 +4892,10 @@ async function renderLeaderboard(){
 // ---------- Activity feed ----------
 async function shareRoundToFeed(round){
   if(!currentUser) return false;
+  if(currentProfile.shareActivityWithFriends === false){
+    alert('You have “Share activity with friends” turned off in Profile. Turn it on to post rounds to the feed.');
+    return false;
+  }
   try{
     const played = round.holes.filter(h=>h.score>0);
     const score = played.reduce((s,h)=>s+h.score,0);
@@ -4536,7 +4934,19 @@ async function loadFeed(){
       const data = d.data();
       if(visibleUids.has(data.authorUid)) posts.push({ id: d.id, ...data });
     });
-    return posts;
+    // Filter out friends who have disabled activity sharing (best-effort via their statsSummary flag)
+    const filtered = [];
+    for(const p of posts){
+      if(p.authorUid === currentUser.uid){ filtered.push(p); continue; }
+      try{
+        const snap = await getDoc(doc(db, 'users', p.authorUid, 'meta', 'statsSummary'));
+        const allows = !snap.exists() || snap.data().shareActivityWithFriends !== false;
+        if(allows) filtered.push(p);
+      }catch(e){
+        filtered.push(p); // fail open for feed so one bad read doesn't blank everything
+      }
+    }
+    return filtered;
   }catch(e){ return []; }
 }
 async function loadComments(postId){
@@ -5710,11 +6120,15 @@ async function init(){
   renderHeaderAvatar();
   renderProfileTab();
   syncDirectoryEntry();
+  syncPublicProfile();
   [rounds, practice, bag, courses, notes] = await Promise.all([
     loadList('rounds'), loadList('practice'), loadList('bag'), loadList('courses'), loadList('notes')
   ]);
   currentFriends = await loadFriends();
+  currentIncomingRequests = await loadIncomingRequests();
+  currentOutgoingRequestUids = await loadOutgoingRequestUids();
   renderFriendsList();
+  renderIncomingRequests();
   publishStatsSummary();
   renderLeaderboard();
   renderFeed();
