@@ -3717,11 +3717,16 @@ function updateGpsAvailability(){
   currentApiCourseId = (c && c.apiCourseId) ? c.apiCourseId : null;
   const btn = document.getElementById('gpsBtn');
   const result = document.getElementById('gpsResult');
+  const saveBtn = document.getElementById('gpsSaveBtn');
   if(!btn) return;
   btn.disabled = false;
   const holeNum = playHoles[currentHole] ? playHoles[currentHole].hole : null;
   const hasManual = c && Array.isArray(c.greens) && holeNum && c.greens[holeNum-1];
   result.textContent = hasManual ? 'You have a saved green location for this hole.' : '';
+  // Only offer "save my spot" when this hole doesn't already have a green saved —
+  // once one exists, an accidental tap here would silently overwrite good data.
+  // Fixing an existing pin is a deliberate trip to the Courses tab editor instead.
+  if(saveBtn) saveBtn.style.display = hasManual ? 'none' : '';
 }
 function extractFeatureArray(data){
   if(Array.isArray(data)) return data;
@@ -3813,6 +3818,7 @@ document.getElementById('gpsSaveBtn').addEventListener('click', ()=>{
   navigator.geolocation.getCurrentPosition(async pos=>{
     const {latitude, longitude} = pos.coords;
     const res = await saveGreenForCurrentHole(latitude, longitude, 'gps');
+    if(res.ok) updateGpsAvailability();
     resultEl.textContent = res.ok
       ? `Saved — hole ${res.holeNum}'s green is set for ${res.course.name}. GPS will use this from now on, no internet required.`
       : res.message;
