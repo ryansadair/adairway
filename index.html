@@ -624,6 +624,68 @@
     height:26px;
     font-size:11px;
   }
+
+  /* iOS Add to Home Screen tip — mobile only, one-time */
+  #a2hsTip{
+    display:none;
+    position:fixed;
+    left:12px; right:12px;
+    bottom:calc(72px + env(safe-area-inset-bottom, 0px));
+    z-index:900;
+    background:var(--paper-light);
+    color:var(--graphite);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:14px 14px 12px;
+    box-shadow:0 8px 28px rgba(31,58,46,0.14);
+    font-family:'Inter',sans-serif;
+  }
+  #a2hsTip.show{ display:block; }
+  #a2hsTip .a2hs-title{
+    font-family:'Fraunces',serif;
+    font-weight:600;
+    font-size:16px;
+    color:var(--fairway-deep);
+    margin:0 0 6px;
+  }
+  #a2hsTip .a2hs-body{
+    font-size:13.5px;
+    line-height:1.45;
+    margin:0 0 12px;
+    color:var(--graphite);
+  }
+  #a2hsTip .a2hs-body strong{
+    color:var(--fairway-deep);
+  }
+  #a2hsTip .a2hs-actions{
+    display:flex;
+    gap:8px;
+    justify-content:flex-end;
+  }
+  #a2hsTip .a2hs-actions button{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    font-weight:600;
+    text-transform:uppercase;
+    letter-spacing:0.04em;
+    border-radius:6px;
+    padding:10px 14px;
+    min-height:40px;
+    cursor:pointer;
+  }
+  #a2hsTip .a2hs-dismiss{
+    background:none;
+    border:1px solid var(--line);
+    color:var(--graphite);
+  }
+  #a2hsTip .a2hs-gotit{
+    background:var(--fairway-deep);
+    border:none;
+    color:var(--paper-light);
+  }
+  @media (min-width: 641px){
+    #a2hsTip{ display:none !important; }
+  }
 </style>
 <base target="_blank">
 </head>
@@ -633,6 +695,20 @@
   <span>A new version of Adairway Golf is available.</span>
   <button id="updateBannerBtn" type="button">Refresh</button>
 </div>
+
+<div id="a2hsTip" role="dialog" aria-label="Add to Home Screen" aria-hidden="true">
+  <p class="a2hs-title">Add to your Home Screen</p>
+  <p class="a2hs-body">
+    For a full-screen app icon on your iPhone: tap
+    <strong>Share</strong> <span aria-hidden="true">⬆</span>, then
+    <strong>Add to Home Screen</strong>.
+  </p>
+  <div class="a2hs-actions">
+    <button type="button" class="a2hs-dismiss" id="a2hsDismissBtn">Not now</button>
+    <button type="button" class="a2hs-gotit" id="a2hsGotItBtn">Got it</button>
+  </div>
+</div>
+
 <script>
 (function(){
   var CHECK_DELAY_MS = 2000;
@@ -3429,7 +3505,7 @@ function renderCourses(){
         ${c.notes?`<div class="notes">${escapeHtml(c.notes)}</div>`:''}
       </div>
       <div style="text-align:right;">
-        <button class="edit-btn" data-idx="${idx}" data-id="${c.id}" data-name="${escapeHtml(c.name)}" data-kind="course-map" type="button">map greens</button>
+        <button class="edit-btn" data-idx="${idx}" data-id="${c.id}" data-name="${escapeHtml(c.name)}" data-kind="course-map" type="button">${savedGreens>0 ? 'edit greens' : 'map greens'}</button>
         <button class="edit-btn" data-id="${c.id}" data-kind="course-edit" type="button">edit</button>
         <button class="edit-btn" data-id="${c.id}" data-kind="course-share" type="button">${c.sharedId ? 'update share' : 'share'}</button>
         <button class="del" data-id="${c.id}" data-kind="course">delete</button>
@@ -5144,6 +5220,9 @@ document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
     else extra.yardage = ydResult.values;
   }
 
+  const isNewCourse = !editingCourseId;
+  let savedCourse = null;
+
   if(editingCourseId){
     const idx = courses.findIndex(c=>c.id===editingCourseId);
     if(idx>=0){
@@ -5166,26 +5245,39 @@ document.getElementById('saveCourseBtn').addEventListener('click', async ()=>{
         ...(extra.parTotal != null ? {parTotal: extra.parTotal} : {}),
         ...(extra.preferredTee ? {preferredTee: extra.preferredTee} : {})
       };
+      savedCourse = courses[idx];
     }
     editingCourseId = null;
   } else {
-    courses.push({ id: uid(), name, rating: newRating, slope: newSlope, elevationFt: newElev, notes: newNotes, ...extra });
+    savedCourse = { id: uid(), name, rating: newRating, slope: newSlope, elevationFt: newElev, notes: newNotes, ...extra };
+    courses.push(savedCourse);
   }
 
   await saveList('courses', courses);
 
-  // Auto-map greens from OSM for every brand-new course (API-sourced or manually entered)
-  if(!editingCourseId){
-    const savedCourse = courses[courses.length - 1];
+  // Auto-map greens from OSM for brand-new courses that don't already have pins.
+  // Await so pins are saved before the user leaves the form; still editable via "map greens".
+  const saveBtn = document.getElementById('saveCourseBtn');
+  const prevSaveLabel = saveBtn ? saveBtn.textContent : '';
+  if(isNewCourse && savedCourse){
     const hasGreens = Array.isArray(savedCourse.greens) && savedCourse.greens.some(Boolean);
     if(!hasGreens){
-      autoFillGreensFromOsm(savedCourse, {overwrite: true}).then(async (result) => {
+      if(saveBtn){ saveBtn.disabled = true; saveBtn.textContent = 'Mapping greens…'; }
+      try{
+        const result = await autoFillGreensFromOsm(savedCourse, { overwrite: true });
         if(result.ok){
           await saveList('courses', courses);
-          renderCourses();
-          populatePresetDropdown();
         }
-      }).catch(() => {});
+        // Non-blocking notice — pins can always be fixed in the map editor
+        if(result.ok && result.filled > 0){
+          // brief status via the courses list meta after render
+        } else if(result && result.message){
+          console.warn('Green auto-map:', result.message);
+        }
+      }catch(err){
+        console.warn('Green auto-map failed', err);
+      }
+      if(saveBtn){ saveBtn.disabled = false; saveBtn.textContent = prevSaveLabel || 'Save course'; }
     }
   }
 
@@ -5438,7 +5530,13 @@ async function nominatimCourseCenter(courseName){
   if(!q) return null;
   try{
     const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q + ' golf course');
-    const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    // Nominatim requires a valid User-Agent; browsers may override it, but Accept-Language helps.
+    const res = await fetch(url, {
+      headers: {
+        'Accept': 'application/json',
+        'Accept-Language': 'en'
+      }
+    });
     if(!res.ok) return null;
     const list = await res.json();
     if(!list || !list.length) return null;
@@ -6110,6 +6208,45 @@ function runSelfTests(){
 }
 runSelfTests();
 
+// ---------- Add to Home Screen tip (iOS mobile, once) ----------
+function isIosDevice(){
+  const ua = navigator.userAgent || '';
+  const iOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  return iOS;
+}
+function isStandaloneDisplay(){
+  return window.navigator.standalone === true
+    || window.matchMedia('(display-mode: standalone)').matches
+    || window.matchMedia('(display-mode: fullscreen)').matches;
+}
+function maybeShowA2HSTip(){
+  const tip = document.getElementById('a2hsTip');
+  if(!tip) return;
+  // Mobile-only (CSS also hides ≥641px), iOS only, not already installed, once ever
+  if(window.innerWidth >= 641) return;
+  if(!isIosDevice()) return;
+  if(isStandaloneDisplay()) return;
+  try{
+    if(localStorage.getItem('a2hs_tip_dismissed') === '1') return;
+  }catch(e){}
+  // Slight delay so it doesn't compete with first paint / auth
+  setTimeout(()=>{
+    if(isStandaloneDisplay()) return;
+    tip.classList.add('show');
+    tip.setAttribute('aria-hidden', 'false');
+  }, 1200);
+}
+function dismissA2HSTip(){
+  const tip = document.getElementById('a2hsTip');
+  if(tip){
+    tip.classList.remove('show');
+    tip.setAttribute('aria-hidden', 'true');
+  }
+  try{ localStorage.setItem('a2hs_tip_dismissed', '1'); }catch(e){}
+}
+document.getElementById('a2hsDismissBtn')?.addEventListener('click', dismissA2HSTip);
+document.getElementById('a2hsGotItBtn')?.addEventListener('click', dismissA2HSTip);
+
 // ---------- init ----------
 async function init(){
   populatePresetDropdown();
@@ -6132,6 +6269,7 @@ async function init(){
   publishStatsSummary();
   renderLeaderboard();
   renderFeed();
+  maybeShowA2HSTip();
 
   const bagSeeded = await loadFlag('bagSeeded');
   if(bag.length===0 && !bagSeeded){
