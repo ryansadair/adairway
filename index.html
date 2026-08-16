@@ -7,7 +7,6 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Adairway Golf">
-<meta name="app-version" content="2026-08-15.1">
 <title>Adairway Golf</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -636,7 +635,6 @@
 </div>
 <script>
 (function(){
-  var CURRENT_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '';
   var CHECK_DELAY_MS = 2000;
   var MIN_RECHECK_GAP_MS = 60000;
   var lastCheck = 0;
@@ -650,17 +648,18 @@
     var now = Date.now();
     if(now - lastCheck < MIN_RECHECK_GAP_MS) return;
     lastCheck = now;
-    fetch(location.pathname + '?_=' + now, { cache: 'no-store' })
-      .then(function(res){ return res.ok ? res.text() : null; })
-      .then(function(html){
-        if(!html) return;
-        var match = html.match(/<meta\s+name=["']app-version["']\s+content=["']([^"']+)["']/i);
-        var remoteVersion = match ? match[1] : null;
-        if(remoteVersion && CURRENT_VERSION && remoteVersion !== CURRENT_VERSION){
-          showBanner();
-        }
-      })
-      .catch(function(){ /* offline or blocked — ignore, will try again later */ });
+    // Compare what's actually cached (force-cache: use it as-is, don't revalidate)
+    // against a guaranteed-fresh fetch straight from the server (no-store).
+    // If they differ, the cache is stale — no version number to maintain by hand.
+    Promise.all([
+      fetch(location.pathname, { cache: 'force-cache' }).then(function(r){ return r.ok ? r.text() : null; }).catch(function(){ return null; }),
+      fetch(location.pathname + '?_=' + now, { cache: 'no-store' }).then(function(r){ return r.ok ? r.text() : null; }).catch(function(){ return null; })
+    ]).then(function(results){
+      var cached = results[0], fresh = results[1];
+      if(cached && fresh && cached !== fresh){
+        showBanner();
+      }
+    });
   }
 
   var btn = document.getElementById('updateBannerBtn');
@@ -818,7 +817,7 @@
       </svg>
       <div>
         <h1>Adairway Golf</h1>
-        <div class="tag">Personal golf log · synced to your account</div>
+        <div class="tag">Personal golf log</div>
       </div>
     </div>
     <div style="text-align:right;">
