@@ -665,7 +665,14 @@
   var btn = document.getElementById('updateBannerBtn');
   if(btn){
     btn.addEventListener('click', function(){
-      location.href = location.pathname + '?_=' + Date.now();
+      btn.disabled = true;
+      btn.textContent = 'Refreshing...';
+      // Force the browser to overwrite the cache entry for the app's real URL
+      // (not a cache-busted copy of it) before reloading, so the checker's
+      // future comparisons are actually checking against current content.
+      fetch(location.pathname, { cache: 'reload' }).finally(function(){
+        location.href = location.pathname;
+      });
     });
   }
 
@@ -1745,11 +1752,10 @@ document.getElementById('pl-preset').addEventListener('change', e=>{
   if(course && tee?.color) applyTeeYardages(course, tee.color, 'play');
   else if(preset && Array.isArray(preset.yardage)){
     preset.yardage.forEach((y,i)=>{ playHoles[i].yardage = y || null; });
-    renderPlayHole();
   } else {
     playHoles.forEach(h=>{ h.yardage = null; });
-    renderPlayHole();
   }
+  renderPlayHole();
   updateCourseHandicapDisplay('pl');
 });
 document.getElementById('pl-tees')?.addEventListener('change', ()=>{
@@ -1757,12 +1763,14 @@ document.getElementById('pl-tees')?.addEventListener('change', ()=>{
   const course = findCourseByName(name);
   const tee = selectedTeeMeta('pl-tees');
   if(course && tee?.color) applyTeeYardages(course, tee.color, 'play');
+  updateGpsAvailability();
   updateCourseHandicapDisplay('pl');
 });
 document.getElementById('pl-course')?.addEventListener('change', ()=>{
   const name = document.getElementById('pl-course').value;
   const course = findCourseByName(name);
   if(course) populateTeeSelect('pl-tees', course, course.preferredTee);
+  updateGpsAvailability();
   updateCourseHandicapDisplay('pl');
 });
 
