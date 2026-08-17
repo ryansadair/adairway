@@ -1502,6 +1502,29 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
     });
   }
 
+  // Walks every real decoded frame in playback order via requestVideoFrameCallback,
+  // instead of seeking to assumed timestamps (which can snap to the nearest keyframe
+  // on compressed slow-mo footage and silently skip/duplicate frames right around impact).
+  const supportsFrameCallback = typeof HTMLVideoElement!=='undefined' && 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
+  function walkFrames(v, onFrame, onProgress){
+    return new Promise((resolve, reject)=>{
+      let stopped=false;
+      const finish=()=>{ if(stopped) return; stopped=true; try{ v.pause(); }catch(e){} resolve(); };
+      v.addEventListener('ended', finish, {once:true});
+      const onErr=()=>{ if(stopped) return; stopped=true; reject(new Error('playback failed during frame walk')); };
+      v.addEventListener('error', onErr, {once:true});
+      function step(now, metadata){
+        if(stopped) return;
+        try{ onFrame(metadata); }catch(e){ stopped=true; reject(e); return; }
+        if(onProgress) onProgress(metadata.mediaTime);
+        if(v.ended || v.duration-metadata.mediaTime<0.004){ finish(); return; }
+        v.requestVideoFrameCallback(step);
+      }
+      v.requestVideoFrameCallback(step);
+      v.play().catch(reject);
+    });
+  }
+
   async function findAudioImpact(file){
     try{
       const buf=await file.arrayBuffer();
@@ -1599,19 +1622,34 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
       slowCanvas.width=vw; slowCanvas.height=vh;
 
       // Dense sample — short clips get more frames
-      const targetFrames=Math.min(150, Math.max(60, Math.round(duration*100)));
-      const dt=duration/targetFrames;
       const samples=[];
 
-      for(let i=0;i<targetFrames;i++){
-        const t=i*dt;
-        await seek(slowVideo, t);
-        sctx.drawImage(slowVideo,0,0,vw,vh);
-        const prev=samples.length?samples[samples.length-1]:null;
-        const center=prev&&prev.found&&prev.score>=90?{x:prev.x,y:prev.y}:null;
-        const hit=detectOnSlow(center, !center);
-        samples.push({t:t*1000, x:hit.x, y:hit.y, score:hit.score, found:hit.found});
-        if(i%3===0) setSlowProgress(0.05+0.7*(i/targetFrames));
+      if(supportsFrameCallback){
+        await seek(slowVideo, 0);
+        slowVideo.playbackRate = 1;
+        await walkFrames(slowVideo, (metadata)=>{
+          sctx.drawImage(slowVideo,0,0,vw,vh);
+          const t = metadata.mediaTime;
+          const prev = samples.length?samples[samples.length-1]:null;
+          const center = prev&&prev.found&&prev.score>=90?{x:prev.x,y:prev.y}:null;
+          const hit = detectOnSlow(center, !center);
+          samples.push({t:t*1000, x:hit.x, y:hit.y, score:hit.score, found:hit.found});
+        }, (mediaTime)=>{
+          setSlowProgress(0.05+0.7*Math.min(1, mediaTime/duration));
+        });
+      }else{
+        const targetFrames=Math.min(150, Math.max(60, Math.round(duration*100)));
+        const dt=duration/targetFrames;
+        for(let i=0;i<targetFrames;i++){
+          const t=i*dt;
+          await seek(slowVideo, t);
+          sctx.drawImage(slowVideo,0,0,vw,vh);
+          const prev=samples.length?samples[samples.length-1]:null;
+          const center=prev&&prev.found&&prev.score>=90?{x:prev.x,y:prev.y}:null;
+          const hit=detectOnSlow(center, !center);
+          samples.push({t:t*1000, x:hit.x, y:hit.y, score:hit.score, found:hit.found});
+          if(i%3===0) setSlowProgress(0.05+0.7*(i/targetFrames));
+        }
       }
 
       setSlowProgress(0.8);
@@ -1724,6 +1762,7 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
       renderResult(result);
       diagnostics.textContent=[
         'Slow-mo analysis complete',
+        'Frame extraction: '+(supportsFrameCallback?'requestVideoFrameCallback (every decoded frame)':'seek-based sampling (fallback)'),
         'Frames sampled: '+samples.length,
         'Ball hits: '+good.length,
         'Impact audio: '+(impact?('yes @ '+impact.t.toFixed(0)+' ms'):'not found'),
@@ -1735,7 +1774,7 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
       slowState.textContent='Error';
       slowHud.innerHTML='<b>FAILED</b><br>'+(e.message||e);
       quality.innerHTML='<b>Slow-mo failed</b><br>'+(e.message||e);
-      diagnostics.textContent='Slow-mo error: '+(e.message||e);
+      diagnostics.textContent='Slow-mo error: '+(e.message||e)+'\nFrame extraction: '+(supportsFrameCallback?'requestVideoFrameCallback':'seek-based sampling (fallback)');
     }finally{
       slowBusy=false;
       slowAnalyze.disabled=!slowUrl;
