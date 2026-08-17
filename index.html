@@ -68,6 +68,17 @@
     background:var(--fairway-deep);color:var(--paper-light);font-size:9px;line-height:16px;text-align:center;margin-right:6px;
   }
 
+  .subnav{display:flex;gap:8px;margin-bottom:16px;}
+  .subnav button{
+    font-family:'IBM Plex Mono',monospace;font-size:11.5px;font-weight:600;letter-spacing:0.05em;
+    text-transform:uppercase;background:var(--paper-light);border:1px solid var(--line);color:var(--graphite);
+    opacity:0.65;padding:8px 14px;border-radius:16px;cursor:pointer;transition:opacity .15s,background .15s,border-color .15s;
+  }
+  .subnav button:hover{opacity:0.9;}
+  .subnav button.active{opacity:1;background:var(--fairway-deep);border-color:var(--fairway-deep);color:var(--paper-light);}
+  .subview{display:none;}
+  .subview.active{display:block;}
+
   section{display:none;}
   section.active{display:block;animation:fade .2s ease;}
   @keyframes fade{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
@@ -1238,39 +1249,49 @@
 
   <!-- PRACTICE -->
   <section id="tab-practice">
-    <div class="card">
-      <details class="form-toggle" id="practiceFormDetails">
-        <summary><span class="marker"></span>Log a practice session</summary>
-        <div class="form-body">
-          <div class="grid3">
-            <div class="field"><label>Date</label><input type="date" id="p-date"></div>
-            <div class="field"><label>Focus area</label><input type="text" id="p-focus" placeholder="e.g. Putting, wedges, new irons feel"></div>
-            <div class="field"><label>Duration (min)</label><input type="number" id="p-duration" min="0"></div>
+    <div class="subnav" id="practiceSubnav">
+      <button type="button" class="active" data-subview="sessions">Practice Log</button>
+      <button type="button" data-subview="journal">Journal</button>
+    </div>
+
+    <div class="subview active" id="subview-sessions">
+      <div class="card">
+        <details class="form-toggle" id="practiceFormDetails">
+          <summary><span class="marker"></span>Log a practice session</summary>
+          <div class="form-body">
+            <div class="grid3">
+              <div class="field"><label>Date</label><input type="date" id="p-date"></div>
+              <div class="field"><label>Focus area</label><input type="text" id="p-focus" placeholder="e.g. Putting, wedges, new irons feel"></div>
+              <div class="field"><label>Duration (min)</label><input type="number" id="p-duration" min="0"></div>
+            </div>
+            <div class="field"><label>Notes / swing thoughts / reps</label><textarea id="p-notes" placeholder="What you worked on, cues that clicked, drills..."></textarea></div>
+            <button class="btn" id="savePracticeBtn">Save session</button>
+            <button class="btn outline" id="cancelEditPracticeBtn" type="button" style="display:none;margin-left:8px;">Cancel edit</button>
           </div>
-          <div class="field"><label>Notes / swing thoughts / reps</label><textarea id="p-notes" placeholder="What you worked on, cues that clicked, drills..."></textarea></div>
-          <button class="btn" id="savePracticeBtn">Save session</button>
-          <button class="btn outline" id="cancelEditPracticeBtn" type="button" style="display:none;margin-left:8px;">Cancel edit</button>
-        </div>
-      </details>
+        </details>
+      </div>
+      <div class="card">
+        <h2>Practice history</h2>
+        <div id="practiceList"></div>
+      </div>
     </div>
-    <div class="card">
-      <h2>Practice history</h2>
-      <div id="practiceList"></div>
-    </div>
-    <div class="card">
-      <details class="form-toggle" id="noteFormDetails">
-        <summary><span class="marker"></span>Journal entry</summary>
-        <div class="form-body">
-          <div class="field"><label>Date</label><input type="date" id="n-date"></div>
-          <div class="field"><label>Thought</label><textarea id="n-text" placeholder="Anything — a swing thought, gear decision, mental game note, goal for the season..."></textarea></div>
-          <button class="btn" id="saveNoteBtn">Add entry</button>
-          <button class="btn outline" id="cancelEditNoteBtn" type="button" style="display:none;margin-left:8px;">Cancel edit</button>
-        </div>
-      </details>
-    </div>
-    <div class="card">
-      <h2>Journal</h2>
-      <div id="notesList"></div>
+
+    <div class="subview" id="subview-journal">
+      <div class="card">
+        <details class="form-toggle" id="noteFormDetails">
+          <summary><span class="marker"></span>Journal entry</summary>
+          <div class="form-body">
+            <div class="field"><label>Date</label><input type="date" id="n-date"></div>
+            <div class="field"><label>Thought</label><textarea id="n-text" placeholder="Anything — a swing thought, gear decision, mental game note, goal for the season..."></textarea></div>
+            <button class="btn" id="saveNoteBtn">Add entry</button>
+            <button class="btn outline" id="cancelEditNoteBtn" type="button" style="display:none;margin-left:8px;">Cancel edit</button>
+          </div>
+        </details>
+      </div>
+      <div class="card">
+        <h2>Journal</h2>
+        <div id="notesList"></div>
+      </div>
     </div>
   </section>
 
@@ -1633,6 +1654,16 @@ document.getElementById('tabs').addEventListener('click', e=>{
   document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
   if(btn.dataset.tab === 'stats') renderStats();
   if(btn.dataset.tab === 'play') renderPlayHole();
+});
+
+// ---------- practice tab subnav ----------
+document.getElementById('practiceSubnav').addEventListener('click', e=>{
+  const btn = e.target.closest('button[data-subview]');
+  if(!btn) return;
+  document.querySelectorAll('#practiceSubnav button').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('#tab-practice .subview').forEach(s=>s.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('subview-'+btn.dataset.subview).classList.add('active');
 });
 
 // ---------- preset dropdown ----------
