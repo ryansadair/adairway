@@ -1717,9 +1717,8 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
   findAudioImpact.lastDebug = null;
 
   // iOS / Safari often cannot decodeAudioData() on Camera .MOV files.
-  // Fallback: play the <video> through Web Audio and sample the analyser.
-  // MediaElementSource can only be created once per element and must stay on
-  // a live AudioContext — keep both on the element.
+  // Fallback: briefly play the <video> through Web Audio and sample levels.
+  // Hard-timeout everything — iOS autoplay / seek can hang forever otherwise.
   async function findAudioImpactViaElement(videoEl, hintMs){
     const debug = { ok:false, reason:'', method:'media-element', durationMs:0, peaks:0, maxRms:0 };
     const fail = (reason)=>{
@@ -1731,21 +1730,27 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
     const AC = window.AudioContext || window.webkitAudioContext;
     if(!AC) return fail('Web Audio unsupported');
 
+    const withTimeout = (p, ms, label)=> Promise.race([
+      p,
+      new Promise((_, rej)=> setTimeout(()=> rej(new Error(label||('timeout '+ms+'ms'))), ms))
+    ]);
+
     let analyser = null, gain = null;
     const peaks = [];
     let maxRms = 0;
     const prevMuted = videoEl.muted;
     const prevVolume = videoEl.volume;
     const prevRate = videoEl.playbackRate;
+    let finished = false;
 
     try{
       if(!videoEl._adairAudioCtx || videoEl._adairAudioCtx.state === 'closed'){
         videoEl._adairAudioCtx = new AC();
-        videoEl._adairAudioSource = null; // must recreate with new context
+        videoEl._adairAudioSource = null;
       }
       const ctx = videoEl._adairAudioCtx;
-      if(ctx.state === 'suspended') await ctx.resume();
-      // One MediaElementSource per element lifetime (per context)
+      try{ if(ctx.state === 'suspended') await withTimeout(ctx.resume(), 1500, 'AudioContext.resume timeout'); }catch(_){}
+
       if(!videoEl._adairAudioSource){
         videoEl._adairAudioSource = ctx.createMediaElementSource(videoEl);
       }
@@ -1754,7 +1759,7 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
       analyser.fftSize = 256;
       analyser.smoothingTimeConstant = 0;
       gain = ctx.createGain();
-      gain.gain.value = 0; // silence speakers; still analyse
+      gain.gain.value = 0; // silence speakers
       try{ source.disconnect(); }catch(_){}
       source.connect(analyser);
       analyser.connect(gain);
@@ -1764,37 +1769,48 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
       const floatData = typeof analyser.getFloatTimeDomainData === 'function'
         ? new Float32Array(analyser.fftSize) : null;
 
-      // Focus near visual lock when we have one; otherwise scan whole clip.
       const dur = videoEl.duration || 0;
       debug.durationMs = dur * 1000;
-      let startT = 0, endT = dur;
+      // Tight window around visual lock — 5s max so we never sit here long
+      let startT = 0, endT = Math.min(dur || 5, 5);
       if(hintMs != null && isFinite(hintMs) && dur > 0){
-        startT = Math.max(0, (hintMs/1000) - 2.5);
-        endT = Math.min(dur, (hintMs/1000) + 2.5);
+        startT = Math.max(0, (hintMs/1000) - 1.5);
+        endT = Math.min(dur, (hintMs/1000) + 2.0);
       }
-      // Cap scan length so long setup clips don't take forever
-      if(endT - startT > 12) endT = startT + 12;
+      if(endT - startT > 5) endT = startT + 5;
 
-      videoEl.muted = false; // iOS may zero the graph when muted
-      videoEl.volume = 1;
-      videoEl.playbackRate = 1;
-      await new Promise((resolve, reject)=>{
-        const onSeek = ()=>{ videoEl.removeEventListener('seeked', onSeek); resolve(); };
+      // Seek with hard timeout (iOS sometimes never fires seeked)
+      await new Promise((resolve)=>{
+        let done = false;
+        const finish = ()=>{ if(done) return; done = true; resolve(); };
+        const onSeek = ()=>{ videoEl.removeEventListener('seeked', onSeek); finish(); };
         videoEl.addEventListener('seeked', onSeek);
-        try{ videoEl.currentTime = startT; }
-        catch(e){ reject(e); }
-        setTimeout(resolve, 400); // safety
+        try{ videoEl.currentTime = startT; }catch(_){ finish(); }
+        setTimeout(finish, 600);
       });
 
-      const sampleMs = 12;
+      // Unmute so iOS feeds the audio graph; keep element volume low
+      videoEl.muted = false;
+      videoEl.volume = 0.05;
+      try{ videoEl.playbackRate = 1; }catch(_){}
+
+      // play() is the usual hang point on iOS (autoplay policy / iframe).
+      try{
+        await withTimeout(videoEl.play(), 2000, 'video.play() blocked or timed out');
+      }catch(playErr){
+        return fail('media-element play failed: '+(playErr && playErr.message || playErr));
+      }
+
+      // Sample for at most ~4s wall time regardless of clip length
+      const wallBudgetMs = 4000;
+      const tWallEnd = performance.now() + wallBudgetMs;
       const baselineWindow = [];
-      let baseline = 0.01;
-      await videoEl.play();
 
       await new Promise((resolve)=>{
-        const tEnd = performance.now() + Math.max(1500, (endT - startT) * 1000 + 500);
         const tick = ()=>{
-          if(videoEl.ended || videoEl.currentTime >= endT - 0.02 || performance.now() > tEnd){
+          if(finished) return;
+          if(videoEl.ended || videoEl.paused || videoEl.currentTime >= endT - 0.03 || performance.now() > tWallEnd){
+            finished = true;
             resolve();
             return;
           }
@@ -1823,22 +1839,23 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
           const level = Math.max(rms, peak * 0.55);
           if(level > maxRms) maxRms = level;
           baselineWindow.push(level);
-          if(baselineWindow.length > 40) baselineWindow.shift();
+          if(baselineWindow.length > 30) baselineWindow.shift();
           const sorted = baselineWindow.slice().sort((a,b)=>a-b);
-          baseline = sorted[Math.floor(sorted.length/2)] || 0.01;
-          const thresh = Math.max(0.02, baseline * 4.5);
+          const baseline = sorted[Math.floor(sorted.length/2)] || 0.01;
+          const thresh = Math.max(0.015, baseline * 3.5);
           const tMs = videoEl.currentTime * 1000;
           if(level >= thresh){
-            // keep strongest near this moment
             if(!peaks.length || Math.abs(peaks[peaks.length-1].t - tMs) > 40){
               peaks.push({ t: tMs, level });
             }else if(level > peaks[peaks.length-1].level){
               peaks[peaks.length-1] = { t: tMs, level };
             }
           }
-          setTimeout(tick, sampleMs);
+          setTimeout(tick, 20);
         };
         tick();
+        // Absolute backstop
+        setTimeout(()=>{ if(!finished){ finished = true; resolve(); } }, wallBudgetMs + 200);
       });
 
       try{ videoEl.pause(); }catch(_){}
@@ -1846,8 +1863,7 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
       debug.maxRms = maxRms;
 
       if(!peaks.length){
-        if(maxRms > 0.015){
-          // take max sample time approx from last scan center
+        if(maxRms > 0.02){
           debug.ok = true;
           debug.reason = 'element-max-level-only';
           findAudioImpact.lastDebug = debug;
@@ -1859,23 +1875,23 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
             debug
           };
         }
-        return fail('media-element: no peak (maxRms='+maxRms.toFixed(4)+')');
+        return fail('media-element: no peak (maxRms='+maxRms.toFixed(4)+') — iOS may block audio in iframe');
       }
 
-      // Prefer peak nearest hint
       let best = peaks[0];
       if(hintMs != null && isFinite(hintMs)){
-        for(const p of peaks){
-          if(Math.abs(p.t - hintMs) < Math.abs(best.t - hintMs)) best = p;
-        }
-        // If several are close, prefer loudest within 800ms of hint
         let loud = null;
         for(const p of peaks){
-          if(Math.abs(p.t - hintMs) <= 800){
+          if(Math.abs(p.t - hintMs) <= 1000){
             if(!loud || p.level > loud.level) loud = p;
           }
         }
         if(loud) best = loud;
+        else {
+          for(const p of peaks){
+            if(Math.abs(p.t - hintMs) < Math.abs(best.t - hintMs)) best = p;
+          }
+        }
       }else{
         for(const p of peaks) if(p.level > best.level) best = p;
       }
@@ -1893,13 +1909,13 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
     }catch(e){
       return fail('media-element exception: '+(e && (e.message||e.name)||e));
     }finally{
+      finished = true;
       try{ videoEl.pause(); }catch(_){}
       try{ videoEl.muted = prevMuted; }catch(_){}
       try{ videoEl.volume = prevVolume; }catch(_){}
       try{ videoEl.playbackRate = prevRate; }catch(_){}
       try{ if(gain) gain.disconnect(); }catch(_){}
       try{ if(analyser) analyser.disconnect(); }catch(_){}
-      // Keep MediaElementSource + AudioContext alive on the element for re-use.
     }
   }
 
@@ -2019,13 +2035,25 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
       }
 
       let impact=await findAudioImpact(file, roughLock?roughLock.t:null);
-      // iPhone Camera MOVs often fail decodeAudioData in Safari — fall back to
-      // sampling the <video> element through Web Audio instead.
+      // iPhone Camera MOVs often fail decodeAudioData in Safari — try a short
+      // element-playback sample, but never block analysis for more than ~6s.
       if(!impact){
         const why = (findAudioImpact.lastDebug && findAudioImpact.lastDebug.reason) || '';
         if(/decodeAudioData|Decoding failed|not supported|no file/i.test(why) || !why){
-          slowHud.innerHTML='<b>ANALYZING</b><br>Audio decode failed — sampling clip playback…';
-          impact = await findAudioImpactViaElement(slowVideo, roughLock?roughLock.t:null);
+          slowHud.innerHTML='<b>ANALYZING</b><br>Audio decode failed — quick playback sample…';
+          try{
+            impact = await Promise.race([
+              findAudioImpactViaElement(slowVideo, roughLock?roughLock.t:null),
+              new Promise((resolve)=> setTimeout(()=>{
+                if(!findAudioImpact.lastDebug || !findAudioImpact.lastDebug.ok){
+                  findAudioImpact.lastDebug = Object.assign(findAudioImpact.lastDebug||{}, {
+                    reason: (findAudioImpact.lastDebug && findAudioImpact.lastDebug.reason) || 'media-element overall timeout'
+                  });
+                }
+                resolve(null);
+              }, 6000))
+            ]);
+          }catch(_){ impact = null; }
         }
       }
       dbg.impact=impact;
