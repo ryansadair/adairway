@@ -1,0 +1,1749 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Adairway Golf">
+<meta name="theme-color" content="#14251c">
+<title>Adairway Golf — Range Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=IBM+Plex+Mono:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#14251c;--panel:#1b2e22;--panel2:#223a2b;--line:#3a5744;--text:#F5F0E6;--muted:#9FB3A4;--green:#7BAE86;--amber:#C7A876;--red:#C1584C}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--text);font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;touch-action:manipulation;-webkit-text-size-adjust:100%}body{min-height:100vh}
+.app{max-width:1100px;margin:auto;padding:14px 14px 36px}
+.top{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
+.brand{font-family:'IBM Plex Mono',monospace;font-weight:600;letter-spacing:.06em;text-transform:uppercase;font-size:12.5px;white-space:nowrap;color:var(--muted)}.badge{display:none}
+.modes{display:flex;gap:6px;margin-bottom:12px;background:#0a140e;border:1px solid var(--line);border-radius:12px;padding:4px}
+.modeBtn{flex:1;border:0;border-radius:9px;padding:10px 12px;font-weight:750;font-size:13px;background:transparent;color:var(--muted);cursor:pointer}
+.modeBtn.active{background:var(--green);color:#14251c}
+.grid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(290px,.7fr);gap:14px}
+.card{background:linear-gradient(180deg,#102017,#0b150e);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.head{padding:13px 15px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+.head strong{font-size:11px;text-transform:uppercase;letter-spacing:.09em}
+.camera{position:relative;aspect-ratio:16/10;background:#0A140F;overflow:hidden}
+.camera video{width:100%;height:100%;object-fit:cover;display:block}
+.camera canvas{display:none}
+.overlay{position:absolute;inset:0;pointer-events:none}
+.launchline{position:absolute;left:50%;top:12%;bottom:8%;width:1px;background:rgba(115,216,138,.38);transform:translateX(-50%)}
+.ballDot{position:absolute;left:50%;bottom:19%;width:28px;height:28px;border:2px solid #fff;border-radius:50%;transform:translate(-50%,50%);box-shadow:0 0 0 6px rgba(123,174,134,.16)}
+.netbox{position:absolute;left:15%;right:15%;top:10%;bottom:12%;border:1px dashed rgba(255,255,255,.25);border-radius:8px}
+.hud{position:absolute;left:10px;top:10px;background:rgba(0,0,0,.62);padding:8px 10px;border-radius:10px;font-size:11px;line-height:1.45}
+.hud b{color:var(--green)}
+.controls{display:flex;gap:8px;flex-wrap:wrap;padding:13px 15px}
+.btn{border:1px solid var(--line);border-radius:10px;background:#17271b;color:var(--text);padding:10px 13px;font-weight:750;cursor:pointer}
+.btn.primary{background:var(--green);color:#14251c;border-color:var(--green)}
+.btn.arm{background:var(--amber);color:#191004;border-color:var(--amber)}
+.btn.danger{background:#2E1A16;border-color:#6B3A30}
+.btn:disabled{opacity:.42;cursor:not-allowed}
+.panel{padding:15px}
+.field{margin-bottom:12px}
+.field label{display:block;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.09em;margin-bottom:5px}
+.field input,.field select{width:100%;padding:10px;border-radius:9px;border:1px solid var(--line);background:#09120c;color:var(--text);font-size:16px}
+.metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.metric{background:#09120c;border:1px solid var(--line);border-radius:11px;padding:10px}
+.metric span{display:block;color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.08em}
+.metric b{display:block;font-size:21px;margin-top:4px}
+.quality{margin-top:10px;border:1px solid var(--line);border-radius:11px;padding:10px;background:#09120c;font-size:11px;color:var(--muted);line-height:1.45}
+.quality b{color:var(--text)}
+.wide{grid-column:1/-1}
+.range{height:280px;background:#0F1F16;position:relative}
+.range canvas{width:100%;height:100%;display:block}
+.history{overflow:auto}
+.history table{width:100%;border-collapse:collapse;font-size:12px}
+.history th,.history td{padding:9px 7px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+.history th:first-child,.history td:first-child{text-align:left}
+.empty{padding:22px;color:var(--muted);font-size:12px}
+.diag{font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:#9FB3A4;line-height:1.65;white-space:pre-wrap}
+.note{color:var(--muted);font-size:11px;line-height:1.5;margin-top:10px}
+.calSteps{display:grid;gap:8px}
+.step{padding:10px;border:1px solid var(--line);border-radius:10px;background:#09120c;font-size:12px}
+.step.done{border-color:#5C8A6B}
+.step .small{display:block;color:var(--muted);font-size:10px;margin-top:3px}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.78);display:none;z-index:100;align-items:flex-end;justify-content:center}
+.modal.show{display:flex}
+.sheet{width:min(680px,100%);background:#1b2e22;border:1px solid var(--line);border-bottom:0;border-radius:20px 20px 0 0;padding:16px;max-height:88vh;overflow:auto}
+.sheet h2{margin:0 0 8px;font-size:22px}
+.sheet p{color:var(--muted);font-size:12px;line-height:1.5}
+.tapArea{position:relative;aspect-ratio:16/10;background:#0A140F;border-radius:12px;overflow:hidden;margin:10px 0}
+.tapArea video{width:100%;height:100%;object-fit:cover}
+.tapMarker{position:absolute;width:24px;height:24px;border:2px solid white;border-radius:50%;transform:translate(-50%,-50%);display:none}
+.tapMarker.show{display:block}
+.drop{display:block;width:100%;box-sizing:border-box;border:1px dashed var(--line);border-radius:14px;padding:18px 14px;text-align:center;color:var(--muted);font-size:12px;line-height:1.45;background:#09120c;cursor:pointer;overflow:hidden}
+.drop strong{color:var(--text);display:block;margin-bottom:6px;font-size:14px}
+.drop span{display:block}
+.drop input{display:none}
+.progress{height:6px;background:#223a2b;border-radius:99px;overflow:hidden;margin-top:10px}
+.progress>i{display:block;height:100%;width:0;background:var(--green);border-radius:99px;transition:width .15s}
+.hidden{display:none!important}
+@media(max-width:800px){.grid{grid-template-columns:1fr}.wide{grid-column:auto}.camera{aspect-ratio:4/3}.range{height:240px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top"><div class="brand">ADAIRWAY GOLF — RANGE LAB</div><div class="badge" id="topBadge">V5.0.1 • LIVE + SLOW-MO</div></div>
+
+  <div class="modes" role="tablist">
+    <button type="button" class="modeBtn active" id="modeLive" data-mode="live">Live camera</button>
+    <button type="button" class="modeBtn" id="modeSlow" data-mode="slow">Slow-mo clip</button>
+  </div>
+
+  <div class="grid">
+    <section class="card" id="liveCard">
+      <div class="head"><strong>Live camera</strong><span id="camState">OFF</span></div>
+      <div class="camera">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="proc"></canvas>
+        <div class="overlay">
+          <div id="handsFreePanel" style="position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:20;min-width:260px;text-align:center;padding:10px 16px;border-radius:999px;background:rgba(0,0,0,.78);border:1px solid rgba(255,255,255,.2);box-shadow:0 8px 30px rgba(0,0,0,.25);pointer-events:none">
+            <div id="handsFreeState" style="font-weight:900;font-size:13px;letter-spacing:.05em">CAMERA OFF</div>
+            <div id="handsFreeDetail" style="font-size:10px;margin-top:3px;opacity:.72">Start the camera to begin.</div>
+            <div id="detectionEvidence" style="font-size:9px;margin-top:5px;opacity:.55">Detection confidence: waiting</div>
+            <div id="micEvidence" style="font-size:9px;margin-top:3px;opacity:.55">Mic: off</div>
+          </div>
+          <div class="netbox"></div><div class="launchline"></div><div class="ballDot"></div><div class="hud" id="hud">Camera off</div>
+        </div>
+      </div>
+      <div class="controls">
+        <button class="btn primary" id="start">Start Camera</button>
+        <button class="btn" id="diag">Diagnostics</button>
+        <button class="btn arm" id="arm" disabled>Arm Shot</button>
+        <button class="btn" id="testMic" disabled>Test Mic</button>
+        <button class="btn" id="voice" disabled>Voice: ON</button>
+        <button class="btn danger" id="stop" disabled>Stop</button>
+      </div>
+    </section>
+
+    <section class="card hidden" id="slowCard">
+      <div class="head"><strong>Slow-mo clip</strong><span id="slowState">Ready</span></div>
+      <div class="camera">
+        <video id="slowVideo" playsinline muted></video>
+        <canvas id="slowCanvas" style="display:none"></canvas>
+        <div class="overlay">
+          <div class="netbox"></div><div class="launchline"></div>
+          <div class="hud" id="slowHud">Record in Camera at 120 or 240 fps, then choose the clip.</div>
+        </div>
+      </div>
+      <div class="panel">
+        <label class="drop" id="slowDrop">
+          <strong>Choose slow-mo video</strong>
+          <span>Camera → Slow-mo → record → select file</span>
+          <input type="file" id="slowFile" accept="video/*">
+        </label>
+        <div class="progress" id="slowProgressWrap" style="display:none"><i id="slowProgress"></i></div>
+      </div>
+      <div class="controls">
+        <button class="btn primary" id="slowAnalyze" disabled>Analyze clip</button>
+        <button class="btn" id="slowClear" disabled>Clear</button>
+      </div>
+    </section>
+
+    <aside class="card">
+      <div class="head"><strong>Setup</strong><span id="setupState">Not calibrated</span></div>
+      <div class="panel">
+        <div class="field"><label>Club</label><select id="club"><option>Driver</option><option>3 Wood</option><option>5 Wood</option><option>Hybrid</option><option>5 Iron</option><option>6 Iron</option><option selected>7 Iron</option><option>8 Iron</option><option>9 Iron</option><option>Pitching Wedge</option><option>Wedge</option></select></div>
+        <div class="field"><label>Ball → Net distance (ft)</label><input id="netDistance" type="number" min="4" max="20" step="0.1" value="6.5"></div>
+        <div class="field"><label>Net width (ft)</label><input id="netWidth" type="number" min="4" max="12" step="0.1" value="8.0"></div>
+        <button class="btn" id="calibrate" style="width:100%;margin-bottom:12px">Calibrate Camera Geometry</button>
+        <div class="metrics">
+          <div class="metric"><span>Ball Speed</span><b id="speed">—</b></div>
+          <div class="metric"><span>Launch Direction</span><b id="direction">—</b></div>
+          <div class="metric"><span>Launch Angle</span><b id="angle">—</b></div>
+          <div class="metric"><span>Carry</span><b id="carry">—</b></div>
+          <div class="metric"><span>Total</span><b id="total">—</b></div>
+          <div class="metric"><span>Shape</span><b id="shape">—</b></div>
+        </div>
+        <div class="quality" id="quality"><b>Measurement status</b><br>Live: start camera & arm. Slow-mo: pick a 120/240 fps clip.</div>
+      </div>
+    </aside>
+
+    <section class="card wide">
+      <div class="head"><strong>Diagnostics</strong><span id="captureStatus">Waiting</span></div>
+      <div class="panel"><div class="diag" id="diagnostics">Pick Live or Slow-mo to begin.</div></div>
+    </section>
+
+    <section class="card wide">
+      <div class="head"><strong>Ball Flight Model</strong><span id="flightLabel">Waiting for a measured shot</span></div>
+      <div class="range"><canvas id="rangeCanvas"></canvas></div>
+    </section>
+
+    <section class="card wide">
+      <div class="head"><strong>Shot History</strong><span id="count">0 shots</span></div>
+      <div class="history"><div class="empty" id="empty">No measured shots yet.</div><table id="table" style="display:none"><thead><tr><th>#</th><th>Club</th><th>Speed</th><th>Dir.</th><th>Launch</th><th>Carry</th><th>Total</th><th>Conf.</th></tr></thead><tbody id="tbody"></tbody></table></div>
+      <div class="panel"><div class="note">Live uses the phone camera + mic. Slow-mo analyzes a 120/240 fps Camera clip for denser ball track. Carry is a model estimate (spin not measured). Set net distance accurately.</div></div>
+    </section>
+  </div>
+</div>
+
+<div class="modal" id="calModal">
+  <div class="sheet">
+    <h2>Camera Geometry Calibration</h2>
+    <p>For your shed, start with the iPhone centered behind the golfer, about 7–10 ft behind the ball and roughly 3–4 ft high. We are calibrating the image, not permanently mounting the phone yet.</p>
+    <div class="tapArea"><video id="calVideo" autoplay playsinline muted></video><div class="tapMarker" id="tapMarker"></div></div>
+    <div class="calSteps" id="steps"></div>
+    <div class="controls"><button class="btn primary" id="finishCal">Finish Calibration</button><button class="btn" id="closeCal">Close</button></div>
+  </div>
+</div>
+
+<script>
+const video=document.getElementById('video'), proc=document.getElementById('proc'), pctx=proc.getContext('2d',{willReadFrequently:true});
+const rangeCanvas=document.getElementById('rangeCanvas'), rctx=rangeCanvas.getContext('2d');
+const startBtn=document.getElementById('start'), stopBtn=document.getElementById('stop'), armBtn=document.getElementById('arm');
+const diagBtn=document.getElementById('diag'), calBtn=document.getElementById('calibrate');
+const hud=document.getElementById('hud'), diagnostics=document.getElementById('diagnostics'), quality=document.getElementById('quality');
+let stream=null, track=null, frameReq=0, running=false, armed=false, frameCount=0, lastVideoTime=-1, timestamps=[];
+let shotFrames=[], shotActive=false, shotStart=0, lastProcess=0, calibration={ball:null,netLeft:null,netCenter:null,netRight:null,scale:null,done:false};
+let shots=[];
+
+// ===== V5 AUDIO IMPACT GATE =====
+let audioCtx=null, audioAnalyser=null, audioSource=null, audioGain=null;
+let audioData=null, audioFloat=null, audioRaf=0;
+let audioPeaks=[], audioBaseline=0.01, audioLiveLevel=0, audioEnabled=false, audioLastPeakT=0;
+let audioRecent=[], audioTrack=null, audioOnlyStream=null;
+const AUDIO_WINDOW_MS=800;
+const AUDIO_HISTORY_MS=3500;
+let ballSeed=null; // {x,y} in processing-canvas pixels — from tap or calibration
+
+function audioUpdateMicUI(msg){
+  const el=document.getElementById('micEvidence');
+  if(el) el.textContent=msg;
+}
+
+function stopAudio(){
+  if(audioRaf) cancelAnimationFrame(audioRaf);
+  audioRaf=0;
+  try{ if(audioSource) audioSource.disconnect(); }catch(e){}
+  try{ if(audioGain) audioGain.disconnect(); }catch(e){}
+  try{ if(audioAnalyser) audioAnalyser.disconnect(); }catch(e){}
+  try{ if(audioCtx && audioCtx.state!=='closed') audioCtx.close(); }catch(e){}
+  if(audioOnlyStream){ try{ audioOnlyStream.getTracks().forEach(t=>t.stop()); }catch(e){} }
+  audioCtx=null; audioAnalyser=null; audioSource=null; audioGain=null;
+  audioData=null; audioFloat=null; audioTrack=null; audioOnlyStream=null;
+  audioPeaks=[]; audioRecent=[]; audioEnabled=false; audioLiveLevel=0;
+  audioUpdateMicUI('Mic: off');
+}
+
+function wireAudioGraph(mediaStream){
+  const tracks=mediaStream.getAudioTracks();
+  if(!tracks.length) throw new Error('No audio track on stream');
+  audioTrack=tracks[0];
+  audioTrack.enabled=true;
+  try{ audioTrack.applyConstraints({echoCancellation:false,noiseSuppression:false,autoGainControl:false}); }catch(e){}
+
+  const AC=window.AudioContext||window.webkitAudioContext;
+  if(!AC) throw new Error('Web Audio not supported');
+  if(!audioCtx || audioCtx.state==='closed') audioCtx=new AC({sampleRate:48000});
+  if(audioCtx.state==='suspended') audioCtx.resume();
+
+  try{ if(audioSource) audioSource.disconnect(); }catch(e){}
+  try{ if(audioGain) audioGain.disconnect(); }catch(e){}
+  try{ if(audioAnalyser) audioAnalyser.disconnect(); }catch(e){}
+
+  audioSource=audioCtx.createMediaStreamSource(mediaStream);
+  audioGain=audioCtx.createGain();
+  audioGain.gain.value=2.0;
+  audioAnalyser=audioCtx.createAnalyser();
+  audioAnalyser.fftSize=256;
+  audioAnalyser.smoothingTimeConstant=0;
+  audioSource.connect(audioGain);
+  audioGain.connect(audioAnalyser);
+
+  audioData=new Uint8Array(audioAnalyser.fftSize);
+  audioFloat=typeof audioAnalyser.getFloatTimeDomainData==='function'
+    ? new Float32Array(audioAnalyser.fftSize) : null;
+  audioEnabled=true;
+  audioPeaks=[];
+  audioRecent=[];
+  audioBaseline=0.008;
+  audioUpdateMicUI('Mic: live · '+ (audioTrack.label||'mic') +' · gain 2x');
+  if(!audioRaf) audioLoop();
+}
+
+function startAudioFromStream(mediaStream){
+  stopAudio();
+  try{
+    wireAudioGraph(mediaStream);
+  }catch(e){
+    audioEnabled=false;
+    audioUpdateMicUI('Mic error: '+(e.message||e.name||'failed'));
+  }
+}
+
+async function ensureHotMic(){
+  if(!audioEnabled) return;
+  const silent=audioLiveLevel<0.002 && audioPeaks.length===0;
+  if(!silent) return;
+  try{
+    const s=await navigator.mediaDevices.getUserMedia({
+      audio:{
+        echoCancellation:false,
+        noiseSuppression:false,
+        autoGainControl:false,
+        channelCount:1
+      },
+      video:false
+    });
+    audioOnlyStream=s;
+    wireAudioGraph(s);
+    audioUpdateMicUI('Mic: dedicated stream · gain 2x');
+  }catch(e){
+    audioUpdateMicUI('Mic weak — check site mic permission');
+  }
+}
+
+function audioLoop(){
+  if(!audioEnabled || !audioAnalyser) return;
+  audioRaf=requestAnimationFrame(audioLoop);
+  if(audioCtx && audioCtx.state==='suspended') audioCtx.resume().catch(()=>{});
+
+  let rms=0, peak=0;
+  if(audioFloat){
+    audioAnalyser.getFloatTimeDomainData(audioFloat);
+    let sum=0;
+    for(let i=0;i<audioFloat.length;i++){
+      const v=audioFloat[i];
+      const a=Math.abs(v);
+      if(a>peak) peak=a;
+      sum+=v*v;
+    }
+    rms=Math.sqrt(sum/audioFloat.length);
+  }else{
+    audioAnalyser.getByteTimeDomainData(audioData);
+    let sum=0;
+    for(let i=0;i<audioData.length;i++){
+      const v=(audioData[i]-128)/128;
+      const a=Math.abs(v);
+      if(a>peak) peak=a;
+      sum+=v*v;
+    }
+    rms=Math.sqrt(sum/audioData.length);
+  }
+
+  audioLiveLevel=Math.max(rms, peak*0.55);
+
+  audioRecent.push(audioLiveLevel);
+  if(audioRecent.length>45) audioRecent.shift();
+  const sorted=audioRecent.slice().sort((a,b)=>a-b);
+  const median=sorted[Math.floor(sorted.length/2)]||0.005;
+  audioBaseline=audioBaseline*0.9 + median*0.1;
+
+  const adaptFloor=Math.max(0.012, audioBaseline*2.8);
+  const spikeFloor=Math.max(0.04, audioBaseline*5);
+  const now=performance.now();
+  const hit=audioLiveLevel>=adaptFloor || peak>=spikeFloor;
+
+  if(hit && (now-audioLastPeakT>40)){
+    audioPeaks.push({t:now, level:audioLiveLevel, peak});
+    audioLastPeakT=now;
+    if(audioPeaks.length>50) audioPeaks.shift();
+  }
+  while(audioPeaks.length && now-audioPeaks[0].t>AUDIO_HISTORY_MS) audioPeaks.shift();
+
+  if(now-audioLastPeakT<600 && audioPeaks.length){
+    audioUpdateMicUI('Mic: IMPACT '+(audioPeaks[audioPeaks.length-1].level*100).toFixed(1)+'%  thr '+(adaptFloor*100).toFixed(1)+'%');
+  }else{
+    const bar=Math.min(24, Math.round(audioLiveLevel*60));
+    audioUpdateMicUI('Mic: '+('█'.repeat(bar)||'·')+' '+(audioLiveLevel*100).toFixed(1)+'%  thr '+(adaptFloor*100).toFixed(1)+'%  pk '+audioPeaks.length);
+  }
+}
+
+function audioPeakNear(t0, windowMs){
+  if(!audioEnabled) return null;
+  let best=null;
+  const w=windowMs||AUDIO_WINDOW_MS;
+  for(const p of audioPeaks){
+    if(Math.abs(p.t-t0)<=w){
+      if(!best || p.level>best.level) best=p;
+    }
+  }
+  return best;
+}
+
+function audioHasImpactNear(t0, windowMs){
+  return !!audioPeakNear(t0, windowMs||AUDIO_WINDOW_MS);
+}
+
+
+// ===== V4.1 HANDS-FREE WORKFLOW =====
+let hfState='OFF', hfTimer=null, shotWatchTimer=null, hfStable=0, hfLastCandidate=null, hfBallLock=null, voiceEnabled=true;
+
+function hfSet(state, detail='', say=''){
+  hfState=state;
+  const el=$('handsFreeState'), d=$('handsFreeDetail'), p=$('handsFreePanel');
+  const labels={
+    OFF:'CAMERA OFF', IDLE:'READY TO ARM', WAITING:'WAITING FOR BALL',
+    LOCKED:'BALL LOCKED • READY', DETECTING:'SHOT DETECTED • ANALYZING',
+    RESULT:'SHOT COMPLETE', ERROR:'CHECK CAMERA'
+  };
+  const bg={
+    OFF:'rgba(0,0,0,.78)', IDLE:'rgba(0,0,0,.78)', WAITING:'rgba(72,53,0,.92)',
+    LOCKED:'rgba(8,88,38,.94)', DETECTING:'rgba(75,57,0,.94)',
+    RESULT:'rgba(7,65,72,.94)', ERROR:'rgba(100,20,20,.94)'
+  };
+  if(el) el.textContent=labels[state]||state;
+  if(d) d.textContent=detail;
+  if(p) p.style.background=bg[state]||bg.OFF;
+  if(say) hfSpeak(say);
+}
+
+function hfSpeak(text){
+  if(!voiceEnabled || !('speechSynthesis' in window)) return;
+  try{
+    speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(text);
+    u.rate=.96; u.pitch=1;
+    speechSynthesis.speak(u);
+  }catch(e){}
+}
+
+function hfCandidate(){
+  try{return detectBallCandidate()}catch(e){return null}
+}
+
+let hfNeedClear=false;
+let hfClearStartedAt=0;          // performance.now() when clear-mat phase began
+const CLEAR_TIMEOUT_MS=6500;     // auto-abandon clear-mat after this long
+const CLEAR_SCORE=175;           // only count a candidate as "still on mat" if this strong
+
+// Map a point in video/processing-pixel space → CSS % inside the visible
+// camera container, correctly inverting object-fit: cover cropping.
+function videoToContainerPercent(vx, vy, vidEl){
+  const el = vidEl || video;
+  const rect = el.getBoundingClientRect();
+  const cw = rect.width || 1, ch = rect.height || 1;
+  const vw = el.videoWidth || proc.width || 1;
+  const vh = el.videoHeight || proc.height || 1;
+  const ca = cw / ch, va = vw / vh;
+  if(ca > va){
+    // Scaled to width; top/bottom cropped
+    const scale = cw / vw;
+    const yOffset = (vh * scale - ch) / 2;
+    return {
+      left: (vx * scale) / cw * 100,
+      top:  (vy * scale - yOffset) / ch * 100
+    };
+  }else{
+    // Scaled to height; left/right cropped
+    const scale = ch / vh;
+    const xOffset = (vw * scale - cw) / 2;
+    return {
+      left: (vx * scale - xOffset) / cw * 100,
+      top:  (vy * scale) / ch * 100
+    };
+  }
+}
+
+function updateBallDot(c){
+  const dot=document.querySelector('.ballDot');
+  if(!dot || !proc.width) return;
+  if(!c || !c.found){ dot.style.opacity='0.35'; return; }
+  const pct = videoToContainerPercent(c.x, c.y, video);
+  dot.style.left = pct.left + '%';
+  dot.style.top  = pct.top  + '%';
+  dot.style.bottom = 'auto';
+  dot.style.transform = 'translate(-50%,-50%)';
+  dot.style.opacity = '1';
+}
+
+function hfStartWaiting(){
+  clearInterval(hfTimer); clearInterval(shotWatchTimer);
+  hfStable=0; hfLastCandidate=null; hfBallLock=null;
+  if(window.v42StartPreShot)v42StartPreShot();
+  let clearCount=0;
+  hfClearStartedAt = hfNeedClear ? performance.now() : 0;
+
+  if(hfNeedClear){
+    hfSet('WAITING','Clear the mat, then place a new ball. (or tap the new ball)','Waiting for clear mat.');
+  }else if(ballSeed){
+    hfSet('WAITING','Ball marked — place it and hold still.','Waiting for ball.');
+  }else{
+    hfSet('WAITING','Tap the ball on screen, then hold still.','Tap ball to mark.');
+  }
+
+  hfTimer=setInterval(()=>{
+    if(hfState!=='WAITING' || !running) return;
+    const c=hfCandidate();
+    const now=performance.now();
+
+    // Live flag + timeout: a tap (or timeout) can abort clear-mat immediately
+    if(hfNeedClear){
+      const elapsed = now - (hfClearStartedAt || now);
+      if(elapsed > CLEAR_TIMEOUT_MS){
+        hfNeedClear=false;
+        clearCount=0;
+        hfSet('WAITING', ballSeed
+          ? 'Clear timed out — using marked spot. Hold still.'
+          : 'Clear timed out. Tap the ball or place one and hold still.',
+          'Ready for next ball.');
+        // fall through to normal lock logic this tick
+      }else if(clearCount < 5){
+        // Only treat a *strong* nearby candidate as "old ball still present".
+        // Weak scuffs (score < CLEAR_SCORE) no longer reset the counter.
+        const stillThere = c && c.found && c.score >= CLEAR_SCORE;
+        if(!stillThere){
+          clearCount++;
+          hfSet('WAITING','Clear the mat… ('+clearCount+'/5)  · tap new ball to skip','Waiting for clear mat.');
+        }else{
+          clearCount=Math.max(0, clearCount-1);
+          updateBallDot(c);
+          hfSet('WAITING','Remove the old ball first (or tap the new one).','Clear the mat.');
+        }
+        if(clearCount>=5){
+          hfNeedClear=false;
+          hfSet('WAITING','Mat clear. Place a ball on the tee.','Waiting for ball.');
+        }
+        return;
+      }else{
+        // clearCount already reached 5 on a previous tick but flag still set
+        hfNeedClear=false;
+      }
+    }
+
+    // Normal lock path (also reached after clear succeeds / is aborted)
+    if(c && c.found && c.score>=120){
+      updateBallDot(c);
+      const dist=hfLastCandidate?Math.hypot(c.x-hfLastCandidate.x,c.y-hfLastCandidate.y):999;
+      if(dist<36) hfStable++;
+      else hfStable=1;
+      hfLastCandidate=c;
+      const ev=document.getElementById('detectionEvidence');
+      if(ev) ev.textContent='Candidate score '+Math.round(c.score)+' · stable '+hfStable+'/3';
+
+      if(hfStable>=3){
+        hfBallLock={x:c.x,y:c.y,t:performance.now()};
+        // Keep seed on the successful lock so the next cycle starts in the right place
+        ballSeed={x:c.x, y:c.y};
+        if(window.v42SetLocked)v42SetLocked(c);
+        clearInterval(hfTimer); hfTimer=null;
+        hfSet('LOCKED', audioEnabled
+          ? 'Ball locked. Hit when ready — impact sound required.'
+          : 'Ball locked. Hit when ready (visual only).',
+          'Ball detected. Ready.');
+        hfStartShotWatch();
+      }else{
+        hfSet('WAITING','Ball candidate — holding… ('+hfStable+'/3)','Stabilizing.');
+      }
+    }else{
+      hfStable=0; hfLastCandidate=null;
+      updateBallDot(c && c.found ? c : null);
+      const ev=document.getElementById('detectionEvidence');
+      if(ev) ev.textContent=c && c.found
+        ?('Weak candidate score '+Math.round(c.score)+' — need ≥120')
+        :'Scanning for ball…';
+    }
+  },80);
+}
+
+function hfStartShotWatch(){
+  clearInterval(shotWatchTimer);
+  let gone=0;
+  shotWatchTimer=setInterval(()=>{
+    if(hfState!=='LOCKED' || !hfBallLock || !running) return;
+    const c=hfCandidate();
+    const moved=c && c.found && Math.hypot(c.x-hfBallLock.x,c.y-hfBallLock.y)>25;
+    const missing=!c || !c.found || c.score<120;
+    if(c && c.found && window.v42RecordPost)v42RecordPost(c);
+    if(moved || missing) gone++; else gone=0;
+
+    if(audioEnabled){
+      const peakAge=audioPeaks.length?Math.round(performance.now()-audioPeaks[audioPeaks.length-1].t):null;
+      audioUpdateMicUI(peakAge!==null && peakAge<600
+        ?('Mic: IMPACT '+(audioPeaks[audioPeaks.length-1].level*100).toFixed(0)+'%  '+peakAge+'ms ago')
+        :('Mic: live '+(audioLiveLevel*100).toFixed(0)+'%  peaks '+audioPeaks.length));
+    }
+
+    if(window.v42Evidence){
+      const ev=v42Evidence();
+      if(ev.confidence!==undefined) {
+        const e=document.getElementById('detectionEvidence');
+        if(e)e.textContent='Detection confidence: '+ev.confidence+'%'+(ev.reason?' · '+ev.reason:'');
+      }
+      if(ev.confirmed){
+        clearInterval(shotWatchTimer); shotWatchTimer=null;
+        const audioNote=ev.audioMatched?' (impact + motion)':'';
+        hfSet('DETECTING','Launch confirmed'+audioNote+'. Gathering frames.','Shot detected. Analyzing.');
+        armed=true; shotActive=true; shotStart=performance.now(); shotFrames=[];
+        setText('captureStatus','SHOT DETECTED');
+        hud.innerHTML='<b>SHOT DETECTED</b><br>Tracking launch frames…'+(ev.audioMatched?'<br>Impact sound matched':'');
+        captureFrame(performance.now());
+      }
+    }
+  },50);
+}
+
+function hfStop(){
+  clearInterval(hfTimer); clearInterval(shotWatchTimer);
+  hfTimer=null; shotWatchTimer=null; hfStable=0; hfLastCandidate=null; hfBallLock=null;
+}
+
+function hfResetAfterResult(){
+  if(!running) return;
+  armed=false; shotActive=false;
+  // Keep last successful lock as soft seed so the next search starts near the tee
+  if(hfBallLock){
+    ballSeed={x:hfBallLock.x, y:hfBallLock.y};
+  }
+  hfNeedClear=true;
+  hfClearStartedAt=0;
+  hfSet('RESULT','Shot complete. Clear the mat (or tap the new ball).','Shot complete.');
+  setTimeout(()=>{ if(running) hfStartWaiting(); },1600);
+}
+
+const $=id=>document.getElementById(id);
+function setText(id,v){$(id).textContent=v}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+
+async function startCamera(){
+  try{
+    const videoConstraints={facingMode:{ideal:'environment'},width:{ideal:1920,min:1280},height:{ideal:1080,min:720},frameRate:{ideal:240,max:240}};
+    const audioTries=[
+      {echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1},
+      {echoCancellation:false,noiseSuppression:false,autoGainControl:false},
+      true
+    ];
+    stream=null;
+    let lastErr=null;
+    for(const audio of audioTries){
+      try{
+        stream=await navigator.mediaDevices.getUserMedia({video:videoConstraints,audio});
+        break;
+      }catch(e){ lastErr=e; }
+    }
+    if(!stream){
+      console.warn('Mic unavailable', lastErr);
+      stream=await navigator.mediaDevices.getUserMedia({video:videoConstraints,audio:false});
+    }
+    track=stream.getVideoTracks()[0];
+    video.srcObject=stream; await video.play();
+    running=true; startBtn.disabled=true; stopBtn.disabled=false; armBtn.disabled=false; $('voice').disabled=false; $('testMic').disabled=false;
+    if(stream.getAudioTracks().length){
+      startAudioFromStream(stream);
+      setTimeout(()=>{ if(running) ensureHotMic(); }, 2000);
+      hfSet('IDLE','Camera + mic live. Clap to test mic, then Arm.','Mic ready.');
+      $('topBadge').textContent='V5.0.1 • LIVE + MIC';
+    }else{
+      audioEnabled=false;
+      audioUpdateMicUI('Mic: denied — visual only');
+      hfSet('IDLE','Camera live (no mic). Press Arm when ready.');
+      $('topBadge').textContent='V5 • LIVE';
+    }
+    $('camState').textContent='LIVE';
+    showDiagnostics(); loop();
+  }catch(e){
+    $('camState').textContent='ERROR';
+    diagnostics.textContent='Camera error: '+e.name+' — '+e.message;
+  }
+}
+function stopCamera(){
+  running=false; armed=false; cancelAnimationFrame(frameReq);
+  stopAudio();
+  if(stream) stream.getTracks().forEach(t=>t.stop()); stream=null;track=null;video.srcObject=null;
+  hfStop(); startBtn.disabled=false;stopBtn.disabled=true;armBtn.disabled=true;$('voice').disabled=true;$('testMic').disabled=true;
+  armBtn.textContent='Arm Shot Capture';armBtn.classList.add('arm');armBtn.style.background='';
+  $('camState').textContent='OFF';$('topBadge').textContent='V5.0.1 • LIVE + SLOW-MO';hud.textContent='Camera off';
+  audioUpdateMicUI('Mic: off');
+}
+
+function showDiagnostics(){
+  if(!track)return;
+  const s=track.getSettings?track.getSettings():{}; const c=track.getCapabilities?track.getCapabilities():{}; const sup=navigator.mediaDevices.getSupportedConstraints?navigator.mediaDevices.getSupportedConstraints():{};
+  const aTrack=stream&&stream.getAudioTracks?stream.getAudioTracks()[0]:null;
+  const aSet=aTrack&&aTrack.getSettings?aTrack.getSettings():{};
+  const lines=[
+    'Browser: '+navigator.userAgent,
+    'Stream: '+(s.width||'?')+' × '+(s.height||'?')+' @ '+(s.frameRate||'?')+' fps',
+    'Reported camera max FPS: '+(c.frameRate?c.frameRate.max:'not exposed'),
+    'Reported camera FPS range: '+(c.frameRate?(c.frameRate.min+'–'+c.frameRate.max):'not exposed'),
+    'Frame-rate constraint supported: '+(sup.frameRate?'YES':'NO'),
+    'Facing mode: '+(s.facingMode||'not reported'),
+    'Device: '+(track.label||'camera'),
+    'Observed callback frames: '+frameCount,
+    'Observed callback cadence: '+observedCadence(),
+    'Calibration: '+(calibration.done?(calibration.scale?.toFixed(1)+' px/ft'):'not complete'),
+    'Mic enabled: '+(audioEnabled?'YES':'NO'),
+    'Mic device: '+(audioTrack?audioTrack.label||aTrack?.label||'microphone':'none'),
+    'Mic track state: '+(audioTrack?audioTrack.readyState+' enabled='+audioTrack.enabled:'none'),
+    'Mic sample rate: '+(aSet.sampleRate||audioCtx?.sampleRate||'?'),
+    'AudioContext state: '+(audioCtx?audioCtx.state:'none'),
+    'Audio baseline / live: '+audioBaseline.toFixed(4)+' / '+audioLiveLevel.toFixed(4),
+    'Recent impact peaks: '+audioPeaks.length+' (window '+AUDIO_WINDOW_MS+' ms)',
+    'Dedicated mic stream: '+(audioOnlyStream?'YES':'no')
+  ];
+  diagnostics.textContent=lines.join('\n');
+}
+function observedCadence(){if(timestamps.length<8)return'collecting…';let ds=[];for(let i=1;i<timestamps.length;i++)ds.push(timestamps[i]-timestamps[i-1]);const avg=ds.reduce((a,b)=>a+b,0)/ds.length;return (1000/avg).toFixed(1)+' fps avg'}
+
+function loop(){
+  if(!running)return;
+  frameReq=requestAnimationFrame(loop);
+  if(video.readyState<2)return;
+  frameCount++;
+  const now=performance.now();
+  const vt=video.currentTime;
+  if(vt!==lastVideoTime){lastVideoTime=vt;timestamps.push(now);if(timestamps.length>120)timestamps.shift();}
+  const minGap=shotActive?0:28;
+  if(now-lastProcess<minGap)return; lastProcess=now;
+  if(proc.width!==video.videoWidth){proc.width=video.videoWidth;proc.height=video.videoHeight;}
+  pctx.drawImage(video,0,0,proc.width,proc.height);
+  if(armed && !shotActive){
+    const hit=detectLaunchMotion();
+    if(hit){shotActive=true;shotStart=now;shotFrames=[];captureFrame(now);setText('captureStatus','SHOT DETECTED');hud.innerHTML='<b>SHOT DETECTED</b><br>Tracking launch frames…';}
+  }else if(shotActive){
+    captureFrame(now);
+    // Short net: ball should be gone well under 0.5s. End sooner to avoid
+    // trailing frames of mat/club being treated as "last seen".
+    if(now-shotStart>700) finishCapture();
+  }
+  if(frameCount%15===0)showDiagnostics();
+}
+
+function captureFrame(t){
+  const f=detectBallCandidate({flight:true});
+  shotFrames.push({t,x:f.x,y:f.y,score:f.score,found:f.found});
+  if(f.found) updateBallDot(f);
+  if(shotFrames.length>60)shotFrames.shift();
+}
+function detectLaunchMotion(){
+  if(!detectLaunchMotion.prev){detectLaunchMotion.prev=pctx.getImageData(0,0,proc.width,proc.height);return false}
+  const w=proc.width,h=proc.height; const y0=Math.floor(h*.48),y1=Math.floor(h*.9),x0=Math.floor(w*.25),x1=Math.floor(w*.75);
+  const cur=pctx.getImageData(0,0,w,h).data, prev=detectLaunchMotion.prev.data; let changed=0,total=0;
+  for(let y=y0;y<y1;y+=4)for(let x=x0;x<x1;x+=4){const i=(y*w+x)*4;const d=Math.abs(cur[i]-prev[i])+Math.abs(cur[i+1]-prev[i+1])+Math.abs(cur[i+2]-prev[i+2]);if(d>95)changed++;total++;}
+  detectLaunchMotion.prev=pctx.getImageData(0,0,w,h); return changed/total>.055;
+}
+
+function ballSearchCenter(){
+  const w=proc.width, h=proc.height;
+  if(hfBallLock) return {x:hfBallLock.x, y:hfBallLock.y, src:'lock'};
+  if(ballSeed){
+    if(ballSeed.pct) return {x:(ballSeed.x/100)*w, y:(ballSeed.y/100)*h, src:'tap'};
+    return {x:ballSeed.x, y:ballSeed.y, src:'tap'};
+  }
+  if(calibration.done && calibration.ball){
+    return {x:(calibration.ball.x/100)*w, y:(calibration.ball.y/100)*h, src:'cal'};
+  }
+  return {x:w*0.5, y:h*0.78, src:'default'};
+}
+
+function detectBallCandidate(opts){
+  opts=opts||{};
+  const w=proc.width,h=proc.height;
+  if(!w||!h) return {found:false,x:0,y:0,score:0};
+
+  const center=ballSearchCenter();
+  let x0,y0,x1,y1;
+  if(opts.flight && hfBallLock){
+    // Tight launch corridor from the locked ball toward the net (up the frame).
+    // Wide full-frame search was tracking the club and producing 30–40 ft "paths".
+    const cx=hfBallLock.x, cy=hfBallLock.y;
+    x0=Math.max(0, Math.floor(cx - w*0.20));
+    x1=Math.min(w, Math.floor(cx + w*0.20));
+    y0=Math.max(0, Math.floor(cy - h*0.58)); // allow rise toward net
+    y1=Math.min(h, Math.floor(cy + h*0.10)); // little room below lock
+  }else if(opts.flight){
+    x0=Math.floor(w*0.18); x1=Math.floor(w*0.82);
+    y0=Math.floor(h*0.08); y1=Math.floor(h*0.88);
+  }else if(hfBallLock || ballSeed || (calibration.done && calibration.ball)){
+    const rw=Math.floor(w*(hfBallLock?0.16:0.20));
+    const rh=Math.floor(h*(hfBallLock?0.16:0.20));
+    x0=Math.max(0, Math.floor(center.x-rw));
+    x1=Math.min(w, Math.floor(center.x+rw));
+    y0=Math.max(0, Math.floor(center.y-rh));
+    y1=Math.min(h, Math.floor(center.y+rh));
+  }else{
+    x0=Math.floor(w*0.18); x1=Math.floor(w*0.82);
+    y0=Math.floor(h*0.52); y1=Math.floor(h*0.96);
+  }
+
+  const rw=Math.max(1,x1-x0), rh=Math.max(1,y1-y0);
+  let img;
+  try{ img=pctx.getImageData(x0,y0,rw,rh); }catch(e){ return {found:false,x:w/2,y:h*0.8,score:0}; }
+
+  const ballR=clamp(Math.round(h*0.011), 4, 12);
+  const step=opts.flight?3:2;
+  let best={found:false,x:center.x,y:center.y,score:0};
+
+  for(let y=ballR; y<img.height-ballR; y+=step){
+    for(let x=ballR; x<img.width-ballR; x+=step){
+      const i=(y*img.width+x)*4;
+      const r=img.data[i], g=img.data[i+1], b=img.data[i+2];
+      const bright=(r+g+b)/3;
+      const mx=Math.max(r,g,b), mn=Math.min(r,g,b);
+      const sat=mx?((mx-mn)/mx):1;
+
+      if(bright<160 || sat>0.20) continue;
+      if(g>r+16 && g>b+10) continue;
+      if(r>g+35 && r>b+25 && bright<210) continue;
+
+      let ring=0, ringN=0, core=0, coreN=0;
+      for(let a=0;a<8;a++){
+        const ang=a*Math.PI/4;
+        const rx=Math.round(x+Math.cos(ang)*ballR*1.7);
+        const ry=Math.round(y+Math.sin(ang)*ballR*1.7);
+        if(rx<0||ry<0||rx>=img.width||ry>=img.height) continue;
+        const j=(ry*img.width+rx)*4;
+        ring+=(img.data[j]+img.data[j+1]+img.data[j+2])/3; ringN++;
+      }
+      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+        const j=((y+dy)*img.width+(x+dx))*4;
+        core+=(img.data[j]+img.data[j+1]+img.data[j+2])/3; coreN++;
+      }
+      if(!ringN||!coreN) continue;
+      ring/=ringN; core/=coreN;
+      const contrast=core-ring;
+      if(contrast<10) continue;
+
+      const absX=x+x0, absY=y+y0;
+      const dist=Math.hypot(absX-center.x, absY-center.y);
+      // Stronger near-weight when we have a user tap / lock so we don't drift up
+      const nearRadius = (hfBallLock || ballSeed) ? Math.max(rw,rh)*0.40 : Math.max(rw,rh)*0.55;
+      const near=1 - Math.min(1, dist/nearRadius);
+
+      // Prefer points at or slightly below the search center (ball body vs highlight)
+      const belowBias = opts.flight ? 0 : Math.max(-2, Math.min(8, (absY - center.y) / Math.max(1,ballR) * 3));
+
+      const score=core*0.30 + contrast*2.2 + near*55 + bright*0.08 + belowBias;
+      if(score>best.score){
+        best={found:true, x:absX, y:absY, score};
+      }
+    }
+  }
+
+  // Nudge reported point a fraction of ball radius downward (highlight → body)
+  if(best.found && !opts.flight){
+    best.y = Math.min(h-2, best.y + ballR*0.45);
+  }
+  return best;
+}
+
+function finishCapture(){
+  armed=false;shotActive=false;armBtn.textContent='Arm Shot Capture';armBtn.classList.add('arm');armBtn.style.background='';
+  const valid=shotFrames.filter(f=>f.found && f.score>=90);
+  const unique=[];
+  for(const f of valid){
+    if(!unique.length || Math.hypot(f.x-unique.at(-1).x,f.y-unique.at(-1).y)>2.5) unique.push(f);
+  }
+  const result=analyzeShot(unique, shotFrames);
+  renderResult(result);shotFrames=[];
+}
+
+function estimateScale(){
+  if(calibration.done && calibration.scale && calibration.scale>10) return calibration.scale;
+  const netW=parseFloat($('netWidth').value)||8;
+  const frameW=proc.width||video.videoWidth||1280;
+  return (frameW*0.62)/netW;
+}
+
+function analyzeShot(frames, allFrames){
+  const netDist=parseFloat($('netDistance').value)||6.5;
+  const pxPerFt=estimateScale();
+  allFrames=allFrames||frames;
+
+  let t0=shotStart||performance.now();
+  if(audioEnabled && audioPeaks.length){
+    let best=null;
+    for(const p of audioPeaks){
+      if(Math.abs(p.t-shotStart)<=AUDIO_WINDOW_MS){
+        if(!best || Math.abs(p.t-shotStart)<Math.abs(best.t-shotStart)) best=p;
+      }
+    }
+    if(best) t0=best.t;
+  }
+
+  const fs=(frames||[]).filter((f,i)=>i===0||f.t>frames[i-1].t);
+
+  const lock=hfBallLock || (fs[0]?{x:fs[0].x,y:fs[0].y}:null);
+
+  // Speed window for a short net:
+  //  - too slow over full net → follow-through noise
+  //  - too fast / one-frame → 195 mph artifact
+  const minSpeedMph = 14;
+  const clubName=($('club').value||'').toLowerCase();
+  const maxSpeedMph = clubName.includes('driver')?180
+    : clubName.includes('wood')?160
+    : clubName.includes('hybrid')?140
+    : clubName.includes('wedge')||clubName.includes('pitching')?95
+    : 120;
+  // Window for short net: allow soft chips, still cut off long club arcs
+  const maxFlightMs = clamp((netDist / (14 / 0.681818)) * 1000, 140, 300);
+  const minFlightMs = Math.max(28, (netDist / (maxSpeedMph / 0.681818)) * 1000);
+  const netPx = netDist * (pxPerFt || 40);
+  // FIRST crossing ends the clock (not max path / club tip)
+  const crossPx = clamp(netPx * 0.40, 28, netPx * 0.65);
+
+  let firstMove=null, crossFrame=null, peakDist=0, peakFrame=null;
+  if(lock){
+    for(const f of fs){
+      const age = f.t - t0;
+      if(age < 0 || age > maxFlightMs) continue;
+      const d=Math.hypot(f.x-lock.x, f.y-lock.y);
+      // Skip points already past the net — almost always club head
+      if(d > netPx * 1.3) continue;
+      if(!firstMove && d>14) firstMove=f;
+      if(d>peakDist){ peakDist=d; peakFrame=f; }
+      if(!crossFrame && d>=crossPx && age>=minFlightMs*0.4){
+        crossFrame=f; // first time, not last
+      }
+    }
+  }
+  if(!firstMove && fs.length){
+    for(const f of fs){
+      if(f.t-t0>=0 && f.t-t0<=maxFlightMs){ firstMove=f; break; }
+    }
+  }
+
+  // Prefer first net-crossing over late max-path
+  let lastSeen = crossFrame
+    || (peakFrame && peakDist <= netPx*1.15 ? peakFrame : null)
+    || firstMove;
+  if(!lastSeen){
+    for(const f of (allFrames||[])){
+      const age=f.t-t0;
+      if(f.found && f.score>=90 && age>=0 && age<=maxFlightMs) lastSeen=f;
+    }
+  }
+
+  let speedFromTime=null, flightMs=null;
+  if(lastSeen && t0){
+    flightMs=lastSeen.t-t0;
+    const travelPx = lock ? Math.hypot(lastSeen.x-lock.x, lastSeen.y-lock.y) : peakDist;
+    const travelFt = travelPx / (pxPerFt || 40);
+
+    if(flightMs >= minFlightMs && flightMs <= maxFlightMs+40){
+      if(travelFt >= netDist*0.25 && travelFt <= netDist*1.25){
+        speedFromTime = (Math.min(travelFt, netDist) / (flightMs/1000)) * 0.681818;
+      }else{
+        // Path outside the sweet range — still use full net / time as estimate
+        speedFromTime = (netDist / (flightMs/1000)) * 0.681818;
+      }
+    }else if(flightMs > 18 && flightMs < minFlightMs && travelFt >= 0.5 && travelFt <= netDist*1.2){
+      // Short window with real path — use segment, not full net (avoids 195 mph)
+      speedFromTime = (travelFt / (flightMs/1000)) * 0.681818;
+    }
+  }
+
+  let speedFromTrack=null, dirDeg=0, launchDeg=12, pathPx=0, forwardShare=0, trackDt=0, trackN=0;
+
+  // Only early frames, and not points past the net (club)
+  const fsEarly = fs.filter(f => {
+    const age=f.t-t0;
+    if(age < -20 || age > maxFlightMs+30) return false;
+    if(lock && Math.hypot(f.x-lock.x,f.y-lock.y) > netPx*1.3) return false;
+    return true;
+  });
+
+  if(fsEarly.length>=2){
+    let bestI=0,bestJ=fsEarly.length-1,bestDist=0;
+    for(let i=0;i<fsEarly.length-1;i++){
+      for(let j=i+1;j<fsEarly.length;j++){
+        const d=Math.hypot(fsEarly[j].x-fsEarly[i].x,fsEarly[j].y-fsEarly[i].y);
+        if(d>bestDist){bestDist=d;bestI=i;bestJ=j;}
+      }
+    }
+    pathPx=bestDist;
+    const window=fsEarly.slice(bestI, Math.min(fsEarly.length, bestI+14));
+    trackN=window.length;
+    if(window.length>=2){
+      const first=window[0], last=window[window.length-1];
+      trackDt=(last.t-first.t)/1000;
+      if(trackDt>=0.006){
+        const tBase=first.t;
+        let sumT=0,sumT2=0,sumX=0,sumY=0,sumTX=0,sumTY=0,n=window.length;
+        for(const p of window){
+          const t=(p.t-tBase)/1000;
+          sumT+=t; sumT2+=t*t; sumX+=p.x; sumY+=p.y; sumTX+=t*p.x; sumTY+=t*p.y;
+        }
+        const denom=n*sumT2-sumT*sumT;
+        let vx,vy;
+        if(Math.abs(denom)>1e-9){
+          vx=(n*sumTX-sumT*sumX)/denom;
+          vy=(n*sumTY-sumT*sumY)/denom;
+        }else{
+          vx=(last.x-first.x)/trackDt;
+          vy=(last.y-first.y)/trackDt;
+        }
+        const speedPx=Math.hypot(vx,vy);
+        speedFromTrack=(speedPx/pxPerFt)*0.681818;
+        const vForward=-vy, vLateral=vx;
+        forwardShare=Math.abs(vForward)/(speedPx+1e-6);
+        const fwdFtS=Math.max(0.35, vForward/pxPerFt);
+        const latFtS=vLateral/pxPerFt;
+        dirDeg=clamp(Math.atan2(latFtS, fwdFtS)*180/Math.PI, -30, 30);
+        const riseFtS=Math.max(0, -vy/pxPerFt);
+        launchDeg=clamp(Math.atan2(riseFtS, fwdFtS)*180/Math.PI*1.25, 5, 38);
+      }
+    }
+  }
+
+  const pathFt = pathPx / (pxPerFt || 1);
+  const pathLooksLikeClub = pathFt > netDist * 2.5;
+
+  let speedMph, speedSource;
+
+  // Pick the best available estimate; clamp instead of rejecting whenever possible.
+  // Priority: sane time-to-net > sane pixel track > any time-to-net > any pixel track
+  if(speedFromTime!=null && speedFromTime>=minSpeedMph && speedFromTime<=maxSpeedMph){
+    speedMph=speedFromTime;
+    speedSource='time-to-net';
+  }else if(speedFromTrack!=null && !pathLooksLikeClub && speedFromTrack>=minSpeedMph && speedFromTrack<=maxSpeedMph*1.1){
+    speedMph=speedFromTrack;
+    speedSource='pixel-track';
+  }else if(speedFromTime!=null){
+    speedMph=clamp(speedFromTime, minSpeedMph, maxSpeedMph);
+    speedSource='time-to-net';
+  }else if(speedFromTrack!=null){
+    speedMph=clamp(speedFromTrack, minSpeedMph, maxSpeedMph);
+    speedSource='pixel-track';
+  }else if(flightMs!=null && flightMs>=minFlightMs && flightMs<=maxFlightMs+40){
+    // Last resort: full net / measured time
+    speedMph=clamp((netDist/(flightMs/1000))*0.681818, minSpeedMph, maxSpeedMph);
+    speedSource='time-to-net';
+  }else{
+    return {
+      ok:false,confidence:12,
+      reason:'Could not measure ball flight. Need impact sound and a few frames of the ball leaving the tee — tap the ball and try again.'
+    };
+  }
+
+  speedMph=clamp(speedMph, 8, maxSpeedMph);
+
+  // Club-based launch defaults when pixel track has no reliable rise/forward
+  const club=($('club').value||'').toLowerCase();
+  const clubLaunch = club.includes('wedge')||club.includes('pitching')?26
+    : club.includes('9')?22 : club.includes('8')?20 : club.includes('7')?18
+    : club.includes('6')?16 : club.includes('5')?14 : club.includes('hybrid')?13
+    : club.includes('wood')?11 : 12;
+
+  // Portrait + short net: pixel track often has weak forwardShare and hits the
+  // ±30° / 5° clamps. Only trust it for aim/launch when motion is clearly
+  // toward the net and not clamped.
+  const trackReliable = trackN>=3 && forwardShare>=0.45 && Math.abs(dirDeg)<28 && pathFt < netDist*2.2;
+
+  if(!trackN || !trackReliable){
+    if(trackN>=2 && Math.abs(dirDeg)<28 && forwardShare>=0.25){
+      dirDeg = clamp(dirDeg * 0.4, -10, 10); // mild aim hint only
+    }else{
+      dirDeg = 0;
+    }
+    launchDeg = clubLaunch;
+  }
+
+  const carry=physicsCarry(speedMph,launchDeg);
+  const total=Math.round(carry*(1.02+Math.min(0.10,speedMph/2000)));
+
+  let conf=30;
+  conf+=speedSource==='time-to-net'?18:10;
+  conf+=Math.min(20, trackN*2);
+  conf+=calibration.done?12:0;
+  conf+=audioEnabled?8:0;
+  conf+=flightMs && flightMs>30 && flightMs<200?10:0;
+  conf+=trackReliable?Math.round(forwardShare*12):4;
+  // Penalize suspicious geometry even if we didn't hard-reject
+  if(pathLooksLikeClub) conf-=25;
+  if(flightMs!=null && flightMs>300) conf-=12;
+  if(Math.abs(dirDeg)>=29) conf-=10;
+  conf=clamp(Math.round(conf),0,96);
+
+  const shape=dirDeg>3?'Push / Fade':dirDeg<-3?'Pull / Draw':'Straight / Slight Curve';
+
+  return {
+    ok:true,confidence:conf,speed:speedMph,dirDeg,launchDeg,carry,total,shape,
+    frames:trackN||fs.length,dt:trackDt||((flightMs||0)/1000),
+    meta:{
+      pxPerFt, pathPx, pathFt, forwardShare, trackReliable,
+      calibrated:!!calibration.done,
+      netDist, netWidth:parseFloat($('netWidth').value)||8,
+      speedSource, flightMs, speedFromTime, speedFromTrack
+    }
+  };
+}
+
+function physicsCarry(speed,launch){
+  const la=clamp(launch,4,40);
+  const efficiency=1.05 + 0.055*la - 0.0016*la*la; 
+  let carry=speed*Math.max(0.9, efficiency);
+  if(speed>110) carry*=1.0+Math.min(0.08,(speed-110)/400);
+  if(speed<50) carry*=0.88;
+  return Math.round(clamp(carry,8,330));
+}
+
+function renderResult(r){
+  if(!r.ok){
+    quality.innerHTML='<b>Capture failed</b><br>'+r.reason+' Try again with brighter light on the ball and the phone centered behind the target line.';
+    hfSet('RESULT','We did not get enough evidence. Put the next ball down.','Shot could not be measured.');
+    setTimeout(()=>{if(running) hfStartWaiting()},1800);
+    return
+  }
+  setText('speed',Math.round(r.speed)+' mph');
+  setText('direction',(r.dirDeg>=0?'+':'')+r.dirDeg.toFixed(1)+'°');
+  setText('angle',r.launchDeg.toFixed(1)+'°');
+  setText('carry',r.carry+' yd*');
+  setText('total',r.total+' yd*');
+  setText('shape',r.shape);
+
+  const m=r.meta||{};
+  const scaleNote=m.calibrated
+    ?('scale '+m.pxPerFt.toFixed(0)+' px/ft (calibrated)')
+    :('scale ~'+m.pxPerFt.toFixed(0)+' px/ft (estimated — calibrate for accuracy)');
+  const src=m.speedSource||'?';
+  const flightNote=m.flightMs!=null?('flight '+(m.flightMs).toFixed(0)+' ms · '):'';
+  const aimNote = m.trackReliable
+    ? 'aim/launch from ball track'
+    : 'aim ~straight · launch from club default (pixel track not reliable in this view)';
+  quality.innerHTML=
+    '<b>Capture evidence: '+r.confidence+'%</b><br>'+
+    r.frames+' track points · '+flightNote+'speed via <b>'+src+'</b>'+
+    (audioEnabled?' · impact matched':'')+'.<br>'+
+    'Path '+Math.round(m.pathPx||0)+' px · forward '+(100*(m.forwardShare||0)).toFixed(0)+'% · '+scaleNote+'.<br>'+
+    aimNote+'. <b>Carry/total are model estimates</b> (spin not measured).';
+
+  setText('flightLabel','Shot captured • '+r.confidence+'% evidence');
+  drawFlight(r);
+  hfResetAfterResult();
+  const club=$('club').value;
+  shots.unshift({club,speed:r.speed,dir:r.dirDeg,launch:r.launchDeg,carry:r.carry,total:r.total,conf:r.confidence});
+  renderHistory();
+}
+
+function drawFlight(r){
+  const c=rangeCanvas,dpr=devicePixelRatio||1;
+  const rect=c.getBoundingClientRect();
+  c.width=rect.width*dpr;c.height=rect.height*dpr;
+  rctx.setTransform(dpr,0,0,dpr,0,0);
+  const W=rect.width,H=rect.height;
+  rctx.clearRect(0,0,W,H);
+  rctx.fillStyle='#0F1F16';rctx.fillRect(0,0,W,H);
+  rctx.strokeStyle='#2A4636';rctx.lineWidth=1;
+  for(let y=40;y<H;y+=42){rctx.beginPath();rctx.moveTo(0,y);rctx.lineTo(W,y);rctx.stroke()}
+  for(let x=0;x<W;x+=70){rctx.beginPath();rctx.moveTo(x,0);rctx.lineTo(x,H);rctx.stroke()}
+  rctx.strokeStyle='#3F6B4A';rctx.beginPath();rctx.moveTo(W/2,0);rctx.lineTo(W/2,H);rctx.stroke();
+
+  const dir=clamp(r.dirDeg,-30,30);
+  const carryFrac=clamp(r.carry/280,0.08,1);
+  const startX=W/2, startY=H*0.88;
+  const endX=W/2 + (dir/30)*(W*0.38);
+  const endY=H*(0.88-0.55*carryFrac);
+  const peakX=(startX+endX)/2 + dir*0.4;
+  const peakY=Math.min(endY, startY) - H*(0.22+0.18*clamp(r.launchDeg/30,0.2,1));
+
+  rctx.beginPath();
+  rctx.moveTo(startX,startY);
+  rctx.quadraticCurveTo(peakX,peakY,endX,endY);
+  rctx.strokeStyle='#7BAE86';rctx.lineWidth=3;rctx.setLineDash([7,7]);rctx.stroke();rctx.setLineDash([]);
+
+  rctx.fillStyle='#fff';rctx.beginPath();rctx.arc(startX,startY,6,0,Math.PI*2);rctx.fill();
+  rctx.fillStyle='#7BAE86';rctx.beginPath();rctx.arc(endX,endY,7,0,Math.PI*2);rctx.fill();
+  rctx.fillStyle='#9FB3A4';rctx.font='12px system-ui';
+  rctx.fillText('LAUNCH',12,H-12);
+  rctx.fillStyle='#7BAE86';
+  rctx.fillText(r.carry+' yd est.', Math.min(W-110, Math.max(8,endX-40)), Math.max(18,endY-14));
+}
+function renderHistory(){setText('count',shots.length+' shots');$('empty').style.display=shots.length?'none':'block';$('table').style.display=shots.length?'table':'none';$('tbody').innerHTML=shots.map((s,i)=>`<tr><td>${shots.length-i}</td><td>${s.club}</td><td>${Math.round(s.speed)} mph</td><td>${s.dir>=0?'+':''}${s.dir.toFixed(1)}°</td><td>${s.launch.toFixed(1)}°</td><td>${s.carry}</td><td>${s.total}</td><td>${s.conf}%</td></tr>`).join('')}
+
+function armShot(){
+  if(!running)return;
+  if(hfState==='WAITING'||hfState==='LOCKED'||hfState==='DETECTING'){
+    hfStop(); armed=false; shotActive=false;
+    armBtn.textContent='Arm Shot Capture'; armBtn.classList.add('arm'); armBtn.style.background='';
+    setText('captureStatus','Paused'); hud.innerHTML='<b>PAUSED</b><br>Press Arm to resume.';
+    hfSet('IDLE','Camera live. Press Arm when ready.','Capture paused.');
+  }else{
+    armBtn.textContent='Cancel Capture'; armBtn.classList.remove('arm'); armBtn.style.background='#C1584C';
+    setText('captureStatus','WAITING FOR BALL'); hud.innerHTML='<b>WAITING FOR BALL</b><br>Place a ball on the mat.';
+    hfStartWaiting();
+  }
+}
+
+const modal=$('calModal'),calVideo=$('calVideo'),tapMarker=$('tapMarker'),steps=$('steps');let calStream=null,calStep=0,calPoints=[];
+function openCalibration(){if(!stream){alert('Start the camera first.');return}calStream=stream;calVideo.srcObject=stream;calVideo.play();calStep=0;calPoints=[];tapMarker.classList.remove('show');renderSteps();modal.classList.add('show')}
+function renderSteps(){const names=['Ball position','Net left edge','Net center','Net right edge'];steps.innerHTML=names.map((n,i)=>`<div class="step ${i<calStep?'done':''}"><b>${i<calStep?'✓ ':''}${i+1}. ${n}</b><span class="small">${i===calStep?'Tap this point in the camera image.':i<calStep?'Captured.':'Waiting.'}</span></div>`).join('')}
+
+// Helper to map screen taps to actual video pixels despite CSS object-fit: cover cropping
+function getVideoCoords(clientX, clientY, vidEl) {
+  const rect = vidEl.getBoundingClientRect();
+  const cx = clientX - rect.left;
+  const cy = clientY - rect.top;
+  const cw = rect.width, ch = rect.height;
+  const vw = vidEl.videoWidth || 1920, vh = vidEl.videoHeight || 1080;
+  
+  const ca = cw / ch, va = vw / vh;
+
+  if (ca > va) {
+    const scale = cw / vw;
+    return { x: cx / scale, y: (cy + (vh * scale - ch) / 2) / scale };
+  } else {
+    const scale = ch / vh;
+    return { x: (cx + (vw * scale - cw) / 2) / scale, y: cy / scale };
+  }
+}
+
+$('calVideo').addEventListener('click', e => {
+  if(calStep > 3) return;
+  
+  const coords = getVideoCoords(e.clientX, e.clientY, calVideo);
+  
+  const px = (coords.x / calVideo.videoWidth) * 100;
+  const py = (coords.y / calVideo.videoHeight) * 100;
+
+  const r = calVideo.getBoundingClientRect();
+  const sx = (e.clientX - r.left) / r.width * 100;
+  const sy = (e.clientY - r.top) / r.height * 100;
+
+  tapMarker.style.left = sx + '%';
+  tapMarker.style.top = sy + '%';
+  tapMarker.classList.add('show');
+  
+  calPoints.push({ x: px, y: py });
+  calStep++;
+  renderSteps();
+});
+
+$('finishCal').onclick=()=>{
+  if(calPoints.length<4){alert('Please tap all four points first.');return}
+  calibration.ball=calPoints[0];calibration.netLeft=calPoints[1];calibration.netCenter=calPoints[2];calibration.netRight=calPoints[3];
+  const pctWidth=Math.abs(calPoints[3].x-calPoints[1].x);
+  const netWidthFt=parseFloat($('netWidth').value)||8;
+  const displayWidthPx=calVideo.getBoundingClientRect().width;
+  const pxWidth=(pctWidth/100)*displayWidthPx;
+  calibration.scale=pxWidth/netWidthFt;calibration.done=true;
+  if(proc.width){
+    ballSeed={x:(calPoints[0].x/100)*proc.width, y:(calPoints[0].y/100)*proc.height};
+    updateBallDot({found:true,x:ballSeed.x,y:ballSeed.y,score:999});
+  }else{
+    ballSeed={x:calPoints[0].x, y:calPoints[0].y, pct:true};
+  }
+  $('setupState').textContent='Calibrated';
+  quality.innerHTML='<b>Geometry calibrated.</b><br>Image scale estimate: '+calibration.scale.toFixed(1)+' px/ft. Ball search seeded from your ball tap.';
+  modal.classList.remove('show');showDiagnostics();
+};
+$('closeCal').onclick=()=>modal.classList.remove('show');
+
+$('voice').onclick=()=>{
+  voiceEnabled=!voiceEnabled;
+  $('voice').textContent=voiceEnabled?'Voice: ON':'Voice: OFF';
+  if(voiceEnabled) hfSpeak('Voice feedback on.');
+};
+
+function markBallFromEvent(e) {
+  if(!running || !proc.width) return;
+  
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  
+  const coords = getVideoCoords(clientX, clientY, video);
+
+  // Clamp into frame in case of edge taps / rounding
+  const vx = clamp(coords.x, 0, proc.width - 1);
+  const vy = clamp(coords.y, 0, proc.height - 1);
+
+  ballSeed = { x: vx, y: vy };
+  hfNeedClear = false;
+  hfClearStartedAt = 0;
+
+  // Show marker exactly where the user tapped (using correct cover mapping)
+  updateBallDot({found: true, x: vx, y: vy, score: 999});
+  hud.innerHTML = '<b>BALL MARKED</b><br>Search locked to this spot.';
+  
+  const ev = document.getElementById('detectionEvidence');
+  if(ev) ev.textContent = 'Ball marked at '+Math.round(vx)+','+Math.round(vy);
+
+  // Hard-lock to the tap immediately so detection cannot drift upward to a
+  // highlight / reflection before the user hits.
+  if(hfState==='WAITING' || hfState==='LOCKED' || hfState==='DETECTING' || hfState==='IDLE'){
+    hfStop();
+    armed = false;
+    shotActive = false;
+    hfBallLock = { x: vx, y: vy, t: performance.now() };
+    if(window.v42SetLocked) v42SetLocked({x:vx, y:vy, score:999, found:true});
+    armBtn.textContent = 'Cancel Capture';
+    armBtn.classList.remove('arm');
+    armBtn.style.background = '#C1584C';
+    setText('captureStatus','BALL LOCKED');
+    hfSet('LOCKED',
+      audioEnabled
+        ? 'Ball marked & locked. Hit when ready — impact sound required.'
+        : 'Ball marked & locked. Hit when ready (visual only).',
+      'Ball locked.');
+    hfStartShotWatch();
+  }
+}
+
+video.addEventListener('click', markBallFromEvent);
+video.addEventListener('touchend', e=>{
+  if(e.changedTouches&&e.changedTouches[0]){
+    markBallFromEvent({clientX:e.changedTouches[0].clientX, clientY:e.changedTouches[0].clientY});
+  }
+  e.preventDefault();
+},{passive:false});
+
+async function testMic(){
+  if(!running){ alert('Start the camera first.'); return; }
+  audioUpdateMicUI('Mic: testing — clap or hit a club NOW');
+  hud.innerHTML='<b>MIC TEST</b><br>Clap or tap a club near the phone…';
+  await ensureHotMic();
+  if(audioCtx && audioCtx.state==='suspended') await audioCtx.resume();
+  const startPeaks=audioPeaks.length;
+  const t0=performance.now();
+  const timer=setInterval(()=>{
+    const gained=audioPeaks.length-startPeaks;
+    if(gained>0){
+      clearInterval(timer);
+      const lvl=audioPeaks[audioPeaks.length-1].level;
+      hud.innerHTML='<b>MIC OK</b><br>Heard impact at '+(lvl*100).toFixed(1)+'%';
+      audioUpdateMicUI('Mic: TEST PASS · IMPACT '+(lvl*100).toFixed(1)+'%');
+      hfSpeak('Microphone working.');
+    }else if(performance.now()-t0>4000){
+      clearInterval(timer);
+      hud.innerHTML='<b>MIC WEAK</b><br>No peak in 4s. Check Safari mic permission for this site.';
+      audioUpdateMicUI('Mic: TEST FAIL · live '+(audioLiveLevel*100).toFixed(2)+'% · enable mic in Safari');
+      showDiagnostics();
+    }
+  },100);
+}
+
+startBtn.onclick=startCamera;stopBtn.onclick=stopCamera;armBtn.onclick=armShot;
+diagBtn.onclick=()=>{showDiagnostics();$('captureStatus').textContent='Diagnostics refreshed'};
+calBtn.onclick=openCalibration;
+$('testMic').onclick=testMic;
+window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
+</script>
+
+<script>
+/* ===== V4.3 SHOT VALIDATION (visual + audio gate) ===== */
+(function(){
+  const V42={lock:null,track:[]};
+  const evidence=document.getElementById('detectionEvidence');
+
+  function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
+  function evText(t){if(evidence)evidence.textContent=t;}
+
+  window.v42StartPreShot=function(){
+    V42.lock=null; V42.track=[];
+    evText('Detection confidence: waiting for stable ball');
+  };
+
+  window.v42SetLocked=function(c){
+    V42.lock={x:c.x,y:c.y,t:performance.now()};
+    V42.track=[];
+    evText('Ball lock: stable');
+  };
+
+  window.v42RecordPost=function(c){
+    if(!c||!c.found)return;
+    V42.track.push({x:c.x,y:c.y,t:performance.now(),score:c.score||0,found:true});
+    if(V42.track.length>20)V42.track.shift();
+    evText('Tracking: '+V42.track.length+' observations');
+  };
+
+  window.v42Evidence=function(){
+    if(!V42.lock||V42.track.length<5)
+      return {confirmed:false,confidence:0,reason:'Not enough launch evidence.',audioMatched:false};
+
+    const pts=V42.track.filter(p=>p.score>=120);
+    if(pts.length<5)
+      return {confirmed:false,confidence:20,reason:'Too few reliable ball observations.',audioMatched:false};
+
+    const ds=pts.map(p=>dist(p,V42.lock));
+    const maxD=Math.max(...ds);
+    const first=ds.findIndex(d=>d>=22);
+    if(first<0)
+      return {confirmed:false,confidence:30,reason:'Locked ball has not clearly left the launch zone.',audioMatched:false};
+
+    const flight=pts.slice(first);
+    let forward=0,back=0,up=0,down=0;
+    for(let i=1;i<flight.length;i++){
+      const a=dist(flight[i-1],V42.lock), b=dist(flight[i],V42.lock);
+      if(b>a+2)forward++;
+      else if(b<a-2)back++;
+      // Image Y decreases toward the net (camera behind golfer)
+      const dy=flight[i].y - flight[i-1].y;
+      if(dy<-1.5) up++;
+      else if(dy>1.5) down++;
+    }
+    const progression=forward/Math.max(1,forward+back);
+    const riseShare=up/Math.max(1,up+down);
+    if(maxD<35)
+      return {confirmed:false,confidence:45,reason:'Movement too small to confirm launch.',audioMatched:false};
+    if(progression<0.60)
+      return {confirmed:false,confidence:42,reason:'Candidate movement is too inconsistent.',audioMatched:false};
+    // Backswing / club often moves without a clear rise toward the net
+    if(riseShare<0.35 && maxD<80)
+      return {confirmed:false,confidence:48,reason:'Motion does not rise toward the net — waiting for real launch (not backswing).',audioMatched:false};
+
+    const launchT=pts[first].t;
+    let visualConf=Math.round(Math.min(94,35+Math.min(30,pts.length*3)+Math.min(25,maxD/8)+progression*18+riseShare*10));
+
+    let audioMatched=false;
+    let audioNote='';
+    if(typeof audioEnabled!=='undefined' && audioEnabled){
+      // Prefer impact near the moment the ball actually left, not earlier club noise
+      const peak=typeof audioPeakNear==='function'?audioPeakNear(launchT, 500):null;
+      if(peak){
+        audioMatched=true;
+        audioNote='impact matched';
+        visualConf=Math.min(96, visualConf+8);
+      }else{
+        return {
+          confirmed:false,
+          confidence:Math.min(visualConf,55),
+          reason:'Motion seen but no impact sound — waiting for real strike.',
+          audioMatched:false
+        };
+      }
+    }else{
+      audioNote='no mic (visual only)';
+    }
+
+    const confirmed=visualConf>=70 && (audioMatched || !audioEnabled);
+    return {
+      confirmed,
+      confidence:visualConf,
+      audioMatched,
+      reason:confirmed
+        ?(audioMatched?'Multi-frame launch + impact confirmed.':'Multi-frame launch confirmed (no mic).')
+        :'Evidence is promising but not strong enough. '+audioNote
+    };
+  };
+})();
+</script>
+
+<script>
+/* ===== V5 MODE SWITCH + SLOW-MO CLIP ANALYZER ===== */
+(function(){
+  const modeLive=document.getElementById('modeLive');
+  const modeSlow=document.getElementById('modeSlow');
+  const liveCard=document.getElementById('liveCard');
+  const slowCard=document.getElementById('slowCard');
+  const slowVideo=document.getElementById('slowVideo');
+  const slowCanvas=document.getElementById('slowCanvas');
+  const sctx=slowCanvas.getContext('2d',{willReadFrequently:true});
+  const slowFile=document.getElementById('slowFile');
+  const slowDrop=document.getElementById('slowDrop');
+  const slowAnalyze=document.getElementById('slowAnalyze');
+  const slowClear=document.getElementById('slowClear');
+  const slowHud=document.getElementById('slowHud');
+  const slowState=document.getElementById('slowState');
+  const slowProgress=document.getElementById('slowProgress');
+  const slowProgressWrap=document.getElementById('slowProgressWrap');
+
+  let slowUrl=null, slowBusy=false;
+
+  function setMode(mode){
+    const live=mode==='live';
+    modeLive.classList.toggle('active', live);
+    modeSlow.classList.toggle('active', !live);
+    liveCard.classList.toggle('hidden', !live);
+    slowCard.classList.toggle('hidden', live);
+    if(!live && typeof running!=='undefined' && running && typeof stopCamera==='function'){
+      // stop live camera when switching away
+      try{ stopCamera(); }catch(e){}
+    }
+    document.getElementById('topBadge').textContent = live ? 'V5.0.1 • LIVE + SLOW-MO' : 'V5.0.1 • SLOW-MO';
+  }
+  modeLive.onclick=()=>setMode('live');
+  modeSlow.onclick=()=>setMode('slow');
+
+  function setSlowProgress(p){
+    slowProgressWrap.style.display='block';
+    slowProgress.style.width=Math.round(clamp(p,0,1)*100)+'%';
+  }
+
+  slowFile.addEventListener('change', async ()=>{
+    const f=slowFile.files && slowFile.files[0];
+    if(!f) return;
+    if(slowUrl) URL.revokeObjectURL(slowUrl);
+    slowUrl=URL.createObjectURL(f);
+    slowVideo.src=slowUrl;
+    slowVideo.muted=true;
+    try{
+      await slowVideo.play();
+      slowVideo.pause();
+      slowVideo.currentTime=0;
+    }catch(e){}
+    slowAnalyze.disabled=false;
+    slowClear.disabled=false;
+    slowState.textContent='Loaded';
+    slowHud.innerHTML='<b>CLIP READY</b><br>'+f.name+' · '+fmtDur(slowVideo.duration);
+    diagnostics.textContent=[
+      'Slow-mo file: '+f.name,
+      'Size: '+(f.size/1048576).toFixed(1)+' MB',
+      'Duration: '+fmtDur(slowVideo.duration),
+      'Resolution: '+(slowVideo.videoWidth||'?')+' × '+(slowVideo.videoHeight||'?'),
+      'Tip: record behind the golfer at 120 or 240 fps in Camera.'
+    ].join('\n');
+  });
+
+  slowClear.onclick=()=>{
+    if(slowBusy) return;
+    slowFile.value='';
+    if(slowUrl){ URL.revokeObjectURL(slowUrl); slowUrl=null; }
+    slowVideo.removeAttribute('src');
+    slowVideo.load();
+    slowAnalyze.disabled=true;
+    slowClear.disabled=true;
+    slowState.textContent='Ready';
+    slowHud.textContent='Record in Camera at 120 or 240 fps, then choose the clip.';
+    slowProgressWrap.style.display='none';
+  };
+
+  function fmtDur(s){
+    if(!s || !isFinite(s)) return '—';
+    return s.toFixed(2)+'s';
+  }
+
+  function seek(v, t){
+    return new Promise((resolve,reject)=>{
+      const onSeek=()=>{ v.removeEventListener('seeked', onSeek); resolve(); };
+      const onErr=()=>{ v.removeEventListener('error', onErr); reject(new Error('seek failed')); };
+      v.addEventListener('seeked', onSeek);
+      v.addEventListener('error', onErr);
+      try{ v.currentTime=Math.min(Math.max(0,t), (v.duration||t)-0.001); }
+      catch(e){ reject(e); }
+    });
+  }
+
+  async function findAudioImpact(file){
+    try{
+      const buf=await file.arrayBuffer();
+      const AC=window.AudioContext||window.webkitAudioContext;
+      if(!AC) return null;
+      const ctx=new AC();
+      let audioBuf;
+      try{ audioBuf=await ctx.decodeAudioData(buf.slice(0)); }
+      catch(e){ try{ await ctx.close(); }catch(_){ } return null; }
+      const ch=audioBuf.getChannelData(0);
+      const sr=audioBuf.sampleRate;
+      const win=Math.max(256, Math.floor(sr*0.008));
+      let bestT=0, bestE=0, sum=0, n=0;
+      // baseline
+      for(let i=0;i<Math.min(ch.length, sr*0.5);i++) sum+=ch[i]*ch[i];
+      const baseline=sum/Math.min(ch.length, sr*0.5);
+      const thresh=Math.max(baseline*12, 0.0008);
+      for(let i=0;i<ch.length;i+=win){
+        let e=0;
+        const end=Math.min(ch.length, i+win);
+        for(let j=i;j<end;j++) e+=ch[j]*ch[j];
+        e/=(end-i);
+        if(e>bestE && e>thresh){ bestE=e; bestT=i/sr; }
+      }
+      try{ await ctx.close(); }catch(_){}
+      if(bestE<=0) return null;
+      return {t:bestT*1000, level:Math.sqrt(bestE)}; // ms
+    }catch(e){
+      return null;
+    }
+  }
+
+  // Ball scan — works for behind-golfer and side-on shed setups
+  function detectOnSlow(center, wide){
+    const w=slowCanvas.width, h=slowCanvas.height;
+    if(!w||!h) return {found:false,x:0,y:0,score:0};
+    const cx=center?center.x:w*0.55, cy=center?center.y:h*0.70;
+    const rw=Math.floor(w*(center?0.28: (wide?0.70:0.60)));
+    const rh=Math.floor(h*(center?0.28:0.50));
+    const x0=Math.max(0,Math.floor(cx-rw)), y0=Math.max(0,Math.floor(cy-rh));
+    const x1=Math.min(w,Math.floor(cx+rw)), y1=Math.min(h,Math.floor(cy+rh));
+    let img;
+    try{ img=sctx.getImageData(x0,y0,Math.max(1,x1-x0),Math.max(1,y1-y0)); }catch(e){ return {found:false,x:cx,y:cy,score:0}; }
+    const ballR=Math.max(3, Math.min(16, Math.round(h*0.014)));
+    let best={found:false,x:cx,y:cy,score:0};
+    for(let y=ballR;y<img.height-ballR;y+=2){
+      for(let x=ballR;x<img.width-ballR;x+=2){
+        const i=(y*img.width+x)*4;
+        const r=img.data[i], g=img.data[i+1], b=img.data[i+2];
+        const bright=(r+g+b)/3;
+        const mx=Math.max(r,g,b), mn=Math.min(r,g,b);
+        const sat=mx?((mx-mn)/mx):1;
+        // Looser thresholds for outdoor/shed lighting & white balls on green mats
+        if(bright<130||sat>0.35) continue;
+        if(g>r+28&&g>b+18&&bright<200) continue; // strong grass, not ball
+        let ring=0,ringN=0,core=0,coreN=0;
+        for(let a=0;a<8;a++){
+          const ang=a*Math.PI/4;
+          const rx=Math.round(x+Math.cos(ang)*ballR*1.6);
+          const ry=Math.round(y+Math.sin(ang)*ballR*1.6);
+          if(rx<0||ry<0||rx>=img.width||ry>=img.height) continue;
+          const j=(ry*img.width+rx)*4;
+          ring+=(img.data[j]+img.data[j+1]+img.data[j+2])/3; ringN++;
+        }
+        for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+          const j=((y+dy)*img.width+(x+dx))*4;
+          core+=(img.data[j]+img.data[j+1]+img.data[j+2])/3; coreN++;
+        }
+        if(!ringN||!coreN) continue;
+        ring/=ringN; core/=coreN;
+        const contrast=core-ring;
+        if(contrast<6) continue;
+        const absX=x+x0, absY=y+y0;
+        const dist=Math.hypot(absX-cx, absY-cy);
+        const near=1-Math.min(1, dist/(Math.max(rw,rh)*0.6));
+        const score=core*0.28+contrast*2.6+near*45+bright*0.12;
+        if(score>best.score) best={found:true,x:absX,y:absY,score};
+      }
+    }
+    return best;
+  }
+
+  slowAnalyze.onclick=async ()=>{
+    if(slowBusy || !slowUrl) return;
+    slowBusy=true;
+    slowAnalyze.disabled=true;
+    slowState.textContent='Analyzing…';
+    slowHud.innerHTML='<b>ANALYZING</b><br>Scanning frames…';
+    setSlowProgress(0.02);
+
+    try{
+      const file=slowFile.files[0];
+      const duration=slowVideo.duration||1;
+      const vw=slowVideo.videoWidth||1280, vh=slowVideo.videoHeight||720;
+      slowCanvas.width=vw; slowCanvas.height=vh;
+
+      // Dense sample — short clips get more frames
+      const targetFrames=Math.min(150, Math.max(60, Math.round(duration*100)));
+      const dt=duration/targetFrames;
+      const samples=[];
+
+      for(let i=0;i<targetFrames;i++){
+        const t=i*dt;
+        await seek(slowVideo, t);
+        sctx.drawImage(slowVideo,0,0,vw,vh);
+        const prev=samples.length?samples[samples.length-1]:null;
+        const center=prev&&prev.found&&prev.score>=90?{x:prev.x,y:prev.y}:null;
+        const hit=detectOnSlow(center, !center);
+        samples.push({t:t*1000, x:hit.x, y:hit.y, score:hit.score, found:hit.found});
+        if(i%3===0) setSlowProgress(0.05+0.7*(i/targetFrames));
+      }
+
+      setSlowProgress(0.8);
+      const impact=await findAudioImpact(file);
+      setSlowProgress(0.88);
+
+      const good=samples.filter(s=>s.found&&s.score>=85);
+      if(good.length<3){
+        throw new Error('Ball not found often enough. Keep the ball in frame, well lit, and try a shorter clip of just the swing.');
+      }
+
+      // Lock = best pre-impact (or early) detection in lower 60% of frame
+      let lock=null;
+      const preHits=impact?good.filter(s=>s.t<=impact.t+40 && s.y>vh*0.35):good.filter(s=>s.y>vh*0.35);
+      if(preHits.length){
+        preHits.sort((a,b)=>b.score-a.score);
+        lock={x:preHits[0].x,y:preHits[0].y,t:preHits[0].t};
+      }else{
+        good.sort((a,b)=>b.score-a.score);
+        lock={x:good[0].x,y:good[0].y,t:good[0].t};
+        good.sort((a,b)=>a.t-b.t);
+      }
+
+      let t0=impact?impact.t:lock.t;
+      // If audio impact is far from any ball sighting, prefer first big move
+      if(impact && Math.abs(impact.t-lock.t)>1200){
+        t0=lock.t;
+      }
+
+      // Flight samples: after impact, moving away from lock
+      const flightSamples=good.filter(s=>{
+        if(s.t<t0-20 || s.t>t0+400) return false;
+        const d=Math.hypot(s.x-lock.x,s.y-lock.y);
+        return d>8 || s.t<=t0+40;
+      }).sort((a,b)=>a.t-b.t);
+
+      const netDist=parseFloat(document.getElementById('netDistance').value)||6.5;
+      const club=document.getElementById('club').value||'Wedge';
+      const clubLow=(club||'').toLowerCase();
+      const clubLaunch=clubLow.includes('wedge')||clubLow.includes('pitching')?26
+        :clubLow.includes('9')?22:clubLow.includes('8')?20:clubLow.includes('7')?18:14;
+      const maxSp=clubLow.includes('driver')?180:clubLow.includes('wedge')||clubLow.includes('pitching')?95:120;
+
+      // Speed from time-to-net using impact → last nearby ball sighting / leave
+      let lastLeave=null, peakD=0;
+      for(const s of flightSamples){
+        const d=Math.hypot(s.x-lock.x,s.y-lock.y);
+        if(d>peakD){ peakD=d; lastLeave=s; }
+      }
+      if(!lastLeave && flightSamples.length) lastLeave=flightSamples[flightSamples.length-1];
+
+      let speedMph=null, flightMs=null, speedSource='slow-mo';
+      if(lastLeave){
+        flightMs=Math.max(12, lastLeave.t-t0);
+        // Prefer measured path if we have meaningful displacement
+        const scale=estimateScale();
+        const pathFt=peakD/(scale||40);
+        if(flightMs>=30 && flightMs<=320){
+          if(pathFt>=netDist*0.25 && pathFt<=netDist*1.4){
+            speedMph=(Math.min(pathFt,netDist)/(flightMs/1000))*0.681818;
+            speedSource='slow-mo path/time';
+          }else{
+            speedMph=(netDist/(flightMs/1000))*0.681818;
+            speedSource='slow-mo time-to-net';
+          }
+        }else if(flightMs>12 && flightMs<30 && pathFt>=0.5){
+          speedMph=(pathFt/(flightMs/1000))*0.681818;
+          speedSource='slow-mo short path';
+        }
+      }
+
+      if(speedMph==null || !isFinite(speedMph)){
+        throw new Error('Could not time the ball leave. Ensure impact sound is on the clip and the ball stays visible after contact.');
+      }
+
+      speedMph=Math.max(12, Math.min(maxSp, speedMph));
+      const carry=typeof physicsCarry==='function'?physicsCarry(speedMph,clubLaunch):Math.round(speedMph*1.2);
+      const total=Math.round(carry*(1.02+Math.min(0.08,speedMph/2000)));
+      let conf=40;
+      conf+=impact?12:0;
+      conf+=Math.min(20, flightSamples.length*2);
+      conf+=flightMs&&flightMs>40&&flightMs<200?12:0;
+      conf=Math.max(20, Math.min(94, conf));
+
+      const result={
+        ok:true,
+        confidence:conf,
+        speed:speedMph,
+        dirDeg:0,
+        launchDeg:clubLaunch,
+        carry, total,
+        shape:'Straight / Slight Curve',
+        frames:flightSamples.length,
+        dt:(flightMs||0)/1000,
+        meta:{
+          speedSource,
+          flightMs,
+          samples:samples.length,
+          ballHits:good.length,
+          impactAudio:!!impact,
+          clipDuration:duration,
+          pathPx:peakD,
+          calibrated:!!(calibration&&calibration.done)
+        }
+      };
+
+      setSlowProgress(1);
+      slowState.textContent='Done';
+      slowHud.innerHTML='<b>SHOT CAPTURED</b><br>'+Math.round(result.speed)+' mph · '+result.confidence+'%';
+      renderResult(result);
+      diagnostics.textContent=[
+        'Slow-mo analysis complete',
+        'Frames sampled: '+samples.length,
+        'Ball hits: '+good.length,
+        'Impact audio: '+(impact?('yes @ '+impact.t.toFixed(0)+' ms'):'not found'),
+        'Flight points: '+flightSamples.length,
+        'Flight time: '+(flightMs!=null?flightMs.toFixed(0)+' ms':'—'),
+        'Speed: '+result.speed.toFixed(1)+' mph via '+speedSource
+      ].join('\n');
+    }catch(e){
+      slowState.textContent='Error';
+      slowHud.innerHTML='<b>FAILED</b><br>'+(e.message||e);
+      quality.innerHTML='<b>Slow-mo failed</b><br>'+(e.message||e);
+      diagnostics.textContent='Slow-mo error: '+(e.message||e);
+    }finally{
+      slowBusy=false;
+      slowAnalyze.disabled=!slowUrl;
+      setTimeout(()=>{ slowProgressWrap.style.display='none'; }, 600);
+    }
+  };
+})();
+</script>
+
+</body>
+</html>
