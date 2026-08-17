@@ -77,16 +77,21 @@
 .progress{height:6px;background:#223a2b;border-radius:99px;overflow:hidden;margin-top:10px}
 .progress>i{display:block;height:100%;width:0;background:var(--green);border-radius:99px;transition:width .15s}
 .hidden{display:none!important}
+.coach-cues{margin:0;padding-left:18px;font-size:12px;line-height:1.55;color:var(--text)}
+.coach-cues li{margin-bottom:6px}
+.coach-cues li:last-child{margin-bottom:0}
+.coach-cues strong{color:var(--green)}
 @media(max-width:800px){.grid{grid-template-columns:1fr}.wide{grid-column:auto}.camera{aspect-ratio:4/3}.range{height:240px}}
 </style>
 </head>
 <body>
 <div class="app">
-  <div class="top"><div class="brand">ADAIRWAY GOLF — RANGE LAB</div><div class="badge" id="topBadge">V5.0.1 • LIVE + SLOW-MO</div></div>
+  <div class="top"><div class="brand">ADAIRWAY GOLF — RANGE LAB</div><div class="badge" id="topBadge">V5.0.1 • LIVE + SLOW-MO + COACH</div></div>
 
   <div class="modes" role="tablist">
     <button type="button" class="modeBtn active" id="modeLive" data-mode="live">Live camera</button>
     <button type="button" class="modeBtn" id="modeSlow" data-mode="slow">Slow-mo clip</button>
+    <button type="button" class="modeBtn" id="modeCoach" data-mode="coach">Swing Coach</button>
   </div>
 
   <div class="grid">
@@ -148,6 +153,40 @@
       </div>
     </section>
 
+    <section class="card hidden" id="coachCard">
+      <div class="head"><strong>Swing Coach</strong><span id="coachState">Ready</span></div>
+      <div class="camera" style="position:relative">
+        <video id="coachVideo" playsinline muted style="width:100%;height:100%;object-fit:cover;display:block"></video>
+        <canvas id="coachOverlay" style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none"></canvas>
+        <div class="overlay">
+          <div class="hud" id="coachHud">Film side-on (camera pointed at your lead side). Full body + club in frame. Upload any swing video.</div>
+        </div>
+      </div>
+      <div class="panel">
+        <label class="drop" id="coachDrop">
+          <strong>Choose swing video</strong>
+          <span>Side-on view · full body visible · 2–6 seconds around the swing</span>
+          <input type="file" id="coachFile" accept="video/*">
+        </label>
+        <div class="progress" id="coachProgressWrap" style="display:none"><i id="coachProgress"></i></div>
+        <div class="metrics" id="coachMetrics" style="margin-top:12px">
+          <div class="metric"><span>Tempo</span><b id="cTempo">—</b></div>
+          <div class="metric"><span>Shoulder turn</span><b id="cShoulder">—</b></div>
+          <div class="metric"><span>Hip turn</span><b id="cHip">—</b></div>
+          <div class="metric"><span>X-Factor</span><b id="cXFactor">—</b></div>
+          <div class="metric"><span>Head sway</span><b id="cHead">—</b></div>
+          <div class="metric"><span>Confidence</span><b id="cConf">—</b></div>
+        </div>
+        <div class="quality" id="coachCues" style="margin-top:10px">
+          <b>Coaching cues</b><br>Upload a side-on swing to get form insights.
+        </div>
+      </div>
+      <div class="controls">
+        <button class="btn primary" id="coachAnalyze" disabled>Analyze swing</button>
+        <button class="btn" id="coachClear" disabled>Clear</button>
+      </div>
+    </section>
+
     <aside class="card">
       <div class="head"><strong>Setup</strong><span id="setupState">Not calibrated</span></div>
       <div class="panel">
@@ -163,13 +202,13 @@
           <div class="metric"><span>Total</span><b id="total">—</b></div>
           <div class="metric"><span>Shape</span><b id="shape">—</b></div>
         </div>
-        <div class="quality" id="quality"><b>Measurement status</b><br>Live: start camera & arm. Slow-mo: pick a 120/240 fps clip.</div>
+        <div class="quality" id="quality"><b>Measurement status</b><br>Live: start camera & arm. Slow-mo: pick a 120/240 fps clip. Coach: upload a side-on swing.</div>
       </div>
     </aside>
 
     <section class="card wide">
       <div class="head"><strong>Diagnostics</strong><span id="captureStatus">Waiting</span></div>
-      <div class="panel"><div class="diag" id="diagnostics">Pick Live or Slow-mo to begin.</div></div>
+      <div class="panel"><div class="diag" id="diagnostics">Pick Live, Slow-mo, or Swing Coach to begin.</div></div>
     </section>
 
     <section class="card wide">
@@ -180,7 +219,7 @@
     <section class="card wide">
       <div class="head"><strong>Shot History</strong><span id="count">0 shots</span></div>
       <div class="history"><div class="empty" id="empty">No measured shots yet.</div><table id="table" style="display:none"><thead><tr><th>#</th><th>Club</th><th>Speed</th><th>Dir.</th><th>Launch</th><th>Carry</th><th>Total</th><th>Conf.</th></tr></thead><tbody id="tbody"></tbody></table></div>
-      <div class="panel"><div class="note">Live uses the phone camera + mic. Slow-mo analyzes a 120/240 fps Camera clip for denser ball track. Carry is a model estimate (spin not measured). Set net distance accurately.</div></div>
+      <div class="panel"><div class="note">Live uses the phone camera + mic. Slow-mo analyzes a 120/240 fps Camera clip for denser ball track. Swing Coach uses on-device pose estimation for form insights (side-on recommended). Carry is a model estimate (spin not measured). Set net distance accurately for ball metrics.</div></div>
     </section>
   </div>
 </div>
@@ -1429,8 +1468,10 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
 (function(){
   const modeLive=document.getElementById('modeLive');
   const modeSlow=document.getElementById('modeSlow');
+  const modeCoach=document.getElementById('modeCoach');
   const liveCard=document.getElementById('liveCard');
   const slowCard=document.getElementById('slowCard');
+  const coachCard=document.getElementById('coachCard');
   const slowVideo=document.getElementById('slowVideo');
   const slowCanvas=document.getElementById('slowCanvas');
   const sctx=slowCanvas.getContext('2d',{willReadFrequently:true});
@@ -1447,18 +1488,25 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
 
   function setMode(mode){
     const live=mode==='live';
+    const slow=mode==='slow';
+    const coach=mode==='coach';
     modeLive.classList.toggle('active', live);
-    modeSlow.classList.toggle('active', !live);
+    modeSlow.classList.toggle('active', slow);
+    if(modeCoach) modeCoach.classList.toggle('active', coach);
     liveCard.classList.toggle('hidden', !live);
-    slowCard.classList.toggle('hidden', live);
+    slowCard.classList.toggle('hidden', !slow);
+    if(coachCard) coachCard.classList.toggle('hidden', !coach);
     if(!live && typeof running!=='undefined' && running && typeof stopCamera==='function'){
-      // stop live camera when switching away
       try{ stopCamera(); }catch(e){}
     }
-    document.getElementById('topBadge').textContent = live ? 'V5.0.1 • LIVE + SLOW-MO' : 'V5.0.1 • SLOW-MO';
+    const badge = live ? 'V5.0.1 • LIVE + SLOW-MO + COACH'
+      : slow ? 'V5.0.1 • SLOW-MO'
+      : 'V5.0.1 • SWING COACH';
+    document.getElementById('topBadge').textContent = badge;
   }
   modeLive.onclick=()=>setMode('live');
   modeSlow.onclick=()=>setMode('slow');
+  if(modeCoach) modeCoach.onclick=()=>setMode('coach');
 
   function setSlowProgress(p){
     slowProgressWrap.style.display='block';
@@ -2290,6 +2338,481 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
       slowBusy=false;
       slowAnalyze.disabled=!slowUrl;
       setTimeout(()=>{ slowProgressWrap.style.display='none'; }, 600);
+    }
+  };
+})();
+</script>
+
+<script>
+/* ===== V5.1 SWING COACH (pose-based form analysis) ===== */
+(function(){
+  const coachVideo = document.getElementById('coachVideo');
+  const coachOverlay = document.getElementById('coachOverlay');
+  const coachFile = document.getElementById('coachFile');
+  const coachDrop = document.getElementById('coachDrop');
+  const coachAnalyze = document.getElementById('coachAnalyze');
+  const coachClear = document.getElementById('coachClear');
+  const coachHud = document.getElementById('coachHud');
+  const coachState = document.getElementById('coachState');
+  const coachProgress = document.getElementById('coachProgress');
+  const coachProgressWrap = document.getElementById('coachProgressWrap');
+  const coachCues = document.getElementById('coachCues');
+  if(!coachVideo || !coachFile) return;
+
+  const octx = coachOverlay.getContext('2d');
+  let coachUrl = null, coachBusy = false, poseReady = false, pose = null;
+
+  // MediaPipe Pose landmark indices
+  const LM = {
+    NOSE:0, L_SHOULDER:11, R_SHOULDER:12, L_ELBOW:13, R_ELBOW:14,
+    L_WRIST:15, R_WRIST:16, L_HIP:23, R_HIP:24, L_KNEE:25, R_KNEE:26,
+    L_ANKLE:27, R_ANKLE:28
+  };
+
+  function setCoachProgress(p){
+    coachProgressWrap.style.display = 'block';
+    coachProgress.style.width = Math.round(Math.max(0,Math.min(1,p))*100) + '%';
+  }
+
+  function loadPoseScript(){
+    return new Promise((resolve, reject)=>{
+      if(window.Pose){ resolve(); return; }
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js';
+      s.crossOrigin = 'anonymous';
+      s.onload = ()=> resolve();
+      s.onerror = ()=> reject(new Error('Failed to load MediaPipe Pose'));
+      document.head.appendChild(s);
+    });
+  }
+
+  async function ensurePose(){
+    if(poseReady && pose) return pose;
+    coachHud.innerHTML = '<b>LOADING</b><br>Pose model (first time only)…';
+    await loadPoseScript();
+    pose = new Pose({
+      locateFile: (file)=> `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${file}`
+    });
+    pose.setOptions({
+      modelComplexity: 1,
+      smoothLandmarks: true,
+      enableSegmentation: false,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+    poseReady = true;
+    return pose;
+  }
+
+  function angleDeg(a, b, c){
+    // angle at point b formed by points a-b-c
+    const abx = a.x-b.x, aby = a.y-b.y;
+    const cbx = c.x-b.x, cby = c.y-b.y;
+    const dot = abx*cbx + aby*cby;
+    const mag = Math.hypot(abx,aby) * Math.hypot(cbx,cby);
+    if(mag < 1e-6) return 0;
+    return Math.acos(Math.max(-1, Math.min(1, dot/mag))) * 180 / Math.PI;
+  }
+
+  function lineAngle(p1, p2){
+    // angle of line from p1 to p2 relative to horizontal (degrees)
+    return Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI;
+  }
+
+  function mid(a, b){
+    return { x:(a.x+b.x)/2, y:(a.y+b.y)/2, visibility: Math.min(a.visibility||0, b.visibility||0) };
+  }
+
+  function visible(lm, thr){
+    return lm && (lm.visibility == null || lm.visibility >= (thr||0.4));
+  }
+
+  function shoulderAngle(lms){
+    const ls = lms[LM.L_SHOULDER], rs = lms[LM.R_SHOULDER];
+    if(!visible(ls) || !visible(rs)) return null;
+    return lineAngle(ls, rs);
+  }
+
+  function hipAngle(lms){
+    const lh = lms[LM.L_HIP], rh = lms[LM.R_HIP];
+    if(!visible(lh) || !visible(rh)) return null;
+    return lineAngle(lh, rh);
+  }
+
+  function wristHeight(lms){
+    // average wrist Y (lower number = higher in image)
+    const lw = lms[LM.L_WRIST], rw = lms[LM.R_WRIST];
+    if(!visible(lw) && !visible(rw)) return null;
+    if(!visible(lw)) return rw.y;
+    if(!visible(rw)) return lw.y;
+    return (lw.y + rw.y) / 2;
+  }
+
+  function headX(lms){
+    const n = lms[LM.NOSE];
+    return visible(n) ? n.x : null;
+  }
+
+  function leadArmAngle(lms, isRightHanded){
+    // approximate lead arm (left arm for RH golfer)
+    const s = isRightHanded ? lms[LM.L_SHOULDER] : lms[LM.R_SHOULDER];
+    const e = isRightHanded ? lms[LM.L_ELBOW] : lms[LM.R_ELBOW];
+    const w = isRightHanded ? lms[LM.L_WRIST] : lms[LM.R_WRIST];
+    if(!visible(s) || !visible(e) || !visible(w)) return null;
+    return angleDeg(s, e, w);
+  }
+
+  function drawSkeleton(lms, w, h){
+    octx.clearRect(0,0,w,h);
+    if(!lms || !lms.length) return;
+
+    const connections = [
+      [LM.L_SHOULDER, LM.R_SHOULDER],
+      [LM.L_SHOULDER, LM.L_ELBOW], [LM.L_ELBOW, LM.L_WRIST],
+      [LM.R_SHOULDER, LM.R_ELBOW], [LM.R_ELBOW, LM.R_WRIST],
+      [LM.L_SHOULDER, LM.L_HIP], [LM.R_SHOULDER, LM.R_HIP],
+      [LM.L_HIP, LM.R_HIP],
+      [LM.L_HIP, LM.L_KNEE], [LM.L_KNEE, LM.L_ANKLE],
+      [LM.R_HIP, LM.R_KNEE], [LM.R_KNEE, LM.R_ANKLE]
+    ];
+
+    octx.lineWidth = 3;
+    octx.strokeStyle = 'rgba(123,174,134,0.9)';
+    octx.lineCap = 'round';
+    connections.forEach(([i,j])=>{
+      const a = lms[i], b = lms[j];
+      if(!visible(a,0.3) || !visible(b,0.3)) return;
+      octx.beginPath();
+      octx.moveTo(a.x * w, a.y * h);
+      octx.lineTo(b.x * w, b.y * h);
+      octx.stroke();
+    });
+
+    // joints
+    octx.fillStyle = '#F5F0E6';
+    [LM.NOSE, LM.L_SHOULDER, LM.R_SHOULDER, LM.L_ELBOW, LM.R_ELBOW,
+     LM.L_WRIST, LM.R_WRIST, LM.L_HIP, LM.R_HIP, LM.L_KNEE, LM.R_KNEE].forEach(i=>{
+      const p = lms[i];
+      if(!visible(p,0.3)) return;
+      octx.beginPath();
+      octx.arc(p.x * w, p.y * h, 4, 0, Math.PI*2);
+      octx.fill();
+    });
+  }
+
+  function seekVideo(v, t){
+    return new Promise((resolve)=>{
+      const onSeek = ()=>{ v.removeEventListener('seeked', onSeek); resolve(); };
+      v.addEventListener('seeked', onSeek);
+      try{ v.currentTime = Math.min(Math.max(0, t), (v.duration||t) - 0.001); }
+      catch(e){ resolve(); }
+      setTimeout(resolve, 400); // hard timeout for iOS
+    });
+  }
+
+  function runPoseOnCanvas(canvas){
+    return new Promise((resolve)=>{
+      let settled = false;
+      const finish = (results)=>{
+        if(settled) return;
+        settled = true;
+        resolve(results || null);
+      };
+      // Re-bind each call so we always resolve the current request
+      pose.onResults(finish);
+      try{
+        pose.send({image: canvas}).catch(()=> finish(null));
+      }catch(e){
+        finish(null);
+      }
+      setTimeout(()=> finish(null), 2800);
+    });
+  }
+
+  coachFile.addEventListener('change', async ()=>{
+    const f = coachFile.files && coachFile.files[0];
+    if(!f) return;
+    if(coachUrl) URL.revokeObjectURL(coachUrl);
+    coachUrl = URL.createObjectURL(f);
+    coachVideo.src = coachUrl;
+    coachVideo.muted = true;
+    try{
+      await coachVideo.play();
+      coachVideo.pause();
+      coachVideo.currentTime = 0;
+    }catch(e){}
+    coachAnalyze.disabled = false;
+    coachClear.disabled = false;
+    coachState.textContent = 'Loaded';
+    coachHud.innerHTML = '<b>SWING READY</b><br>'+f.name+' · '+(coachVideo.duration?coachVideo.duration.toFixed(1)+'s':'');
+    octx.clearRect(0,0,coachOverlay.width, coachOverlay.height);
+    document.getElementById('diagnostics').textContent = [
+      'Swing Coach file: '+f.name,
+      'Size: '+(f.size/1048576).toFixed(1)+' MB',
+      'Duration: '+(coachVideo.duration?coachVideo.duration.toFixed(2)+'s':'—'),
+      'Resolution: '+(coachVideo.videoWidth||'?')+' × '+(coachVideo.videoHeight||'?'),
+      'Tip: side-on camera, full body + club, 2–6 s clip.'
+    ].join('\n');
+  });
+
+  coachClear.onclick = ()=>{
+    if(coachBusy) return;
+    coachFile.value = '';
+    if(coachUrl){ URL.revokeObjectURL(coachUrl); coachUrl = null; }
+    coachVideo.removeAttribute('src');
+    coachVideo.load();
+    coachAnalyze.disabled = true;
+    coachClear.disabled = true;
+    coachState.textContent = 'Ready';
+    coachHud.textContent = 'Film side-on (camera pointed at your lead side). Full body + club in frame. Upload any swing video.';
+    coachProgressWrap.style.display = 'none';
+    octx.clearRect(0,0,coachOverlay.width||1, coachOverlay.height||1);
+    ['cTempo','cShoulder','cHip','cXFactor','cHead','cConf'].forEach(id=>{
+      const el = document.getElementById(id);
+      if(el) el.textContent = '—';
+    });
+    coachCues.innerHTML = '<b>Coaching cues</b><br>Upload a side-on swing to get form insights.';
+  };
+
+  coachAnalyze.onclick = async ()=>{
+    if(coachBusy || !coachUrl) return;
+    coachBusy = true;
+    coachAnalyze.disabled = true;
+    coachState.textContent = 'Analyzing…';
+    coachHud.innerHTML = '<b>ANALYZING</b><br>Loading pose model & sampling frames…';
+    setCoachProgress(0.03);
+
+    const samples = [];
+    let topFrame = null, addressFrame = null, impactFrame = null;
+
+    try{
+      await ensurePose();
+      setCoachProgress(0.08);
+
+      const duration = coachVideo.duration || 3;
+      const vw = coachVideo.videoWidth || 1280;
+      const vh = coachVideo.videoHeight || 720;
+
+      // Offscreen canvas for pose input
+      const canvas = document.createElement('canvas');
+      canvas.width = vw;
+      canvas.height = vh;
+      const ctx = canvas.getContext('2d', {willReadFrequently:true});
+
+      // Sample ~18–28 frames across the clip
+      const nFrames = Math.min(28, Math.max(16, Math.round(duration * 8)));
+      const dt = duration / nFrames;
+
+      for(let i=0; i<nFrames; i++){
+        const t = i * dt;
+        await seekVideo(coachVideo, t);
+        ctx.drawImage(coachVideo, 0, 0, vw, vh);
+        const results = await runPoseOnCanvas(canvas);
+        const lms = results && results.poseLandmarks ? results.poseLandmarks : null;
+        if(lms && lms.length >= 29){
+          const sh = shoulderAngle(lms);
+          const hp = hipAngle(lms);
+          const wh = wristHeight(lms);
+          const hx = headX(lms);
+          samples.push({ t: t*1000, lms, shoulder: sh, hip: hp, wristY: wh, headX: hx });
+        }
+        setCoachProgress(0.08 + 0.7 * ((i+1)/nFrames));
+      }
+
+      if(samples.length < 6){
+        throw new Error('Could not detect a clear full-body pose in enough frames. Film side-on with good lighting, full body visible, and try a shorter clip focused on the swing.');
+      }
+
+      // --- Phase detection ---
+      // Address ≈ early frames with relatively low / stable wrists
+      // Top ≈ minimum wristY (hands highest in image = smallest y)
+      // Impact ≈ after top, when wrists drop and move forward (approximate)
+
+      const wristSamples = samples.filter(s => s.wristY != null);
+      if(wristSamples.length < 4){
+        throw new Error('Wrists not visible consistently. Make sure arms and hands are in frame throughout the swing.');
+      }
+
+      // Top of backswing = lowest wristY
+      let topIdx = 0;
+      for(let i=1; i<wristSamples.length; i++){
+        if(wristSamples[i].wristY < wristSamples[topIdx].wristY) topIdx = i;
+      }
+      topFrame = wristSamples[topIdx];
+
+      // Address = median of first 20–30% of samples (before top)
+      const early = samples.filter(s => s.t < topFrame.t * 0.85 || s.t < samples[0].t + 400);
+      const earlyWrist = early.filter(s => s.wristY != null);
+      if(earlyWrist.length){
+        // pick the one closest to median wristY among early
+        const ys = earlyWrist.map(s=>s.wristY).sort((a,b)=>a-b);
+        const med = ys[Math.floor(ys.length/2)];
+        addressFrame = earlyWrist.reduce((best,s)=> Math.abs(s.wristY-med) < Math.abs(best.wristY-med) ? s : best, earlyWrist[0]);
+      } else {
+        addressFrame = samples[0];
+      }
+
+      // Impact ≈ after top, when wristY has risen significantly (hands lower) and is near its post-top max early
+      const afterTop = wristSamples.filter(s => s.t > topFrame.t + 40);
+      if(afterTop.length){
+        // first significant drop of hands (increase in y)
+        const riseTarget = topFrame.wristY + (afterTop[afterTop.length-1].wristY - topFrame.wristY) * 0.55;
+        impactFrame = afterTop.find(s => s.wristY >= riseTarget) || afterTop[Math.min(2, afterTop.length-1)];
+      } else {
+        impactFrame = samples[samples.length-1];
+      }
+
+      // --- Metrics ---
+      const addrSh = addressFrame.shoulder;
+      const topSh  = topFrame.shoulder;
+      const addrHp = addressFrame.hip;
+      const topHp  = topFrame.hip;
+
+      // Relative turn: change in line angle from address to top (absolute)
+      let shoulderTurn = null, hipTurn = null, xFactor = null;
+      if(addrSh != null && topSh != null){
+        shoulderTurn = Math.abs(topSh - addrSh);
+        // normalize to plausible range (side-on projection underestimates true 3D turn)
+        if(shoulderTurn > 120) shoulderTurn = 180 - shoulderTurn;
+      }
+      if(addrHp != null && topHp != null){
+        hipTurn = Math.abs(topHp - addrHp);
+        if(hipTurn > 100) hipTurn = 180 - hipTurn;
+      }
+      if(shoulderTurn != null && hipTurn != null){
+        xFactor = Math.max(0, shoulderTurn - hipTurn);
+      }
+
+      // Tempo: time address→top vs top→impact
+      const backMs = Math.max(50, topFrame.t - addressFrame.t);
+      const downMs = Math.max(30, impactFrame.t - topFrame.t);
+      const tempoRatio = backMs / downMs;
+
+      // Head sway: max lateral movement of nose relative to address
+      let headSway = null;
+      if(addressFrame.headX != null){
+        let maxDx = 0;
+        samples.forEach(s=>{
+          if(s.headX != null) maxDx = Math.max(maxDx, Math.abs(s.headX - addressFrame.headX));
+        });
+        // convert normalized x to rough % of body width (shoulder width as proxy)
+        const ls = addressFrame.lms[LM.L_SHOULDER], rs = addressFrame.lms[LM.R_SHOULDER];
+        const shoulderW = (visible(ls) && visible(rs)) ? Math.abs(ls.x - rs.x) : 0.2;
+        headSway = shoulderW > 0.02 ? (maxDx / shoulderW) : maxDx;
+      }
+
+      // Confidence based on sample count + landmark visibility
+      let conf = 35;
+      conf += Math.min(25, samples.length * 1.2);
+      conf += (shoulderTurn != null ? 12 : 0);
+      conf += (hipTurn != null ? 10 : 0);
+      conf += (tempoRatio > 0.5 && tempoRatio < 6 ? 10 : 0);
+      conf = Math.max(20, Math.min(92, Math.round(conf)));
+
+      // --- Coaching cues (rule-based, side-on aware) ---
+      const cues = [];
+      if(tempoRatio < 2.0){
+        cues.push('<strong>Tempo is quick</strong> — backswing-to-downswing ratio ≈ '+tempoRatio.toFixed(1)+':1. Aim closer to 3:1 for smoother transition.');
+      } else if(tempoRatio > 4.2){
+        cues.push('<strong>Tempo is deliberate</strong> — ratio ≈ '+tempoRatio.toFixed(1)+':1. A slightly quicker transition can add speed if balance is solid.');
+      } else {
+        cues.push('<strong>Tempo looks balanced</strong> — ratio ≈ '+tempoRatio.toFixed(1)+':1 (target ~3:1).');
+      }
+
+      if(shoulderTurn != null){
+        if(shoulderTurn < 55){
+          cues.push('<strong>Shoulder turn is restricted</strong> (~'+Math.round(shoulderTurn)+'° projected). Try a fuller coil while keeping the lead knee stable.');
+        } else if(shoulderTurn > 100){
+          cues.push('<strong>Large shoulder turn</strong> (~'+Math.round(shoulderTurn)+'° projected). Great for power — confirm the lower body is supporting it.');
+        } else {
+          cues.push('<strong>Shoulder turn</strong> looks productive (~'+Math.round(shoulderTurn)+'° projected).');
+        }
+      }
+
+      if(hipTurn != null){
+        if(hipTurn < 20){
+          cues.push('<strong>Hips are quiet</strong> at the top (~'+Math.round(hipTurn)+'°). A bit more hip rotation can free the upper body and improve sequence.');
+        } else if(hipTurn > 55){
+          cues.push('<strong>Hips are very active</strong> (~'+Math.round(hipTurn)+'°). Watch for early sliding — feel more rotation and less lateral move.');
+        }
+      }
+
+      if(xFactor != null){
+        if(xFactor < 12){
+          cues.push('<strong>Low X-factor</strong> (shoulders & hips turning together). Create separation: let the shoulders keep turning after the hips stabilize.');
+        } else if(xFactor > 45){
+          cues.push('<strong>High X-factor</strong> (~'+Math.round(xFactor)+'°). Excellent separation — just make sure you can unwind in sequence without losing posture.');
+        } else {
+          cues.push('<strong>X-factor</strong> is in a useful range (~'+Math.round(xFactor)+'°).');
+        }
+      }
+
+      if(headSway != null){
+        if(headSway > 0.55){
+          cues.push('<strong>Noticeable head movement</strong>. Try keeping the head more centered over the sternum through the backswing for consistent contact.');
+        } else {
+          cues.push('<strong>Head stability</strong> looks controlled.');
+        }
+      }
+
+      cues.push('<span style="opacity:.7">Insights are from 2D side-on pose estimation — useful for trends, not a substitute for a real coach or 3D system.</span>');
+
+      // --- UI update ---
+      document.getElementById('cTempo').textContent = tempoRatio.toFixed(1) + ':1';
+      document.getElementById('cShoulder').textContent = shoulderTurn != null ? Math.round(shoulderTurn)+'°' : '—';
+      document.getElementById('cHip').textContent = hipTurn != null ? Math.round(hipTurn)+'°' : '—';
+      document.getElementById('cXFactor').textContent = xFactor != null ? Math.round(xFactor)+'°' : '—';
+      document.getElementById('cHead').textContent = headSway != null ? (headSway > 0.55 ? 'High' : headSway > 0.3 ? 'Moderate' : 'Stable') : '—';
+      document.getElementById('cConf').textContent = conf + '%';
+
+      coachCues.innerHTML = '<b>Coaching cues</b><ul class="coach-cues">'+cues.map(c=>'<li>'+c+'</li>').join('')+'</ul>';
+
+      // Draw skeleton at top-of-backswing on the visible video
+      coachOverlay.width = coachVideo.clientWidth || vw;
+      coachOverlay.height = coachVideo.clientHeight || vh;
+      // Seek to top and draw
+      await seekVideo(coachVideo, topFrame.t / 1000);
+      // Re-run pose once more at top for clean landmarks at display resolution
+      const dispCanvas = document.createElement('canvas');
+      dispCanvas.width = vw; dispCanvas.height = vh;
+      dispCanvas.getContext('2d').drawImage(coachVideo, 0, 0, vw, vh);
+      const topResults = await runPoseOnCanvas(dispCanvas);
+      if(topResults && topResults.poseLandmarks){
+        // Map normalized landmarks to overlay size
+        drawSkeleton(topResults.poseLandmarks, coachOverlay.width, coachOverlay.height);
+      } else if(topFrame.lms){
+        drawSkeleton(topFrame.lms, coachOverlay.width, coachOverlay.height);
+      }
+
+      setCoachProgress(1);
+      coachState.textContent = 'Done';
+      coachHud.innerHTML = '<b>SWING ANALYZED</b><br>Tempo '+tempoRatio.toFixed(1)+':1 · Conf '+conf+'%';
+
+      document.getElementById('diagnostics').textContent = [
+        'Swing Coach analysis complete',
+        'Frames with pose: '+samples.length+' / '+nFrames,
+        'Address @ '+(addressFrame.t/1000).toFixed(2)+'s · Top @ '+(topFrame.t/1000).toFixed(2)+'s · Impact ~'+(impactFrame.t/1000).toFixed(2)+'s',
+        'Backswing: '+Math.round(backMs)+' ms · Downswing: '+Math.round(downMs)+' ms',
+        'Shoulder turn (projected): '+(shoulderTurn!=null?Math.round(shoulderTurn)+'°':'—'),
+        'Hip turn (projected): '+(hipTurn!=null?Math.round(hipTurn)+'°':'—'),
+        'X-factor: '+(xFactor!=null?Math.round(xFactor)+'°':'—'),
+        'Head sway (rel. shoulder width): '+(headSway!=null?headSway.toFixed(2):'—'),
+        'Confidence: '+conf+'%'
+      ].join('\n');
+
+      // Also reflect a short status in the shared quality panel
+      const q = document.getElementById('quality');
+      if(q) q.innerHTML = '<b>Swing Coach</b><br>Tempo '+tempoRatio.toFixed(1)+':1 · Shoulder ~'+(shoulderTurn!=null?Math.round(shoulderTurn)+'°':'—')+' · Conf '+conf+'%';
+
+    }catch(e){
+      coachState.textContent = 'Error';
+      coachHud.innerHTML = '<b>FAILED</b><br>'+(e.message||e);
+      coachCues.innerHTML = '<b>Coaching cues</b><br>'+(e.message||e);
+      document.getElementById('diagnostics').textContent = 'Swing Coach error: '+(e.message||e);
+    }finally{
+      coachBusy = false;
+      coachAnalyze.disabled = !coachUrl;
+      setTimeout(()=>{ coachProgressWrap.style.display = 'none'; }, 700);
     }
   };
 })();
