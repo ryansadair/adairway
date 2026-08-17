@@ -864,9 +864,8 @@
         </div>
       </div>
       <div class="rf-actions-bar">
-        <button type="button" class="btn small" id="aerialSetGreenBtn">Save target as green</button>
         <button type="button" class="btn outline small" id="aerialClearTargetBtn">Clear target</button>
-        <p class="hint" id="aerialHint" style="margin:0;flex:1;min-width:140px;">White dot = you · Flag = green · Orange target = measure (drag it).</p>
+        <p class="hint" id="aerialHint" style="margin:0;flex:1;min-width:140px;">White dot = you · Flag = green · Orange target = measure (drag it). Greens are set on the Courses tab.</p>
       </div>
     </div>
   </div>
@@ -4256,14 +4255,14 @@ function updateRangefinderHud(){
       const toGreen = distanceYards(aerialTarget.lat, aerialTarget.lng, aerialGreen.lat, aerialGreen.lng);
       html += ` · Target → green: <strong>${Math.round(toGreen)} yds</strong>`;
     }else{
-      html += ` · <span style="opacity:0.7">No green pin yet — use “Save target as green”</span>`;
+      html += ` · <span style="opacity:0.7">No green pin yet — set greens on the Courses tab</span>`;
     }
     measureEl.innerHTML = html;
     measureEl.classList.remove('hidden');
   }else{
     measureEl.textContent = hasGreen
       ? 'Tap the map to drop a measure target (drag to move). Distances update live.'
-      : 'No saved green for this hole yet. Tap the map on the green, then “Save target as green”.';
+      : 'No saved green for this hole yet. Map greens on the Courses tab, then reopen Aerial view.';
     measureEl.classList.toggle('hidden', !hasYou);
   }
 
@@ -4271,7 +4270,7 @@ function updateRangefinderHud(){
   if(hasYou && hasGreen && mainYds != null){
     document.getElementById('aerialSub').textContent = `${holeLabel} · ${Math.round(mainYds)} yds to middle · live GPS`;
   }else if(hasYou && !hasGreen){
-    document.getElementById('aerialSub').textContent = `${holeLabel} · no green pin — tap map to set one`;
+    document.getElementById('aerialSub').textContent = `${holeLabel} · no green pin — map greens on Courses tab`;
   }else{
     document.getElementById('aerialSub').textContent = `${holeLabel} · locating…`;
   }
@@ -4459,32 +4458,6 @@ document.getElementById('aerialViewBtn').addEventListener('click', async ()=>{
     },
     { enableHighAccuracy: true, maximumAge: 2000, timeout: 12000 }
   );
-});
-
-document.getElementById('aerialSetGreenBtn').addEventListener('click', async ()=>{
-  if(!aerialTarget){
-    alert('Tap the map first to place the orange target on the green (or drag it).');
-    return;
-  }
-  const res = await saveGreenForCurrentHole(aerialTarget.lat, aerialTarget.lng, 'aerial');
-  if(!res.ok){ alert(res.message); return; }
-
-  aerialGreen = { lat: aerialTarget.lat, lng: aerialTarget.lng };
-  aerialCourse = res.course;
-
-  if(aerialMap){
-    if(aerialMarkers.green){
-      aerialMarkers.green.setLatLng([aerialGreen.lat, aerialGreen.lng]);
-    }else{
-      aerialMarkers.green = L.marker([aerialGreen.lat, aerialGreen.lng], {
-        icon: rfGreenIcon(),
-        zIndexOffset: 500
-      }).addTo(aerialMap);
-    }
-  }
-  updateRangefinderHud();
-  document.getElementById('aerialSub').textContent =
-    `Hole ${res.holeNum} · green saved for ${res.course.name}`;
 });
 
 document.getElementById('aerialClearTargetBtn')?.addEventListener('click', ()=>{
