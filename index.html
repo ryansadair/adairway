@@ -2748,6 +2748,7 @@ async function commitRound(holes, course, tees, date, notes, holesPlayed){
   if(currentProfile.shareActivityWithFriends !== false){
     const ok = await shareRoundToFeed(round);
     if(!ok) console.warn('Auto-share failed for round', round.id);
+    else renderFeed();
   }
   await saveList('rounds', rounds);
   renderRounds();
@@ -2814,6 +2815,7 @@ document.getElementById('roundsList').addEventListener('click', async e=>{
       if(ok){
         await saveList('rounds', rounds);
         renderRounds();
+        renderFeed();
       } else {
         shareBtn.textContent = round.sharedPostId ? 'shared ✓' : 'share';
         alert('Could not update sharing — check your connection and try again.');
