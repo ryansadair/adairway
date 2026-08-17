@@ -1615,6 +1615,7 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
     slowHud.innerHTML='<b>ANALYZING</b><br>Scanning frames…';
     setSlowProgress(0.02);
 
+    let dbg={};
     try{
       const file=slowFile.files[0];
       const duration=slowVideo.duration||1;
@@ -1657,6 +1658,7 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
       setSlowProgress(0.88);
 
       const good=samples.filter(s=>s.found&&s.score>=85);
+      dbg.samples=samples.length; dbg.good=good.length; dbg.impact=impact;
       if(good.length<3){
         throw new Error('Ball not found often enough. Keep the ball in frame, well lit, and try a shorter clip of just the swing.');
       }
@@ -1672,12 +1674,14 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
         lock={x:good[0].x,y:good[0].y,t:good[0].t};
         good.sort((a,b)=>a.t-b.t);
       }
+      dbg.lockT=lock.t;
 
       let t0=impact?impact.t:lock.t;
       // If audio impact is far from any ball sighting, prefer first big move
       if(impact && Math.abs(impact.t-lock.t)>1200){
         t0=lock.t;
       }
+      dbg.t0=t0;
 
       // Flight samples: after impact, moving away from lock
       const flightSamples=good.filter(s=>{
@@ -1685,6 +1689,7 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
         const d=Math.hypot(s.x-lock.x,s.y-lock.y);
         return d>8 || s.t<=t0+40;
       }).sort((a,b)=>a.t-b.t);
+      dbg.flightSamples=flightSamples.length;
 
       const netDist=parseFloat(document.getElementById('netDistance').value)||6.5;
       const club=document.getElementById('club').value||'Wedge';
@@ -1700,6 +1705,7 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
         if(d>peakD){ peakD=d; lastLeave=s; }
       }
       if(!lastLeave && flightSamples.length) lastLeave=flightSamples[flightSamples.length-1];
+      dbg.lastLeave=!!lastLeave; dbg.peakD=peakD;
 
       let speedMph=null, flightMs=null, speedSource='slow-mo';
       if(lastLeave){
@@ -1707,6 +1713,7 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
         // Prefer measured path if we have meaningful displacement
         const scale=estimateScale();
         const pathFt=peakD/(scale||40);
+        dbg.flightMs=flightMs; dbg.pathFt=pathFt; dbg.scale=scale;
         if(flightMs>=30 && flightMs<=320){
           if(pathFt>=netDist*0.25 && pathFt<=netDist*1.4){
             speedMph=(Math.min(pathFt,netDist)/(flightMs/1000))*0.681818;
@@ -1774,7 +1781,19 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
       slowState.textContent='Error';
       slowHud.innerHTML='<b>FAILED</b><br>'+(e.message||e);
       quality.innerHTML='<b>Slow-mo failed</b><br>'+(e.message||e);
-      diagnostics.textContent='Slow-mo error: '+(e.message||e)+'\nFrame extraction: '+(supportsFrameCallback?'requestVideoFrameCallback':'seek-based sampling (fallback)');
+      diagnostics.textContent=[
+        'Slow-mo error: '+(e.message||e),
+        'Frame extraction: '+(supportsFrameCallback?'requestVideoFrameCallback':'seek-based sampling (fallback)'),
+        'Frames sampled: '+(dbg.samples??'—'),
+        'Ball hits (score>=85): '+(dbg.good??'—'),
+        'Impact audio: '+(dbg.impact?('yes @ '+dbg.impact.t.toFixed(0)+' ms'):(dbg.good!=null?'not found':'—')),
+        dbg.lockT!=null?'Lock time (best pre-impact hit): '+dbg.lockT.toFixed(0)+' ms':null,
+        dbg.t0!=null?'t0 (used as impact moment): '+dbg.t0.toFixed(0)+' ms':null,
+        dbg.flightSamples!=null?'Flight-window ball hits: '+dbg.flightSamples:null,
+        dbg.lastLeave!=null?'Found a "leave" point: '+dbg.lastLeave:null,
+        dbg.flightMs!=null?'Flight time to leave point: '+dbg.flightMs.toFixed(0)+' ms':null,
+        dbg.pathFt!=null?'Measured path: '+dbg.pathFt.toFixed(2)+' ft (peak px dist '+dbg.peakD.toFixed(0)+', scale '+(dbg.scale?dbg.scale.toFixed(1)+' px/ft':'uncalibrated, assumed 40 px/ft')+')':null
+      ].filter(Boolean).join('\n');
     }finally{
       slowBusy=false;
       slowAnalyze.disabled=!slowUrl;
