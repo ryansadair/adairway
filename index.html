@@ -78,6 +78,12 @@
   .subnav button.active{opacity:1;background:var(--fairway-deep);border-color:var(--fairway-deep);color:var(--paper-light);}
   .subview{display:none;}
   .subview.active{display:block;}
+  .nav-notif-dot{
+    position:absolute;top:2px;right:4px;min-width:15px;height:15px;padding:0 3px;border-radius:8px;
+    background:var(--flag);color:#fff;font-family:'IBM Plex Mono',monospace;font-size:9.5px;font-weight:700;
+    line-height:15px;text-align:center;display:none;
+  }
+  nav button{position:relative;}
 
   section{display:none;}
   section.active{display:block;animation:fade .2s ease;}
@@ -933,7 +939,7 @@
     <button data-tab="practice"><span class="peg">3</span>Practice</button>
     <button data-tab="bag"><span class="peg">4</span>Bag</button>
     <button data-tab="courses"><span class="peg">5</span>Courses</button>
-    <button data-tab="profile"><span class="peg">6</span>Profile</button>
+    <button data-tab="profile"><span class="peg">6</span>Profile<span class="nav-notif-dot" id="profileNotifDot"></span></button>
   </nav>
 
   <!-- PLAY (on-course, one hole at a time) -->
@@ -1459,7 +1465,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut,
   signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, orderBy, limit }
+import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, query, orderBy, limit, arrayUnion, arrayRemove }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -1654,6 +1660,7 @@ document.getElementById('tabs').addEventListener('click', e=>{
   document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
   if(btn.dataset.tab === 'stats') renderStats();
   if(btn.dataset.tab === 'play') renderPlayHole();
+  if(btn.dataset.tab === 'profile') markNotificationsSeen();
 });
 
 // ---------- practice tab subnav ----------
@@ -2748,7 +2755,7 @@ async function commitRound(holes, course, tees, date, notes, holesPlayed){
   if(currentProfile.shareActivityWithFriends !== false){
     const ok = await shareRoundToFeed(round);
     if(!ok) console.warn('Auto-share failed for round', round.id);
-    else renderFeed();
+    else { renderFeed(); renderNotifBadge(); }
   }
   await saveList('rounds', rounds);
   renderRounds();
@@ -2816,6 +2823,7 @@ document.getElementById('roundsList').addEventListener('click', async e=>{
         await saveList('rounds', rounds);
         renderRounds();
         renderFeed();
+        renderNotifBadge();
       } else {
         shareBtn.textContent = round.sharedPostId ? 'shared ✓' : 'share';
         alert('Could not update sharing — check your connection and try again.');
@@ -4726,6 +4734,7 @@ document.getElementById('friendsList')?.addEventListener('click', async e=>{
     renderFriendsList();
     renderLeaderboard();
     renderFeed();
+    renderNotifBadge();
   }catch(e){ alert('Could not remove friend — check your connection and try again.'); }
 });
 
@@ -4744,6 +4753,7 @@ document.getElementById('incomingRequestsList')?.addEventListener('click', async
     renderFriendsList();
     renderLeaderboard();
     renderFeed();
+    renderNotifBadge();
     return;
   }
   if(declineBtn){
@@ -4753,6 +4763,7 @@ document.getElementById('incomingRequestsList')?.addEventListener('click', async
     if(!ok){ declineBtn.disabled = false; alert('Could not decline — check connection.'); return; }
     currentIncomingRequests = currentIncomingRequests.filter(r=> r.uid !== otherUid);
     renderIncomingRequests();
+    renderNotifBadge();
   }
 });
 
@@ -4946,6 +4957,7 @@ document.getElementById('friendSearchResults')?.addEventListener('click', async 
     document.getElementById('friendSearchBtn')?.click();
     renderLeaderboard();
     renderFeed();
+    renderNotifBadge();
   }
 });
 
@@ -5109,7 +5121,11 @@ async function shareRoundToFeed(round){
       date: round.date,
       score,
       toPar: score - par,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      likedBy: [],
+      lastLikedAt: null,
+      commentCount: 0,
+      lastCommentAt: null
     });
     round.sharedPostId = postRef.id;
     return true;
@@ -5166,6 +5182,22 @@ async function addComment(postId, text){
       text: text.trim(),
       createdAt: Date.now()
     });
+    const post = currentFeedPosts.find(p=>p.id===postId);
+    const nextCount = (post?.commentCount || 0) + 1;
+    const stamp = Date.now();
+    await updateDoc(doc(db, 'posts', postId), { lastCommentAt: stamp, commentCount: nextCount, lastCommentByUid: currentUser.uid });
+    if(post){ post.commentCount = nextCount; post.lastCommentAt = stamp; post.lastCommentByUid = currentUser.uid; }
+    return true;
+  }catch(e){ return false; }
+}
+async function toggleLike(postId, isLiked){
+  if(!currentUser) return false;
+  try{
+    if(isLiked){
+      await updateDoc(doc(db, 'posts', postId), { likedBy: arrayRemove(currentUser.uid) });
+    }else{
+      await updateDoc(doc(db, 'posts', postId), { likedBy: arrayUnion(currentUser.uid), lastLikedAt: Date.now(), lastLikedByUid: currentUser.uid });
+    }
     return true;
   }catch(e){ return false; }
 }
@@ -5182,11 +5214,13 @@ function renderCommentsList(container, comments){
       </div>
     </div>`).join('');
 }
+let currentFeedPosts = [];
 async function renderFeed(){
   const el = document.getElementById('feedList');
   if(!el) return;
   el.innerHTML = '<div class="hint" style="margin:0;">Loading...</div>';
   const posts = await loadFeed();
+  currentFeedPosts = posts;
   if(posts.length === 0){
     el.innerHTML = '<div class="empty">No shared rounds yet.</div>';
     return;
@@ -5194,6 +5228,8 @@ async function renderFeed(){
   el.innerHTML = posts.map(p=>{
     const isSelf = p.authorUid === currentUser.uid;
     const toParStr = p.toPar === 0 ? 'E' : (p.toPar > 0 ? '+' + p.toPar : p.toPar);
+    const likedBy = p.likedBy || [];
+    const isLiked = likedBy.includes(currentUser.uid);
     return `
     <div style="border:1px solid var(--line);border-radius:2px;padding:12px 14px;margin-bottom:8px;background:#fff;" data-post-wrap="${p.id}">
       <div style="display:flex;align-items:center;gap:10px;">
@@ -5207,16 +5243,21 @@ async function renderFeed(){
           <div class="meta">${toParStr}</div>
         </div>
       </div>
-      <details class="comments-toggle" data-post-id="${p.id}" style="margin-top:8px;">
-        <summary style="cursor:pointer;font-size:11px;color:var(--turf);font-family:'IBM Plex Mono',monospace;">comments</summary>
-        <div style="margin-top:8px;">
-          <div class="comments-list" data-post-id="${p.id}"></div>
-          <div style="display:flex;gap:6px;margin-top:6px;">
-            <input type="text" class="comment-input" data-post-id="${p.id}" placeholder="Add a comment..." style="flex:1;">
-            <button class="btn small" data-kind="post-comment" data-post-id="${p.id}" type="button">Post</button>
+      <div style="display:flex;align-items:center;gap:14px;margin-top:10px;">
+        <button type="button" class="like-btn${isLiked ? ' on' : ''}" data-kind="post-like" data-post-id="${p.id}" style="background:none;border:none;padding:0;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:11px;color:${isLiked ? 'var(--flag)' : 'var(--turf)'};display:flex;align-items:center;gap:5px;">
+          <span aria-hidden="true">${isLiked ? '♥' : '♡'}</span><span class="like-count">${likedBy.length || ''}</span>
+        </button>
+        <details class="comments-toggle" data-post-id="${p.id}" style="flex:1;">
+          <summary style="cursor:pointer;font-size:11px;color:var(--turf);font-family:'IBM Plex Mono',monospace;">comments${p.commentCount ? ' (' + p.commentCount + ')' : ''}</summary>
+          <div style="margin-top:8px;">
+            <div class="comments-list" data-post-id="${p.id}"></div>
+            <div style="display:flex;gap:6px;margin-top:6px;">
+              <input type="text" class="comment-input" data-post-id="${p.id}" placeholder="Add a comment..." style="flex:1;">
+              <button class="btn small" data-kind="post-comment" data-post-id="${p.id}" type="button">Post</button>
+            </div>
           </div>
-        </div>
-      </details>
+        </details>
+      </div>
     </div>`;
   }).join('');
 }
@@ -5232,6 +5273,31 @@ document.getElementById('feedList')?.addEventListener('toggle', async e=>{
   listEl.dataset.loaded = '1';
 }, true);
 document.getElementById('feedList')?.addEventListener('click', async e=>{
+  const likeBtn = e.target.closest('button[data-kind="post-like"]');
+  if(likeBtn){
+    const postId = likeBtn.dataset.postId;
+    const post = currentFeedPosts.find(p=>p.id===postId);
+    if(!post) return;
+    const likedBy = post.likedBy || (post.likedBy = []);
+    const wasLiked = likedBy.includes(currentUser.uid);
+    // optimistic UI update
+    if(wasLiked) post.likedBy = likedBy.filter(uid=>uid!==currentUser.uid);
+    else { post.likedBy = [...likedBy, currentUser.uid]; post.lastLikedAt = Date.now(); post.lastLikedByUid = currentUser.uid; }
+    likeBtn.classList.toggle('on', !wasLiked);
+    likeBtn.style.color = !wasLiked ? 'var(--flag)' : 'var(--turf)';
+    likeBtn.querySelector('span[aria-hidden]').textContent = !wasLiked ? '♥' : '♡';
+    likeBtn.querySelector('.like-count').textContent = post.likedBy.length || '';
+    const ok = await toggleLike(postId, wasLiked);
+    if(!ok){
+      // revert on failure
+      post.likedBy = likedBy;
+      likeBtn.classList.toggle('on', wasLiked);
+      likeBtn.style.color = wasLiked ? 'var(--flag)' : 'var(--turf)';
+      likeBtn.querySelector('span[aria-hidden]').textContent = wasLiked ? '♥' : '♡';
+      likeBtn.querySelector('.like-count').textContent = post.likedBy.length || '';
+    }
+    return;
+  }
   const btn = e.target.closest('button[data-kind="post-comment"]');
   if(!btn) return;
   const postId = btn.dataset.postId;
@@ -5246,6 +5312,9 @@ document.getElementById('feedList')?.addEventListener('click', async e=>{
       const comments = await loadComments(postId);
       renderCommentsList(listEl, comments);
     }
+    const summaryEl = document.querySelector(`details.comments-toggle[data-post-id="${postId}"] summary`);
+    const post = currentFeedPosts.find(p=>p.id===postId);
+    if(summaryEl && post) summaryEl.textContent = `comments${post.commentCount ? ' (' + post.commentCount + ')' : ''}`;
   }
   btn.disabled = false;
 });
@@ -6313,6 +6382,49 @@ async function saveFlag(key, value){
   try{ await setDoc(doc(db, 'users', currentUser.uid, 'meta', key), { value }); return true; }
   catch(e){ return false; }
 }
+async function loadMeta(key, defaultValue){
+  if(!currentUser) return defaultValue;
+  try{
+    const snap = await getDoc(doc(db, 'users', currentUser.uid, 'meta', key));
+    return snap.exists() ? snap.data().value : defaultValue;
+  }catch(e){ return defaultValue; }
+}
+async function saveMeta(key, value){
+  if(!currentUser) return false;
+  try{ await setDoc(doc(db, 'users', currentUser.uid, 'meta', key), { value }); return true; }
+  catch(e){ return false; }
+}
+
+// ---------- notification badge (friend requests, new friend rounds, new comments/likes on your rounds) ----------
+let notifLastSeenAt = 0;
+function computeNotificationCount(){
+  let count = currentIncomingRequests.length;
+  count += currentFeedPosts.filter(p=>
+    p.authorUid !== currentUser?.uid && (p.createdAt||0) > notifLastSeenAt
+  ).length;
+  count += currentFeedPosts.filter(p=>
+    p.authorUid === currentUser?.uid &&
+    (((p.lastCommentAt||0) > notifLastSeenAt && p.lastCommentByUid !== currentUser?.uid) ||
+     ((p.lastLikedAt||0) > notifLastSeenAt && p.lastLikedByUid !== currentUser?.uid))
+  ).length;
+  return count;
+}
+function renderNotifBadge(){
+  const dot = document.getElementById('profileNotifDot');
+  if(!dot) return;
+  const count = computeNotificationCount();
+  if(count > 0){
+    dot.textContent = count > 9 ? '9+' : String(count);
+    dot.style.display = 'block';
+  }else{
+    dot.style.display = 'none';
+  }
+}
+async function markNotificationsSeen(){
+  notifLastSeenAt = Date.now();
+  await saveMeta('notifLastSeenAt', notifLastSeenAt);
+  renderNotifBadge();
+}
 
 document.getElementById('statsYearFilter')?.addEventListener('change', ()=>{
   renderStats();
@@ -6388,11 +6500,13 @@ async function init(){
   currentFriends = await loadFriends();
   currentIncomingRequests = await loadIncomingRequests();
   currentOutgoingRequestUids = await loadOutgoingRequestUids();
+  notifLastSeenAt = await loadMeta('notifLastSeenAt', 0);
   renderFriendsList();
   renderIncomingRequests();
   publishStatsSummary();
   renderLeaderboard();
-  renderFeed();
+  await renderFeed();
+  renderNotifBadge();
   maybeShowA2HSTip();
 
   const bagSeeded = await loadFlag('bagSeeded');
