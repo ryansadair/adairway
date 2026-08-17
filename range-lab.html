@@ -1082,18 +1082,26 @@ function renderResult(r){
   setText('shape',r.shape);
 
   const m=r.meta||{};
-  const scaleNote=m.calibrated
-    ?('scale '+m.pxPerFt.toFixed(0)+' px/ft (calibrated)')
-    :('scale ~'+m.pxPerFt.toFixed(0)+' px/ft (estimated — calibrate for accuracy)');
+  const pxPerFt = (m.pxPerFt!=null && isFinite(m.pxPerFt))
+    ? m.pxPerFt
+    : (typeof estimateScale==='function' ? estimateScale() : null);
+  const scaleNote = pxPerFt
+    ? (m.calibrated
+        ? ('scale '+pxPerFt.toFixed(0)+' px/ft (calibrated)')
+        : ('scale ~'+pxPerFt.toFixed(0)+' px/ft (estimated — calibrate for accuracy)'))
+    : 'scale not set — calibrate for accuracy';
   const src=m.speedSource||'?';
   const flightNote=m.flightMs!=null?('flight '+(m.flightMs).toFixed(0)+' ms · '):'';
   const aimNote = m.trackReliable
     ? 'aim/launch from ball track'
     : 'aim ~straight · launch from club default (pixel track not reliable in this view)';
+  const impactNote = m.impactAudio
+    ? ' · impact matched'
+    : (typeof audioEnabled!=='undefined' && audioEnabled ? ' · impact matched' : '');
   quality.innerHTML=
     '<b>Capture evidence: '+r.confidence+'%</b><br>'+
     r.frames+' track points · '+flightNote+'speed via <b>'+src+'</b>'+
-    (audioEnabled?' · impact matched':'')+'.<br>'+
+    impactNote+'.<br>'+
     'Path '+Math.round(m.pathPx||0)+' px · forward '+(100*(m.forwardShare||0)).toFixed(0)+'% · '+scaleNote+'.<br>'+
     aimNote+'. <b>Carry/total are model estimates</b> (spin not measured).';
 
@@ -1708,6 +1716,193 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
   }
   findAudioImpact.lastDebug = null;
 
+  // iOS / Safari often cannot decodeAudioData() on Camera .MOV files.
+  // Fallback: play the <video> through Web Audio and sample the analyser.
+  // MediaElementSource can only be created once per element and must stay on
+  // a live AudioContext — keep both on the element.
+  async function findAudioImpactViaElement(videoEl, hintMs){
+    const debug = { ok:false, reason:'', method:'media-element', durationMs:0, peaks:0, maxRms:0 };
+    const fail = (reason)=>{
+      debug.reason = reason;
+      findAudioImpact.lastDebug = debug;
+      return null;
+    };
+    if(!videoEl || !videoEl.src) return fail('no video element');
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return fail('Web Audio unsupported');
+
+    let analyser = null, gain = null;
+    const peaks = [];
+    let maxRms = 0;
+    const prevMuted = videoEl.muted;
+    const prevVolume = videoEl.volume;
+    const prevRate = videoEl.playbackRate;
+
+    try{
+      if(!videoEl._adairAudioCtx || videoEl._adairAudioCtx.state === 'closed'){
+        videoEl._adairAudioCtx = new AC();
+        videoEl._adairAudioSource = null; // must recreate with new context
+      }
+      const ctx = videoEl._adairAudioCtx;
+      if(ctx.state === 'suspended') await ctx.resume();
+      // One MediaElementSource per element lifetime (per context)
+      if(!videoEl._adairAudioSource){
+        videoEl._adairAudioSource = ctx.createMediaElementSource(videoEl);
+      }
+      const source = videoEl._adairAudioSource;
+      analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0;
+      gain = ctx.createGain();
+      gain.gain.value = 0; // silence speakers; still analyse
+      try{ source.disconnect(); }catch(_){}
+      source.connect(analyser);
+      analyser.connect(gain);
+      gain.connect(ctx.destination);
+
+      const data = new Uint8Array(analyser.fftSize);
+      const floatData = typeof analyser.getFloatTimeDomainData === 'function'
+        ? new Float32Array(analyser.fftSize) : null;
+
+      // Focus near visual lock when we have one; otherwise scan whole clip.
+      const dur = videoEl.duration || 0;
+      debug.durationMs = dur * 1000;
+      let startT = 0, endT = dur;
+      if(hintMs != null && isFinite(hintMs) && dur > 0){
+        startT = Math.max(0, (hintMs/1000) - 2.5);
+        endT = Math.min(dur, (hintMs/1000) + 2.5);
+      }
+      // Cap scan length so long setup clips don't take forever
+      if(endT - startT > 12) endT = startT + 12;
+
+      videoEl.muted = false; // iOS may zero the graph when muted
+      videoEl.volume = 1;
+      videoEl.playbackRate = 1;
+      await new Promise((resolve, reject)=>{
+        const onSeek = ()=>{ videoEl.removeEventListener('seeked', onSeek); resolve(); };
+        videoEl.addEventListener('seeked', onSeek);
+        try{ videoEl.currentTime = startT; }
+        catch(e){ reject(e); }
+        setTimeout(resolve, 400); // safety
+      });
+
+      const sampleMs = 12;
+      const baselineWindow = [];
+      let baseline = 0.01;
+      await videoEl.play();
+
+      await new Promise((resolve)=>{
+        const tEnd = performance.now() + Math.max(1500, (endT - startT) * 1000 + 500);
+        const tick = ()=>{
+          if(videoEl.ended || videoEl.currentTime >= endT - 0.02 || performance.now() > tEnd){
+            resolve();
+            return;
+          }
+          let rms = 0, peak = 0;
+          if(floatData){
+            analyser.getFloatTimeDomainData(floatData);
+            let sum = 0;
+            for(let i=0;i<floatData.length;i++){
+              const v = floatData[i];
+              const a = Math.abs(v);
+              if(a > peak) peak = a;
+              sum += v*v;
+            }
+            rms = Math.sqrt(sum / floatData.length);
+          }else{
+            analyser.getByteTimeDomainData(data);
+            let sum = 0;
+            for(let i=0;i<data.length;i++){
+              const v = (data[i]-128)/128;
+              const a = Math.abs(v);
+              if(a > peak) peak = a;
+              sum += v*v;
+            }
+            rms = Math.sqrt(sum / data.length);
+          }
+          const level = Math.max(rms, peak * 0.55);
+          if(level > maxRms) maxRms = level;
+          baselineWindow.push(level);
+          if(baselineWindow.length > 40) baselineWindow.shift();
+          const sorted = baselineWindow.slice().sort((a,b)=>a-b);
+          baseline = sorted[Math.floor(sorted.length/2)] || 0.01;
+          const thresh = Math.max(0.02, baseline * 4.5);
+          const tMs = videoEl.currentTime * 1000;
+          if(level >= thresh){
+            // keep strongest near this moment
+            if(!peaks.length || Math.abs(peaks[peaks.length-1].t - tMs) > 40){
+              peaks.push({ t: tMs, level });
+            }else if(level > peaks[peaks.length-1].level){
+              peaks[peaks.length-1] = { t: tMs, level };
+            }
+          }
+          setTimeout(tick, sampleMs);
+        };
+        tick();
+      });
+
+      try{ videoEl.pause(); }catch(_){}
+      debug.peaks = peaks.length;
+      debug.maxRms = maxRms;
+
+      if(!peaks.length){
+        if(maxRms > 0.015){
+          // take max sample time approx from last scan center
+          debug.ok = true;
+          debug.reason = 'element-max-level-only';
+          findAudioImpact.lastDebug = debug;
+          return {
+            t: hintMs != null ? hintMs : (startT + (endT-startT)/2) * 1000,
+            level: maxRms,
+            method: 'media-element-max',
+            detail: 'maxRms '+(maxRms*100).toFixed(1)+'% (no sharp peak)',
+            debug
+          };
+        }
+        return fail('media-element: no peak (maxRms='+maxRms.toFixed(4)+')');
+      }
+
+      // Prefer peak nearest hint
+      let best = peaks[0];
+      if(hintMs != null && isFinite(hintMs)){
+        for(const p of peaks){
+          if(Math.abs(p.t - hintMs) < Math.abs(best.t - hintMs)) best = p;
+        }
+        // If several are close, prefer loudest within 800ms of hint
+        let loud = null;
+        for(const p of peaks){
+          if(Math.abs(p.t - hintMs) <= 800){
+            if(!loud || p.level > loud.level) loud = p;
+          }
+        }
+        if(loud) best = loud;
+      }else{
+        for(const p of peaks) if(p.level > best.level) best = p;
+      }
+
+      debug.ok = true;
+      debug.reason = 'media-element peak';
+      findAudioImpact.lastDebug = debug;
+      return {
+        t: best.t,
+        level: best.level,
+        method: 'media-element',
+        detail: 'rms '+(best.level*100).toFixed(1)+'% · peaks '+peaks.length,
+        debug
+      };
+    }catch(e){
+      return fail('media-element exception: '+(e && (e.message||e.name)||e));
+    }finally{
+      try{ videoEl.pause(); }catch(_){}
+      try{ videoEl.muted = prevMuted; }catch(_){}
+      try{ videoEl.volume = prevVolume; }catch(_){}
+      try{ videoEl.playbackRate = prevRate; }catch(_){}
+      try{ if(gain) gain.disconnect(); }catch(_){}
+      try{ if(analyser) analyser.disconnect(); }catch(_){}
+      // Keep MediaElementSource + AudioContext alive on the element for re-use.
+    }
+  }
+
   // Ball scan — works for behind-golfer and side-on shed setups
   function detectOnSlow(center, wide){
     const w=slowCanvas.width, h=slowCanvas.height;
@@ -1823,7 +2018,16 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
         good.sort((a,b)=>a.t-b.t);
       }
 
-      const impact=await findAudioImpact(file, roughLock?roughLock.t:null);
+      let impact=await findAudioImpact(file, roughLock?roughLock.t:null);
+      // iPhone Camera MOVs often fail decodeAudioData in Safari — fall back to
+      // sampling the <video> element through Web Audio instead.
+      if(!impact){
+        const why = (findAudioImpact.lastDebug && findAudioImpact.lastDebug.reason) || '';
+        if(/decodeAudioData|Decoding failed|not supported|no file/i.test(why) || !why){
+          slowHud.innerHTML='<b>ANALYZING</b><br>Audio decode failed — sampling clip playback…';
+          impact = await findAudioImpactViaElement(slowVideo, roughLock?roughLock.t:null);
+        }
+      }
       dbg.impact=impact;
       dbg.audioDebug=(impact&&impact.debug)||findAudioImpact.lastDebug||null;
       setSlowProgress(0.88);
@@ -1933,6 +2137,8 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
           impactAudio:!!impact,
           clipDuration:duration,
           pathPx:peakD,
+          pathFt: dbg.pathFt,
+          pxPerFt: (typeof estimateScale==='function'?estimateScale():null),
           calibrated:!!(calibration&&calibration.done)
         }
       };
