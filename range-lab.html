@@ -1525,37 +1525,188 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
     });
   }
 
-  async function findAudioImpact(file){
-    try{
-      const buf=await file.arrayBuffer();
-      const AC=window.AudioContext||window.webkitAudioContext;
-      if(!AC) return null;
-      const ctx=new AC();
-      let audioBuf;
-      try{ audioBuf=await ctx.decodeAudioData(buf.slice(0)); }
-      catch(e){ try{ await ctx.close(); }catch(_){ } return null; }
-      const ch=audioBuf.getChannelData(0);
-      const sr=audioBuf.sampleRate;
-      const win=Math.max(256, Math.floor(sr*0.008));
-      let bestT=0, bestE=0, sum=0, n=0;
-      // baseline
-      for(let i=0;i<Math.min(ch.length, sr*0.5);i++) sum+=ch[i]*ch[i];
-      const baseline=sum/Math.min(ch.length, sr*0.5);
-      const thresh=Math.max(baseline*12, 0.0008);
-      for(let i=0;i<ch.length;i+=win){
-        let e=0;
-        const end=Math.min(ch.length, i+win);
-        for(let j=i;j<end;j++) e+=ch[j]*ch[j];
-        e/=(end-i);
-        if(e>bestE && e>thresh){ bestE=e; bestT=i/sr; }
-      }
-      try{ await ctx.close(); }catch(_){}
-      if(bestE<=0) return null;
-      return {t:bestT*1000, level:Math.sqrt(bestE)}; // ms
-    }catch(e){
+  async function findAudioImpact(file, hintMs){
+    // Robust impact finder for phone slow-mo MOVs (iPhone Camera etc.).
+    // Returns {t, level, method, detail, debug} or null.
+    // On failure, findAudioImpact.lastDebug holds the reason for diagnostics.
+    const debug = { ok:false, reason:'', durationMs:0, sr:0, channels:0, peaks:0, maxRms:0, thresh:0 };
+    const fail = (reason)=>{
+      debug.reason = reason || debug.reason || 'failed';
+      findAudioImpact.lastDebug = debug;
       return null;
+    };
+    try{
+      if(!file) return fail('no file');
+      const buf = await file.arrayBuffer();
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if(!AC) return fail('Web Audio unsupported');
+
+      // Prefer OfflineAudioContext when available (no autoplay/gesture issues).
+      let audioBuf = null;
+      let decodeErr = null;
+      try{
+        // Some Safari builds need a copy; slice(0) is safe.
+        const copy = buf.slice(0);
+        const probe = new AC();
+        try{
+          audioBuf = await probe.decodeAudioData(copy);
+        }finally{
+          try{ await probe.close(); }catch(_){}
+        }
+      }catch(e){
+        decodeErr = e;
+      }
+      if(!audioBuf){
+        // Common on some iOS exports when the browser can't demux audio from the video container.
+        return fail('decodeAudioData failed: '+(decodeErr && (decodeErr.message||decodeErr.name)||'unknown'));
+      }
+
+      const sr = audioBuf.sampleRate || 48000;
+      const nCh = audioBuf.numberOfChannels || 1;
+      const nSamples = audioBuf.length;
+      debug.sr = sr;
+      debug.channels = nCh;
+      debug.durationMs = (nSamples / sr) * 1000;
+
+      // Mixdown to mono RMS windows (~8 ms)
+      const win = Math.max(256, Math.floor(sr * 0.008));
+      const hop = Math.max(128, Math.floor(win / 2));
+      const nWin = Math.max(1, Math.floor((nSamples - win) / hop) + 1);
+      const rms = new Float32Array(nWin);
+      const chans = [];
+      for(let c=0;c<nCh;c++) chans.push(audioBuf.getChannelData(c));
+
+      for(let w=0;w<nWin;w++){
+        const start = w * hop;
+        let e = 0;
+        const end = Math.min(nSamples, start + win);
+        const len = end - start;
+        for(let c=0;c<nCh;c++){
+          const data = chans[c];
+          for(let i=start;i<end;i++){
+            const v = data[i];
+            e += v*v;
+          }
+        }
+        rms[w] = Math.sqrt(e / (len * nCh));
+      }
+
+      // Global stats for adaptive threshold
+      let maxRms = 0, sumRms = 0;
+      for(let i=0;i<nWin;i++){ if(rms[i]>maxRms) maxRms=rms[i]; sumRms+=rms[i]; }
+      const meanRms = sumRms / nWin;
+      // Approximate median via coarse histogram (cheap, good enough)
+      const histN = 64;
+      const hist = new Uint32Array(histN);
+      const maxForHist = Math.max(maxRms, 1e-6);
+      for(let i=0;i<nWin;i++){
+        const b = Math.min(histN-1, Math.floor((rms[i]/maxForHist)*histN));
+        hist[b]++;
+      }
+      let cum=0, medianRms=meanRms;
+      const half = nWin/2;
+      for(let b=0;b<histN;b++){
+        cum += hist[b];
+        if(cum >= half){ medianRms = ((b+0.5)/histN)*maxForHist; break; }
+      }
+
+      debug.maxRms = maxRms;
+      debug.meanRms = meanRms;
+      debug.medianRms = medianRms;
+
+      // Onset strength: how much louder is this window vs a short trailing median
+      // (catches a sharp club/ball crack better than absolute peak alone).
+      const trail = Math.max(4, Math.round(0.08 * sr / hop)); // ~80 ms lookback
+      const onset = new Float32Array(nWin);
+      for(let i=0;i<nWin;i++){
+        let s=0, cnt=0;
+        const a = Math.max(0, i-trail), b = i;
+        for(let j=a;j<b;j++){ s+=rms[j]; cnt++; }
+        const local = cnt ? (s/cnt) : medianRms;
+        const floor = Math.max(local, medianRms*0.5, 1e-5);
+        onset[i] = rms[i] / floor;
+      }
+
+      // Accept a peak if either:
+      //  - absolute RMS is clearly above ambient, OR
+      //  - strong onset ratio (sudden crack) even if overall level is modest.
+      const absThresh = Math.max(medianRms * 6, meanRms * 4, 0.008);
+      const onsetThresh = 3.2;
+      debug.thresh = absThresh;
+      debug.onsetThresh = onsetThresh;
+
+      // Collect candidate peaks (non-max suppression ~40 ms)
+      const minSep = Math.max(2, Math.round(0.04 * sr / hop));
+      const candidates = [];
+      for(let i=1;i<nWin-1;i++){
+        const isLocalMax = rms[i] >= rms[i-1] && rms[i] >= rms[i+1];
+        if(!isLocalMax) continue;
+        const absOk = rms[i] >= absThresh;
+        const onsetOk = onset[i] >= onsetThresh && rms[i] >= Math.max(medianRms*2, 0.004);
+        if(!absOk && !onsetOk) continue;
+        candidates.push({
+          i,
+          t: (i * hop + win/2) / sr * 1000, // ms
+          rms: rms[i],
+          onset: onset[i],
+          score: rms[i] * (0.6 + Math.min(2.5, onset[i]/onsetThresh))
+        });
+      }
+      debug.peaks = candidates.length;
+
+      if(!candidates.length){
+        // Last resort: take the global max if it's at least 2.5× median (very quiet mic)
+        let bestI = 0;
+        for(let i=1;i<nWin;i++) if(rms[i]>rms[bestI]) bestI=i;
+        if(rms[bestI] >= medianRms * 2.5 && rms[bestI] > 0.003){
+          const t = (bestI * hop + win/2) / sr * 1000;
+          debug.ok = true;
+          debug.reason = 'fallback global-max';
+          findAudioImpact.lastDebug = debug;
+          return { t, level: rms[bestI], method: 'global-max', detail: debug.reason, debug };
+        }
+        return fail('no peak above thresh (maxRms='+maxRms.toFixed(4)+', absThresh='+absThresh.toFixed(4)+', median='+medianRms.toFixed(4)+')');
+      }
+
+      // Prefer candidates near a visual hint (lock / first motion) when provided
+      let best = candidates[0];
+      if(hintMs != null && isFinite(hintMs)){
+        let bestNear = null;
+        for(const c of candidates){
+          const dt = Math.abs(c.t - hintMs);
+          // Within 2.5 s of visual lock is a strong prior for "the" impact
+          if(dt <= 2500){
+            const nearScore = c.score * (1.4 - 0.4*(dt/2500));
+            if(!bestNear || nearScore > bestNear._ns){
+              bestNear = c;
+              bestNear._ns = nearScore;
+            }
+          }
+        }
+        if(bestNear) best = bestNear;
+        else {
+          // no nearby peak — still take loudest overall
+          for(const c of candidates) if(c.score > best.score) best = c;
+        }
+      }else{
+        for(const c of candidates) if(c.score > best.score) best = c;
+      }
+
+      debug.ok = true;
+      debug.reason = 'peak';
+      findAudioImpact.lastDebug = debug;
+      return {
+        t: best.t,
+        level: best.rms,
+        method: best.onset >= onsetThresh ? 'onset' : 'absolute',
+        detail: 'onset '+best.onset.toFixed(1)+'× · rms '+(best.rms*100).toFixed(1)+'%',
+        debug
+      };
+    }catch(e){
+      return fail('exception: '+(e && (e.message||e.name)||e));
     }
   }
+  findAudioImpact.lastDebug = null;
 
   // Ball scan — works for behind-golfer and side-on shed setups
   function detectOnSlow(center, wide){
@@ -1654,14 +1805,28 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
       }
 
       setSlowProgress(0.8);
-      const impact=await findAudioImpact(file);
-      setSlowProgress(0.88);
 
       const good=samples.filter(s=>s.found&&s.score>=85);
-      dbg.samples=samples.length; dbg.good=good.length; dbg.impact=impact;
+      dbg.samples=samples.length; dbg.good=good.length;
       if(good.length<3){
         throw new Error('Ball not found often enough. Keep the ball in frame, well lit, and try a shorter clip of just the swing.');
       }
+
+      // Rough visual lock first (lower 65% of frame, strongest score) so audio
+      // search can bias toward the real strike instead of a random loud noise.
+      let roughLock=null;
+      {
+        const lower=good.filter(s=>s.y>vh*0.35);
+        const pool=lower.length?lower:good;
+        pool.sort((a,b)=>b.score-a.score);
+        roughLock={x:pool[0].x,y:pool[0].y,t:pool[0].t};
+        good.sort((a,b)=>a.t-b.t);
+      }
+
+      const impact=await findAudioImpact(file, roughLock?roughLock.t:null);
+      dbg.impact=impact;
+      dbg.audioDebug=(impact&&impact.debug)||findAudioImpact.lastDebug||null;
+      setSlowProgress(0.88);
 
       // Lock = best pre-impact (or early) detection in lower 60% of frame
       let lock=null;
@@ -1669,6 +1834,8 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
       if(preHits.length){
         preHits.sort((a,b)=>b.score-a.score);
         lock={x:preHits[0].x,y:preHits[0].y,t:preHits[0].t};
+      }else if(roughLock){
+        lock=roughLock;
       }else{
         good.sort((a,b)=>b.score-a.score);
         lock={x:good[0].x,y:good[0].y,t:good[0].t};
@@ -1683,9 +1850,12 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
       }
       dbg.t0=t0;
 
-      // Flight samples: after impact, moving away from lock
+      // Flight samples: after impact, moving away from lock.
+      // Wider window than live mode — slow-mo clips often include follow-through
+      // and denser sampling can legitimately land ~300–500 ms after contact.
+      const SLOW_MAX_FLIGHT_MS = 550;
       const flightSamples=good.filter(s=>{
-        if(s.t<t0-20 || s.t>t0+400) return false;
+        if(s.t<t0-20 || s.t>t0+SLOW_MAX_FLIGHT_MS) return false;
         const d=Math.hypot(s.x-lock.x,s.y-lock.y);
         return d>8 || s.t<=t0+40;
       }).sort((a,b)=>a.t-b.t);
@@ -1714,22 +1884,26 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
         const scale=estimateScale();
         const pathFt=peakD/(scale||40);
         dbg.flightMs=flightMs; dbg.pathFt=pathFt; dbg.scale=scale;
-        if(flightMs>=30 && flightMs<=320){
-          if(pathFt>=netDist*0.25 && pathFt<=netDist*1.4){
+        // Previous hard cap of 320 ms rejected valid leaves around 330–400 ms
+        // (common when audio impact is missing and we fall back to visual leave).
+        if(flightMs>=25 && flightMs<=SLOW_MAX_FLIGHT_MS){
+          if(pathFt>=netDist*0.20 && pathFt<=netDist*1.5){
             speedMph=(Math.min(pathFt,netDist)/(flightMs/1000))*0.681818;
             speedSource='slow-mo path/time';
           }else{
+            // Tiny pixel path (noise / static bright spot) → fall back to full net distance
             speedMph=(netDist/(flightMs/1000))*0.681818;
             speedSource='slow-mo time-to-net';
           }
-        }else if(flightMs>12 && flightMs<30 && pathFt>=0.5){
+        }else if(flightMs>12 && flightMs<25 && pathFt>=0.4){
           speedMph=(pathFt/(flightMs/1000))*0.681818;
           speedSource='slow-mo short path';
         }
       }
 
       if(speedMph==null || !isFinite(speedMph)){
-        throw new Error('Could not time the ball leave. Ensure impact sound is on the clip and the ball stays visible after contact.');
+        throw new Error('Could not time the ball leave. Ensure impact sound is on the clip and the ball stays visible after contact. (flight window '+
+          (flightMs!=null?flightMs.toFixed(0)+' ms':'none')+', path '+(dbg.pathFt!=null?dbg.pathFt.toFixed(2)+' ft':'—')+')');
       }
 
       speedMph=Math.max(12, Math.min(maxSp, speedMph));
@@ -1767,26 +1941,34 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
       slowState.textContent='Done';
       slowHud.innerHTML='<b>SHOT CAPTURED</b><br>'+Math.round(result.speed)+' mph · '+result.confidence+'%';
       renderResult(result);
+      const ad=dbg.audioDebug;
       diagnostics.textContent=[
         'Slow-mo analysis complete',
         'Frame extraction: '+(supportsFrameCallback?'requestVideoFrameCallback (every decoded frame)':'seek-based sampling (fallback)'),
         'Frames sampled: '+samples.length,
         'Ball hits: '+good.length,
-        'Impact audio: '+(impact?('yes @ '+impact.t.toFixed(0)+' ms'):'not found'),
+        'Impact audio: '+(impact
+          ?('yes @ '+impact.t.toFixed(0)+' ms · '+(impact.method||'')+(impact.detail?' · '+impact.detail:''))
+          :('not found'+(ad&&ad.reason?' ('+ad.reason+')':''))),
+        ad?('Audio decode: '+(ad.durationMs? (ad.durationMs/1000).toFixed(1)+'s':'?')+' · '+(ad.sr||'?')+' Hz · '+(ad.channels||'?')+' ch · peaks '+(ad.peaks||0)):null,
         'Flight points: '+flightSamples.length,
         'Flight time: '+(flightMs!=null?flightMs.toFixed(0)+' ms':'—'),
         'Speed: '+result.speed.toFixed(1)+' mph via '+speedSource
-      ].join('\n');
+      ].filter(Boolean).join('\n');
     }catch(e){
       slowState.textContent='Error';
       slowHud.innerHTML='<b>FAILED</b><br>'+(e.message||e);
       quality.innerHTML='<b>Slow-mo failed</b><br>'+(e.message||e);
+      const ad=dbg.audioDebug||findAudioImpact.lastDebug;
       diagnostics.textContent=[
         'Slow-mo error: '+(e.message||e),
         'Frame extraction: '+(supportsFrameCallback?'requestVideoFrameCallback':'seek-based sampling (fallback)'),
         'Frames sampled: '+(dbg.samples??'—'),
         'Ball hits (score>=85): '+(dbg.good??'—'),
-        'Impact audio: '+(dbg.impact?('yes @ '+dbg.impact.t.toFixed(0)+' ms'):(dbg.good!=null?'not found':'—')),
+        'Impact audio: '+(dbg.impact
+          ?('yes @ '+dbg.impact.t.toFixed(0)+' ms')
+          :(dbg.good!=null?('not found'+(ad&&ad.reason?' — '+ad.reason:'')):'—')),
+        ad?('Audio decode: '+(ad.durationMs?(ad.durationMs/1000).toFixed(1)+'s':'?')+' · '+(ad.sr||'?')+' Hz · peaks '+(ad.peaks??'—')+' · maxRms '+(ad.maxRms!=null?ad.maxRms.toFixed(4):'—')):null,
         dbg.lockT!=null?'Lock time (best pre-impact hit): '+dbg.lockT.toFixed(0)+' ms':null,
         dbg.t0!=null?'t0 (used as impact moment): '+dbg.t0.toFixed(0)+' ms':null,
         dbg.flightSamples!=null?'Flight-window ball hits: '+dbg.flightSamples:null,
