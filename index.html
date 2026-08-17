@@ -2745,6 +2745,10 @@ document.getElementById('cancelEditRoundBtn').addEventListener('click', ()=>{
 async function commitRound(holes, course, tees, date, notes, holesPlayed){
   const round = { id: uid(), date: date || todayISO(), course: (course||'').trim(), tees: (tees||'').trim(), holes, notes: (notes||'').trim(), holesPlayed: holesPlayed || 'full' };
   rounds.push(round);
+  if(currentProfile.shareActivityWithFriends !== false){
+    const ok = await shareRoundToFeed(round);
+    if(!ok) console.warn('Auto-share failed for round', round.id);
+  }
   await saveList('rounds', rounds);
   renderRounds();
   return round;
