@@ -131,6 +131,15 @@
           <span>Camera → Slow-mo → record → select file</span>
           <input type="file" id="slowFile" accept="video/*">
         </label>
+        <div class="field" style="margin-top:10px;margin-bottom:0">
+          <label>Recorded at</label>
+          <select id="slowFps">
+            <option value="240" selected>240 fps (iPhone slow-mo)</option>
+            <option value="120">120 fps</option>
+            <option value="60">60 fps</option>
+            <option value="30">30 fps (normal — no time stretch)</option>
+          </select>
+        </div>
         <div class="progress" id="slowProgressWrap" style="display:none"><i id="slowProgress"></i></div>
       </div>
       <div class="controls">
@@ -2017,26 +2026,67 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
 
       setSlowProgress(0.8);
 
-      const good=samples.filter(s=>s.found&&s.score>=85);
-      dbg.samples=samples.length; dbg.good=good.length;
+      // Adaptive score gate: when almost every frame "finds" a ball, thresholds are
+      // too loose (static bright spot). Raise to top-quartile of scores.
+      let scoreFloor = 85;
+      const allScores = samples.filter(s=>s.found).map(s=>s.score).sort((a,b)=>a-b);
+      if(allScores.length > 20 && allScores.length > samples.length * 0.45){
+        scoreFloor = Math.max(85, allScores[Math.floor(allScores.length * 0.65)] || 85);
+      }
+      let good=samples.filter(s=>s.found && s.score>=scoreFloor);
+      // Prefer samples in the lower 75% of the frame for lock (address position)
+      dbg.samples=samples.length; dbg.good=good.length; dbg.scoreFloor=scoreFloor;
+      if(good.length<3){
+        // fall back to looser gate before giving up
+        good=samples.filter(s=>s.found && s.score>=80);
+      }
       if(good.length<3){
         throw new Error('Ball not found often enough. Keep the ball in frame, well lit, and try a shorter clip of just the swing.');
       }
+      good.sort((a,b)=>a.t-b.t);
 
-      // Rough visual lock first (lower 65% of frame, strongest score) so audio
-      // search can bias toward the real strike instead of a random loud noise.
-      let roughLock=null;
-      {
-        const lower=good.filter(s=>s.y>vh*0.35);
-        const pool=lower.length?lower:good;
-        pool.sort((a,b)=>b.score-a.score);
-        roughLock={x:pool[0].x,y:pool[0].y,t:pool[0].t};
-        good.sort((a,b)=>a.t-b.t);
+      // Infer presentation fps from sample timestamps (iPhone slow-mo is usually ~30fps timeline)
+      let playFps = 30;
+      if(samples.length >= 8){
+        const dt = (samples[samples.length-1].t - samples[0].t) / Math.max(1, samples.length-1);
+        if(dt > 1) playFps = 1000 / dt;
+      }
+      const captureFps = parseFloat((document.getElementById('slowFps')||{}).value) || 240;
+      // Real time is shorter than mediaTime when the clip is a slowed-down high-fps recording
+      const slowFactor = (captureFps > playFps * 1.3) ? (captureFps / playFps) : 1;
+      dbg.playFps=playFps; dbg.captureFps=captureFps; dbg.slowFactor=slowFactor;
+
+      // Stable lock = median of clustered detections in lower frame, early in clip
+      // (or pre-impact if audio later). Reject single brightest outlier.
+      function medianOf(arr){
+        if(!arr.length) return 0;
+        const s=arr.slice().sort((a,b)=>a-b);
+        return s[Math.floor(s.length/2)];
+      }
+      function clusterLock(pts){
+        if(!pts.length) return null;
+        // Use median as robust center, then average inliers within 28px
+        const mx = medianOf(pts.map(p=>p.x));
+        const my = medianOf(pts.map(p=>p.y));
+        const inliers = pts.filter(p=>Math.hypot(p.x-mx,p.y-my)<28);
+        const use = inliers.length >= 3 ? inliers : pts;
+        return {
+          x: use.reduce((a,p)=>a+p.x,0)/use.length,
+          y: use.reduce((a,p)=>a+p.y,0)/use.length,
+          t: medianOf(use.map(p=>p.t))
+        };
+      }
+
+      const lowerPts = good.filter(s=>s.y > vh*0.32);
+      const earlyT = good[0].t + Math.min(2500, (good[good.length-1].t - good[0].t) * 0.35);
+      const earlyPts = (lowerPts.length?lowerPts:good).filter(s=>s.t <= earlyT);
+      let roughLock = clusterLock(earlyPts.length >= 3 ? earlyPts : (lowerPts.length?lowerPts:good));
+      if(!roughLock){
+        const top = good.slice().sort((a,b)=>b.score-a.score)[0];
+        roughLock = {x:top.x,y:top.y,t:top.t};
       }
 
       let impact=await findAudioImpact(file, roughLock?roughLock.t:null);
-      // iPhone Camera MOVs often fail decodeAudioData in Safari — try a short
-      // element-playback sample, but never block analysis for more than ~6s.
       if(!impact){
         const why = (findAudioImpact.lastDebug && findAudioImpact.lastDebug.reason) || '';
         if(/decodeAudioData|Decoding failed|not supported|no file/i.test(why) || !why){
@@ -2060,38 +2110,58 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
       dbg.audioDebug=(impact&&impact.debug)||findAudioImpact.lastDebug||null;
       setSlowProgress(0.88);
 
-      // Lock = best pre-impact (or early) detection in lower 60% of frame
-      let lock=null;
-      const preHits=impact?good.filter(s=>s.t<=impact.t+40 && s.y>vh*0.35):good.filter(s=>s.y>vh*0.35);
-      if(preHits.length){
-        preHits.sort((a,b)=>b.score-a.score);
-        lock={x:preHits[0].x,y:preHits[0].y,t:preHits[0].t};
-      }else if(roughLock){
-        lock=roughLock;
-      }else{
-        good.sort((a,b)=>b.score-a.score);
-        lock={x:good[0].x,y:good[0].y,t:good[0].t};
-        good.sort((a,b)=>a.t-b.t);
+      // Refine lock using pre-impact samples when audio exists
+      let lock = roughLock;
+      if(impact){
+        const pre = good.filter(s=>s.t <= impact.t + 30 && s.y > vh*0.32);
+        const c = clusterLock(pre.length >= 3 ? pre : []);
+        if(c) lock = c;
       }
       dbg.lockT=lock.t;
 
-      let t0=impact?impact.t:lock.t;
-      // If audio impact is far from any ball sighting, prefer first big move
-      if(impact && Math.abs(impact.t-lock.t)>1200){
-        t0=lock.t;
+      // Motion onset: first sustained move away from lock (prefer upward = toward net
+      // when camera is behind the golfer). Ignore tiny jitter from a static false lock.
+      const MOVE_PX = Math.max(14, Math.round(Math.min(vw,vh) * 0.018));
+      let motionT = null;
+      let run = 0;
+      for(const s of good){
+        const d = Math.hypot(s.x-lock.x, s.y-lock.y);
+        const up = (lock.y - s.y) > MOVE_PX * 0.35; // image Y decreases toward net
+        if(d >= MOVE_PX && (up || d >= MOVE_PX * 1.6)){
+          run++;
+          if(run >= 2 && motionT == null) motionT = s.t;
+        }else if(d < MOVE_PX * 0.6){
+          run = 0;
+          // allow re-trigger if we were still at address
+          if(motionT != null && s.t < motionT + 80) motionT = null;
+        }
       }
-      dbg.t0=t0;
 
-      // Flight samples: after impact, moving away from lock.
-      // Wider window than live mode — slow-mo clips often include follow-through
-      // and denser sampling can legitimately land ~300–500 ms after contact.
-      const SLOW_MAX_FLIGHT_MS = 550;
-      const flightSamples=good.filter(s=>{
-        if(s.t<t0-20 || s.t>t0+SLOW_MAX_FLIGHT_MS) return false;
-        const d=Math.hypot(s.x-lock.x,s.y-lock.y);
-        return d>8 || s.t<=t0+40;
-      }).sort((a,b)=>a.t-b.t);
+      let t0 = impact ? impact.t : (motionT != null ? motionT : lock.t);
+      if(impact && motionT != null && Math.abs(impact.t - motionT) > 1500){
+        // audio peak is far from visible launch — trust motion
+        t0 = motionT;
+      }
+      if(!impact && motionT == null){
+        throw new Error('No clear ball launch found. The tracker is seeing a static bright spot, not the ball leaving the tee. Trim the clip to 2–3s around impact, improve lighting on the ball, and set net distance accurately.');
+      }
+      dbg.t0=t0; dbg.motionT=motionT;
+
+      // Flight track: points after t0 that progress away from lock (not random jitter)
+      const SLOW_MAX_FLIGHT_MS = 900; // media-time ms (slow-mo stretched)
+      const flightSamples=[];
+      let peakD=0, lastLeave=null;
+      for(const s of good){
+        if(s.t < t0 - 30 || s.t > t0 + SLOW_MAX_FLIGHT_MS) continue;
+        const d = Math.hypot(s.x-lock.x, s.y-lock.y);
+        // Keep early near-lock samples and any clear outbound points
+        if(s.t <= t0 + 40 || d >= MOVE_PX * 0.75){
+          flightSamples.push(s);
+          if(d > peakD){ peakD = d; lastLeave = s; }
+        }
+      }
       dbg.flightSamples=flightSamples.length;
+      dbg.lastLeave=!!lastLeave; dbg.peakD=peakD;
 
       const netDist=parseFloat(document.getElementById('netDistance').value)||6.5;
       const club=document.getElementById('club').value||'Wedge';
@@ -2100,52 +2170,55 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
         :clubLow.includes('9')?22:clubLow.includes('8')?20:clubLow.includes('7')?18:14;
       const maxSp=clubLow.includes('driver')?180:clubLow.includes('wedge')||clubLow.includes('pitching')?95:120;
 
-      // Speed from time-to-net using impact → last nearby ball sighting / leave
-      let lastLeave=null, peakD=0;
-      for(const s of flightSamples){
-        const d=Math.hypot(s.x-lock.x,s.y-lock.y);
-        if(d>peakD){ peakD=d; lastLeave=s; }
-      }
-      if(!lastLeave && flightSamples.length) lastLeave=flightSamples[flightSamples.length-1];
-      dbg.lastLeave=!!lastLeave; dbg.peakD=peakD;
-
       let speedMph=null, flightMs=null, speedSource='slow-mo';
+      const scale=estimateScale();
+      const pathFt=peakD/(scale||40);
+      dbg.scale=scale; dbg.pathFt=pathFt;
+
       if(lastLeave){
-        flightMs=Math.max(12, lastLeave.t-t0);
-        // Prefer measured path if we have meaningful displacement
-        const scale=estimateScale();
-        const pathFt=peakD/(scale||40);
-        dbg.flightMs=flightMs; dbg.pathFt=pathFt; dbg.scale=scale;
-        // Previous hard cap of 320 ms rejected valid leaves around 330–400 ms
-        // (common when audio impact is missing and we fall back to visual leave).
-        if(flightMs>=25 && flightMs<=SLOW_MAX_FLIGHT_MS){
-          if(pathFt>=netDist*0.20 && pathFt<=netDist*1.5){
-            speedMph=(Math.min(pathFt,netDist)/(flightMs/1000))*0.681818;
-            speedSource='slow-mo path/time';
-          }else{
-            // Tiny pixel path (noise / static bright spot) → fall back to full net distance
-            speedMph=(netDist/(flightMs/1000))*0.681818;
-            speedSource='slow-mo time-to-net';
-          }
-        }else if(flightMs>12 && flightMs<25 && pathFt>=0.4){
-          speedMph=(pathFt/(flightMs/1000))*0.681818;
-          speedSource='slow-mo short path';
+        // Media-time flight duration, corrected to real time via slow-mo factor
+        const mediaMs = Math.max(8, lastLeave.t - t0);
+        const realMs = mediaMs / slowFactor;
+        flightMs = realMs; // store real ms for diagnostics/display
+        dbg.flightMs=realMs; dbg.mediaFlightMs=mediaMs;
+
+        // Require a meaningful pixel path — tiny paths are static false locks
+        const minPathFt = Math.max(0.9, netDist * 0.18);
+        if(pathFt >= minPathFt && realMs >= 12 && realMs <= 350){
+          const travelFt = Math.min(pathFt, netDist * 1.15);
+          speedMph = (travelFt / (realMs/1000)) * 0.681818;
+          speedSource = 'slow-mo path/time';
+        }else if(pathFt >= minPathFt * 0.55 && realMs >= 12 && realMs <= 200){
+          speedMph = (pathFt / (realMs/1000)) * 0.681818;
+          speedSource = 'slow-mo short path';
+        }else if(pathFt < minPathFt){
+          throw new Error(
+            'Ball track only moved '+pathFt.toFixed(2)+' ft ('+Math.round(peakD)+' px) — not enough to time the shot. '+
+            'Usually means the detector locked onto a static bright spot. Trim to just the swing, brighten the ball, '+
+            'and confirm “Recorded at” matches your Camera slow-mo setting ('+captureFps+' fps).'
+          );
+        }else if(realMs > 12 && realMs <= 350 && pathFt >= 0.5){
+          // last resort with measured path only (never invent full-net distance from noise)
+          speedMph = (pathFt / (realMs/1000)) * 0.681818;
+          speedSource = 'slow-mo path only';
         }
       }
 
       if(speedMph==null || !isFinite(speedMph)){
-        throw new Error('Could not time the ball leave. Ensure impact sound is on the clip and the ball stays visible after contact. (flight window '+
-          (flightMs!=null?flightMs.toFixed(0)+' ms':'none')+', path '+(dbg.pathFt!=null?dbg.pathFt.toFixed(2)+' ft':'—')+')');
+        throw new Error('Could not time the ball leave. Ensure the ball stays visible after contact and “Recorded at” is set correctly. (flight '+
+          (flightMs!=null?flightMs.toFixed(0)+' ms real':'none')+', path '+(pathFt!=null?pathFt.toFixed(2)+' ft':'—')+')');
       }
 
       speedMph=Math.max(12, Math.min(maxSp, speedMph));
       const carry=typeof physicsCarry==='function'?physicsCarry(speedMph,clubLaunch):Math.round(speedMph*1.2);
       const total=Math.round(carry*(1.02+Math.min(0.08,speedMph/2000)));
-      let conf=40;
-      conf+=impact?12:0;
-      conf+=Math.min(20, flightSamples.length*2);
-      conf+=flightMs&&flightMs>40&&flightMs<200?12:0;
-      conf=Math.max(20, Math.min(94, conf));
+      let conf=36;
+      conf+=impact?14:0;
+      conf+=Math.min(18, flightSamples.length*2);
+      conf+=flightMs&&flightMs>20&&flightMs<120?14:0;
+      conf+=pathFt>=netDist*0.25?10:0;
+      conf+=slowFactor>1?4:0;
+      conf=Math.max(18, Math.min(94, conf));
 
       const result={
         ok:true,
@@ -2180,13 +2253,15 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
         'Slow-mo analysis complete',
         'Frame extraction: '+(supportsFrameCallback?'requestVideoFrameCallback (every decoded frame)':'seek-based sampling (fallback)'),
         'Frames sampled: '+samples.length,
-        'Ball hits: '+good.length,
+        'Ball hits (score≥'+Math.round(scoreFloor)+'): '+good.length,
+        'Slow-mo factor: '+slowFactor.toFixed(2)+'× (capture '+captureFps+' fps · timeline ~'+playFps.toFixed(1)+' fps)',
         'Impact audio: '+(impact
           ?('yes @ '+impact.t.toFixed(0)+' ms · '+(impact.method||'')+(impact.detail?' · '+impact.detail:''))
           :('not found'+(ad&&ad.reason?' ('+ad.reason+')':''))),
-        ad?('Audio decode: '+(ad.durationMs? (ad.durationMs/1000).toFixed(1)+'s':'?')+' · '+(ad.sr||'?')+' Hz · '+(ad.channels||'?')+' ch · peaks '+(ad.peaks||0)):null,
+        ad?('Audio decode: '+(ad.durationMs? (ad.durationMs/1000).toFixed(1)+'s':'?')+' · '+(ad.sr||'?')+' Hz · peaks '+(ad.peaks||0)):null,
         'Flight points: '+flightSamples.length,
-        'Flight time: '+(flightMs!=null?flightMs.toFixed(0)+' ms':'—'),
+        'Flight time: '+(flightMs!=null?flightMs.toFixed(0)+' ms real':'—')+(dbg.mediaFlightMs?(' ('+dbg.mediaFlightMs.toFixed(0)+' ms on timeline)'):''),
+        'Path: '+(pathFt!=null?pathFt.toFixed(2)+' ft':'—')+' · peak '+Math.round(peakD)+' px',
         'Speed: '+result.speed.toFixed(1)+' mph via '+speedSource
       ].filter(Boolean).join('\n');
     }catch(e){
@@ -2198,7 +2273,8 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
         'Slow-mo error: '+(e.message||e),
         'Frame extraction: '+(supportsFrameCallback?'requestVideoFrameCallback':'seek-based sampling (fallback)'),
         'Frames sampled: '+(dbg.samples??'—'),
-        'Ball hits (score>=85): '+(dbg.good??'—'),
+        'Ball hits (score≥'+(dbg.scoreFloor!=null?Math.round(dbg.scoreFloor):85)+'): '+(dbg.good??'—'),
+        dbg.slowFactor!=null?('Slow-mo factor: '+dbg.slowFactor.toFixed(2)+'× (capture '+(dbg.captureFps||'?')+' · timeline ~'+(dbg.playFps!=null?dbg.playFps.toFixed(1):'?')+' fps)'):null,
         'Impact audio: '+(dbg.impact
           ?('yes @ '+dbg.impact.t.toFixed(0)+' ms')
           :(dbg.good!=null?('not found'+(ad&&ad.reason?' — '+ad.reason:'')):'—')),
