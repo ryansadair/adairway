@@ -2075,11 +2075,13 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
       setSlowProgress(0.8);
 
       // Adaptive score gate: when almost every frame "finds" a ball, thresholds are
-      // too loose (static bright spot). Raise to top-quartile of scores.
+      // too loose (static bright spot). Raise toward upper scores, but cap so we
+      // don't discard real ball tracks on textured mats / bright shoes.
       let scoreFloor = 85;
       const allScores = samples.filter(s=>s.found).map(s=>s.score).sort((a,b)=>a-b);
-      if(allScores.length > 20 && allScores.length > samples.length * 0.45){
-        scoreFloor = Math.max(85, allScores[Math.floor(allScores.length * 0.65)] || 85);
+      if(allScores.length > 20 && allScores.length > samples.length * 0.50){
+        const q70 = allScores[Math.floor(allScores.length * 0.70)] || 85;
+        scoreFloor = Math.max(85, Math.min(q70, 220)); // hard cap — was climbing past 500
       }
       let good=samples.filter(s=>s.found && s.score>=scoreFloor);
       // Prefer samples in the lower 75% of the frame for lock (address position)
@@ -2158,103 +2160,216 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
       dbg.audioDebug=(impact&&impact.debug)||findAudioImpact.lastDebug||null;
       setSlowProgress(0.88);
 
-      // Refine lock using pre-impact samples when audio exists
+      // ----- Visual-first launch timing (audio is often zero on iOS Camera MOVs) -----
+      // 1) Prefer a lock in the lower portion of the frame near early stable detections.
+      // 2) Find the strongest outward motion burst (not the first tiny jitter).
+      // 3) Only trust audio if it lands near that visual launch.
+
       let lock = roughLock;
       if(impact){
-        const pre = good.filter(s=>s.t <= impact.t + 30 && s.y > vh*0.32);
+        const pre = good.filter(s=>s.t <= impact.t + 30 && s.y > vh*0.28);
         const c = clusterLock(pre.length >= 3 ? pre : []);
         if(c) lock = c;
       }
-      dbg.lockT=lock.t;
+      dbg.lockT = lock.t;
 
-      // Motion onset: first sustained move away from lock (prefer upward = toward net
-      // when camera is behind the golfer). Ignore tiny jitter from a static false lock.
-      const MOVE_PX = Math.max(14, Math.round(Math.min(vw,vh) * 0.018));
-      let motionT = null;
-      let run = 0;
-      for(const s of good){
-        const d = Math.hypot(s.x-lock.x, s.y-lock.y);
-        const up = (lock.y - s.y) > MOVE_PX * 0.35; // image Y decreases toward net
-        if(d >= MOVE_PX && (up || d >= MOVE_PX * 1.6)){
-          run++;
-          if(run >= 2 && motionT == null) motionT = s.t;
-        }else if(d < MOVE_PX * 0.6){
-          run = 0;
-          // allow re-trigger if we were still at address
-          if(motionT != null && s.t < motionT + 80) motionT = null;
+      const MOVE_PX = Math.max(12, Math.round(Math.min(vw, vh) * 0.015));
+      // Score every sample by distance from lock + upward bias (toward net when cam is behind)
+      const scored = good.map(s=>{
+        const d = Math.hypot(s.x - lock.x, s.y - lock.y);
+        const up = Math.max(0, lock.y - s.y); // pixels toward top of frame
+        return { s, d, up, score: d + up * 1.15 };
+      });
+
+      // Find the best "leave" candidate: max progress in a short window after a quiet period
+      let bestLeave = null; // {t0, leave, peakD, windowPts}
+      const quietRadius = MOVE_PX * 0.85;
+
+      // Candidate start times: samples that are still near the lock
+      const nearLock = scored.filter(o => o.d < quietRadius * 1.4);
+      const candidateStarts = nearLock.length ? nearLock : scored.slice(0, Math.min(8, scored.length));
+
+      for(const start of candidateStarts){
+        const tStart = start.s.t;
+        // Look ahead up to ~1.2s of media time (slow-mo stretched)
+        const window = scored.filter(o => o.s.t >= tStart - 20 && o.s.t <= tStart + 1200);
+        if(window.length < 3) continue;
+        let peak = window[0];
+        for(const o of window) if(o.score > peak.score) peak = o;
+        const peakD = peak.d;
+        if(peakD < MOVE_PX * 1.2) continue; // not enough movement
+        // Require that peak happens after start
+        if(peak.s.t < tStart + 15) continue;
+        const quality = peakD * (1 + Math.min(1.5, peak.up / Math.max(1, peakD)));
+        if(!bestLeave || quality > bestLeave.quality){
+          bestLeave = {
+            t0: tStart,
+            leave: peak.s,
+            peakD,
+            quality,
+            windowPts: window.length
+          };
         }
       }
 
-      let t0 = impact ? impact.t : (motionT != null ? motionT : lock.t);
-      if(impact && motionT != null && Math.abs(impact.t - motionT) > 1500){
-        // audio peak is far from visible launch — trust motion
-        t0 = motionT;
+      // Fallback: global max distance from lock in the middle of the clip
+      if(!bestLeave){
+        let peak = scored[0];
+        for(const o of scored) if(o.d > peak.d) peak = o;
+        if(peak && peak.d >= MOVE_PX){
+          // Walk backward from peak to a near-lock sample for t0
+          let t0cand = lock.t;
+          for(let i = scored.length - 1; i >= 0; i--){
+            if(scored[i].s.t > peak.s.t) continue;
+            if(scored[i].d < quietRadius * 1.5){ t0cand = scored[i].s.t; break; }
+          }
+          bestLeave = {
+            t0: t0cand,
+            leave: peak.s,
+            peakD: peak.d,
+            quality: peak.d,
+            windowPts: scored.length
+          };
+        }
       }
-      if(!impact && motionT == null){
-        throw new Error('No clear ball launch found. The tracker is seeing a static bright spot, not the ball leaving the tee. Trim the clip to 2–3s around impact, improve lighting on the ball, and set net distance accurately.');
-      }
-      dbg.t0=t0; dbg.motionT=motionT;
 
-      // Flight track: points after t0 that progress away from lock (not random jitter)
-      const SLOW_MAX_FLIGHT_MS = 900; // media-time ms (slow-mo stretched)
-      const flightSamples=[];
-      let peakD=0, lastLeave=null;
+      // Motion onset (simple run-length) as secondary signal
+      let motionT = null;
+      let run = 0;
+      for(const o of scored){
+        if(o.s.t < lock.t - 50) continue;
+        if(o.d >= MOVE_PX && (o.up > MOVE_PX * 0.25 || o.d >= MOVE_PX * 1.5)){
+          run++;
+          if(run >= 2 && motionT == null) motionT = o.s.t;
+        } else if(o.d < MOVE_PX * 0.55){
+          run = 0;
+          if(motionT != null && o.s.t < motionT + 100) motionT = null;
+        }
+      }
+
+      // Choose t0: visual leave wins; audio only if it is close to visual evidence
+      let t0 = null;
+      let t0Source = 'none';
+      if(bestLeave){
+        t0 = bestLeave.t0;
+        t0Source = 'visual-leave';
+      }
+      if(motionT != null){
+        if(t0 == null || Math.abs(motionT - t0) < 800){
+          // Prefer the earlier of motion onset and leave-window start when close
+          if(t0 == null || motionT < t0){ t0 = motionT; t0Source = 'motion-onset'; }
+        }
+      }
+      if(impact){
+        const visualRef = t0 != null ? t0 : lock.t;
+        if(Math.abs(impact.t - visualRef) <= 1200){
+          t0 = impact.t;
+          t0Source = 'audio+visual';
+        }
+        // else ignore audio — iOS often returns a bogus peak or none
+      }
+      if(t0 == null) t0 = lock.t;
+
+      // Guard: never let t0 sit many seconds after the lock on a long clip
+      if(t0 > lock.t + 3500){
+        t0 = (motionT != null && motionT < lock.t + 3500) ? motionT : lock.t;
+        t0Source = 'lock-guard';
+      }
+
+      dbg.t0 = t0;
+      dbg.motionT = motionT;
+      dbg.t0Source = t0Source;
+      dbg.bestLeaveD = bestLeave ? bestLeave.peakD : null;
+
+      if(!bestLeave && motionT == null && !impact){
+        throw new Error(
+          'No clear ball launch found. Trim the clip to 2–4 seconds around impact, keep the ball well lit and in the lower half of the frame, and set “Recorded at” to match Camera (240/120). Audio is often blocked on iPhone — vision must see the ball leave.'
+        );
+      }
+
+      // Flight samples after t0
+      const SLOW_MAX_FLIGHT_MS = 1100; // media-time ms
+      const flightSamples = [];
+      let peakD = 0, lastLeave = null;
       for(const s of good){
-        if(s.t < t0 - 30 || s.t > t0 + SLOW_MAX_FLIGHT_MS) continue;
-        const d = Math.hypot(s.x-lock.x, s.y-lock.y);
-        // Keep early near-lock samples and any clear outbound points
-        if(s.t <= t0 + 40 || d >= MOVE_PX * 0.75){
+        if(s.t < t0 - 40 || s.t > t0 + SLOW_MAX_FLIGHT_MS) continue;
+        const d = Math.hypot(s.x - lock.x, s.y - lock.y);
+        if(s.t <= t0 + 50 || d >= MOVE_PX * 0.65){
           flightSamples.push(s);
           if(d > peakD){ peakD = d; lastLeave = s; }
         }
       }
-      dbg.flightSamples=flightSamples.length;
-      dbg.lastLeave=!!lastLeave; dbg.peakD=peakD;
+      // If window is empty, use bestLeave peak
+      if((!lastLeave || peakD < MOVE_PX) && bestLeave){
+        lastLeave = bestLeave.leave;
+        peakD = bestLeave.peakD;
+        if(!flightSamples.length) flightSamples.push(lastLeave);
+      }
+      dbg.flightSamples = flightSamples.length;
+      dbg.lastLeave = !!lastLeave;
+      dbg.peakD = peakD;
 
-      const netDist=parseFloat(document.getElementById('netDistance').value)||6.5;
-      const club=document.getElementById('club').value||'Wedge';
-      const clubLow=(club||'').toLowerCase();
-      const clubLaunch=clubLow.includes('wedge')||clubLow.includes('pitching')?26
-        :clubLow.includes('9')?22:clubLow.includes('8')?20:clubLow.includes('7')?18:14;
-      const maxSp=clubLow.includes('driver')?180:clubLow.includes('wedge')||clubLow.includes('pitching')?95:120;
+      const netDist = parseFloat(document.getElementById('netDistance').value) || 6.5;
+      const club = document.getElementById('club').value || 'Wedge';
+      const clubLow = (club || '').toLowerCase();
+      const clubLaunch = clubLow.includes('wedge') || clubLow.includes('pitching') ? 26
+        : clubLow.includes('9') ? 22 : clubLow.includes('8') ? 20 : clubLow.includes('7') ? 18 : 14;
+      const maxSp = clubLow.includes('driver') ? 180 : clubLow.includes('wedge') || clubLow.includes('pitching') ? 95 : 120;
 
-      let speedMph=null, flightMs=null, speedSource='slow-mo';
-      const scale=estimateScale();
-      const pathFt=peakD/(scale||40);
-      dbg.scale=scale; dbg.pathFt=pathFt;
+      let speedMph = null, flightMs = null, speedSource = 'slow-mo';
+      const scale = estimateScale();
+      const pathFt = peakD / (scale || 40);
+      dbg.scale = scale;
+      dbg.pathFt = pathFt;
 
       if(lastLeave){
-        // Media-time flight duration, corrected to real time via slow-mo factor
         const mediaMs = Math.max(8, lastLeave.t - t0);
         const realMs = mediaMs / slowFactor;
-        flightMs = realMs; // store real ms for diagnostics/display
-        dbg.flightMs=realMs; dbg.mediaFlightMs=mediaMs;
+        flightMs = realMs;
+        dbg.flightMs = realMs;
+        dbg.mediaFlightMs = mediaMs;
 
-        // Require a meaningful pixel path — tiny paths are static false locks
-        const minPathFt = Math.max(0.9, netDist * 0.18);
-        if(pathFt >= minPathFt && realMs >= 12 && realMs <= 350){
-          const travelFt = Math.min(pathFt, netDist * 1.15);
-          speedMph = (travelFt / (realMs/1000)) * 0.681818;
+        const minPathFt = Math.max(0.55, netDist * 0.12); // slightly more tolerant
+        if(pathFt >= minPathFt && realMs >= 10 && realMs <= 400){
+          const travelFt = Math.min(pathFt, netDist * 1.2);
+          speedMph = (travelFt / (realMs / 1000)) * 0.681818;
           speedSource = 'slow-mo path/time';
-        }else if(pathFt >= minPathFt * 0.55 && realMs >= 12 && realMs <= 200){
-          speedMph = (pathFt / (realMs/1000)) * 0.681818;
+        } else if(pathFt >= minPathFt * 0.45 && realMs >= 10 && realMs <= 250){
+          speedMph = (pathFt / (realMs / 1000)) * 0.681818;
           speedSource = 'slow-mo short path';
-        }else if(pathFt < minPathFt){
-          throw new Error(
-            'Ball track only moved '+pathFt.toFixed(2)+' ft ('+Math.round(peakD)+' px) — not enough to time the shot. '+
-            'Usually means the detector locked onto a static bright spot. Trim to just the swing, brighten the ball, '+
-            'and confirm “Recorded at” matches your Camera slow-mo setting ('+captureFps+' fps).'
-          );
-        }else if(realMs > 12 && realMs <= 350 && pathFt >= 0.5){
-          // last resort with measured path only (never invent full-net distance from noise)
-          speedMph = (pathFt / (realMs/1000)) * 0.681818;
+        } else if(realMs >= 10 && realMs <= 400 && pathFt >= 0.35){
+          speedMph = (pathFt / (realMs / 1000)) * 0.681818;
           speedSource = 'slow-mo path only';
+        } else if(pathFt < minPathFt){
+          // Last-chance: if we have a clear motion onset and the ball disappears
+          // shortly after, estimate using net distance / time-to-disappear
+          const after = good.filter(s => s.t > t0 && s.t < t0 + SLOW_MAX_FLIGHT_MS);
+          const stillNear = after.filter(s => Math.hypot(s.x-lock.x, s.y-lock.y) < MOVE_PX * 1.1);
+          const goneMs = after.length && stillNear.length < after.length * 0.4
+            ? (after[Math.min(after.length-1, 4)].t - t0)
+            : null;
+          if(goneMs && goneMs >= 25 && goneMs <= 900){
+            const realGone = goneMs / slowFactor;
+            speedMph = (netDist / (realGone / 1000)) * 0.681818;
+            speedSource = 'slow-mo disappear estimate';
+            flightMs = realGone;
+            dbg.flightMs = realGone;
+            dbg.pathFt = netDist;
+          } else {
+            throw new Error(
+              'Ball track only moved '+pathFt.toFixed(2)+' ft ('+Math.round(peakD)+' px). '+
+              'Trim to 2–4 s around impact, keep the ball bright in the lower frame, confirm “Recorded at” = '+captureFps+' fps. '+
+              'On iPhone, audio is often unavailable — vision must see the ball leave the tee.'
+            );
+          }
         }
       }
 
-      if(speedMph==null || !isFinite(speedMph)){
-        throw new Error('Could not time the ball leave. Ensure the ball stays visible after contact and “Recorded at” is set correctly. (flight '+
-          (flightMs!=null?flightMs.toFixed(0)+' ms real':'none')+', path '+(pathFt!=null?pathFt.toFixed(2)+' ft':'—')+')');
+      if(speedMph == null || !isFinite(speedMph)){
+        throw new Error(
+          'Could not time the ball leave. Trim the clip tightly around impact, keep the ball visible after contact, set “Recorded at” correctly. '+
+          '(flight '+(flightMs!=null?flightMs.toFixed(0)+' ms real':'none')+', path '+(pathFt!=null?pathFt.toFixed(2)+' ft':'—')+', t0 via '+t0Source+')'
+        );
       }
 
       speedMph=Math.max(12, Math.min(maxSp, speedMph));
@@ -2307,6 +2422,7 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
           ?('yes @ '+impact.t.toFixed(0)+' ms · '+(impact.method||'')+(impact.detail?' · '+impact.detail:''))
           :('not found'+(ad&&ad.reason?' ('+ad.reason+')':''))),
         ad?('Audio decode: '+(ad.durationMs? (ad.durationMs/1000).toFixed(1)+'s':'?')+' · '+(ad.sr||'?')+' Hz · peaks '+(ad.peaks||0)):null,
+        't0: '+(dbg.t0!=null?dbg.t0.toFixed(0)+' ms':'—')+(dbg.t0Source?' via '+dbg.t0Source:''),
         'Flight points: '+flightSamples.length,
         'Flight time: '+(flightMs!=null?flightMs.toFixed(0)+' ms real':'—')+(dbg.mediaFlightMs?(' ('+dbg.mediaFlightMs.toFixed(0)+' ms on timeline)'):''),
         'Path: '+(pathFt!=null?pathFt.toFixed(2)+' ft':'—')+' · peak '+Math.round(peakD)+' px',
@@ -2328,7 +2444,7 @@ window.addEventListener('resize',()=>{if(shots.length)drawFlight(shots[0])});
           :(dbg.good!=null?('not found'+(ad&&ad.reason?' — '+ad.reason:'')):'—')),
         ad?('Audio decode: '+(ad.durationMs?(ad.durationMs/1000).toFixed(1)+'s':'?')+' · '+(ad.sr||'?')+' Hz · peaks '+(ad.peaks??'—')+' · maxRms '+(ad.maxRms!=null?ad.maxRms.toFixed(4):'—')):null,
         dbg.lockT!=null?'Lock time (best pre-impact hit): '+dbg.lockT.toFixed(0)+' ms':null,
-        dbg.t0!=null?'t0 (used as impact moment): '+dbg.t0.toFixed(0)+' ms':null,
+        dbg.t0!=null?'t0 (impact moment): '+dbg.t0.toFixed(0)+' ms'+(dbg.t0Source?' via '+dbg.t0Source:''):null,
         dbg.flightSamples!=null?'Flight-window ball hits: '+dbg.flightSamples:null,
         dbg.lastLeave!=null?'Found a "leave" point: '+dbg.lastLeave:null,
         dbg.flightMs!=null?'Flight time to leave point: '+dbg.flightMs.toFixed(0)+' ms':null,
