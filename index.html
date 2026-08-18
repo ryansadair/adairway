@@ -3003,6 +3003,16 @@ function timeAxisTicks(tMin, tMax){
   return ticks;
 }
 
+function chartXLabels(dates, xAt, h, bottomY){
+  if(!dates || !dates.length) return '';
+  const n = dates.length;
+  const idxs = n===1 ? [0] : [0, Math.floor((n-1)/2), n-1];
+  const uniq = [...new Set(idxs)];
+  return uniq.map(i=>{
+    const anchor = i===0?'start':(i===n-1?'end':'middle');
+    return `<text x="${xAt(i).toFixed(1)}" y="${bottomY}" text-anchor="${anchor}" class="chart-label">${shortDate(dates[i])}</text>`;
+  }).join('');
+}
 function chartTimeXLabels(ticks, xAtTimeTs, bottomY, padL, plotW){
   if(!ticks || !ticks.length) return '';
   // Prefer ~6 labels max so mobile stays readable
@@ -3129,6 +3139,7 @@ function resolveChartTimeDomain(dates, markers, opts){
 }
 
 function trendChart(svgEl, values, dates, opts={}){
+  if(!svgEl) return;
   const w=380,h=196,padL=34,padR=14,padT=14,padB=30;
   svgEl.setAttribute('viewBox',`0 0 ${w} ${h}`);
   if(values.length===0){ svgEl.innerHTML = `<text x="${w/2}" y="${h/2}" text-anchor="middle" class="chart-label">No data yet</text>`; return; }
@@ -3215,6 +3226,7 @@ function trendChart(svgEl, values, dates, opts={}){
 }
 
 function lineChart(svgEl, points, opts={}){
+  if(!svgEl) return;
   const w=380,h=178,padL=34,padR=14,padT=14,padB=28;
   svgEl.setAttribute('viewBox',`0 0 ${w} ${h}`);
   if(points.length===0){ svgEl.innerHTML = `<text x="${w/2}" y="${h/2}" text-anchor="middle" class="chart-label">No data yet</text>`; return; }
@@ -3249,6 +3261,7 @@ function lineChart(svgEl, points, opts={}){
 }
 
 function scatterChart(svgEl, points, opts={}){
+  if(!svgEl) return;
   const w=380,h=196,padL=38,padR=14,padT=20,padB=34;
   svgEl.setAttribute('viewBox',`0 0 ${w} ${h}`);
   if(points.length<2){ svgEl.innerHTML = `<text x="${w/2}" y="${h/2}" text-anchor="middle" class="chart-label">Not enough data yet</text>`; return; }
