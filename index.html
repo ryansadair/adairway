@@ -861,8 +861,8 @@
   #swingCoachRoot .cues strong{ color: var(--turf); }
   #swingCoachRoot .summary-note{ font-size:12px; color: var(--sc-muted); line-height:1.45; }
   #swingCoachRoot .disclaimer{ font-size:11px; color: var(--sc-muted); line-height:1.45; margin:12px 0 0; }
-  #swingCoachRoot .phases{ display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; }
-  #swingCoachRoot .sc-scrub{ margin-top:12px; }
+  #swingCoachRoot .phases{ display:flex; gap:6px; flex-wrap:wrap; margin:0 0 8px; }
+  #swingCoachRoot .sc-scrub{ margin:0 0 12px; }
   #swingCoachRoot .sc-scrub input[type=range]{
     width:100%; margin:0; accent-color: var(--fairway-deep);
     height:28px; cursor:pointer;
@@ -872,6 +872,13 @@
     margin-top:4px; font-family:'IBM Plex Mono',monospace; font-size:11px; color: var(--sc-muted);
   }
   #swingCoachRoot .sc-scrub-meta #scrubPhaseHint{ color: var(--turf); font-weight:600; }
+  #swingCoachRoot .sc-set-impact{
+    font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:600;
+    text-transform:uppercase; letter-spacing:0.04em;
+    border:1px solid var(--sc-line); background:#fff; color: var(--sc-accent);
+    border-radius:4px; padding:4px 8px; cursor:pointer;
+  }
+  #swingCoachRoot .sc-set-impact:hover{ background: var(--sc-accent-soft); }
   #swingCoachRoot .phaseBtn{
     flex:1; min-width:72px; border:1px solid var(--sc-line); border-radius:6px;
     background:#fff; color: var(--sc-muted); padding:8px 6px; font-size:11px; font-weight:700; cursor:pointer;
@@ -1515,12 +1522,6 @@
               <div class="hud" id="coachHud"><b>Setup</b> — Pick a view, then upload a 2–6 second clip of one swing. Full body in frame, good light.</div>
             </div>
             <div class="panel">
-              <label class="drop" id="coachDrop">
-                <strong>Choose swing video</strong>
-                <span id="dropHint">Face-on · full body visible · 2–6 seconds around the swing</span>
-                <input type="file" id="coachFile" accept="video/*">
-              </label>
-              <div class="progress" id="coachProgressWrap"><i id="coachProgress"></i></div>
               <div class="phases" id="phaseRow" style="display:none">
                 <button type="button" class="phaseBtn" data-phase="address">Address</button>
                 <button type="button" class="phaseBtn active" data-phase="top">Top</button>
@@ -1531,8 +1532,15 @@
                 <div class="sc-scrub-meta">
                   <span id="scrubTime">0.00s</span>
                   <span id="scrubPhaseHint"></span>
+                  <button type="button" class="sc-set-impact" id="setImpactBtn" title="Mark the current frame as Impact">Set as Impact</button>
                 </div>
               </div>
+              <label class="drop" id="coachDrop">
+                <strong>Choose swing video</strong>
+                <span id="dropHint">Face-on · full body visible · 2–6 seconds around the swing</span>
+                <input type="file" id="coachFile" accept="video/*">
+              </label>
+              <div class="progress" id="coachProgressWrap"><i id="coachProgress"></i></div>
             </div>
             <div class="controls">
               <button class="sc-btn primary" id="coachAnalyze" disabled>Analyze swing</button>
@@ -7740,6 +7748,44 @@ async function init(){
     scrubInput.addEventListener('change', onScrub);
   }
 
+  const setImpactBtn = document.getElementById('setImpactBtn');
+  if(setImpactBtn){
+    setImpactBtn.addEventListener('click', async ()=>{
+      if(!lastResult || busy) return;
+      const tMs = scrubInput ? (+scrubInput.value || 0) : 0;
+      let frame = nearestSample(tMs);
+      if(!frame){
+        // Build a lightweight frame at this time from last seek
+        frame = { t: tMs, lms: null, wristY: null };
+      } else {
+        frame = Object.assign({}, frame, { t: tMs });
+      }
+      // Prefer landmarks from nearest sample; seek video to exact scrub time
+      lastResult.impact = frame;
+      // Recompute tempo with new impact for display
+      try{
+        const m = lastResult.metrics;
+        if(m && lastResult.top && lastResult.address){
+          const backMs = Math.max(50, lastResult.top.t - lastResult.address.t);
+          const downMs = Math.max(30, frame.t - lastResult.top.t);
+          m.backMs = backMs; m.downMs = downMs; m.tempoRatio = backMs / downMs;
+          m.display = m.display || {};
+          m.display.tempo = m.tempoRatio.toFixed(1) + ':1';
+          const tempoLabel = m.tempoRatio < 2.0 ? 'Quick' : m.tempoRatio > 4.5 ? 'Deliberate' : 'Steady';
+          const el = document.getElementById('mTempo');
+          if(el) el.textContent = tempoLabel;
+          const sub = document.getElementById('mTempoSub');
+          if(sub) sub.textContent = 'transition timing · ' + m.display.tempo;
+        }
+      }catch(e){}
+      document.querySelectorAll('#swingCoachRoot .phaseBtn').forEach(b=>b.classList.toggle('active', b.dataset.phase==='impact'));
+      await showAtTime(tMs, 'Impact');
+      if(scrubPhaseHint) scrubPhaseHint.textContent = 'Impact (set)';
+      const st = document.getElementById('saveStatus');
+      if(st) st.textContent = 'Impact marker updated to ' + (tMs/1000).toFixed(2) + 's. Tempo recalculated.';
+    });
+  }
+
   analyzeBtn.addEventListener('click',async()=>{
     if(busy||!coachUrl)return;
     busy=true;analyzeBtn.disabled=true;stateEl.textContent='Analyzing…';
@@ -7771,14 +7817,18 @@ async function init(){
       let addressFrame;
       if(earlyWrist.length){const ys=earlyWrist.map(s=>s.wristY).sort((a,b)=>a-b);const med=ys[Math.floor(ys.length/2)];addressFrame=earlyWrist.reduce((best,s)=>Math.abs(s.wristY-med)<Math.abs(best.wristY-med)?s:best,earlyWrist[0]);}
       else addressFrame=samples[0];
-      // --- Impact: denser second pass around the downswing, then multi-signal pick ---
-      // Uniform first pass often undersamples the fast downswing. Resample top→~1.2s after.
-      const impactPassStart = topFrame.t / 1000;
-      const impactPassEnd = Math.min((video.duration || impactPassStart + 1.2), impactPassStart + 1.25);
-      const impactPassN = Math.min(24, Math.max(12, Math.round((impactPassEnd - impactPassStart) * 20)));
+      // --- Impact detection ---
+      // Downswing is fast (~0.2–0.45s). Re-sample it densely, then pick impact with a
+      // tempo prior (≈1/3 of backswing, clamped) refined by peak hand speed + address height.
+      const backMsEst = Math.max(120, topFrame.t - addressFrame.t);
+      // Typical amateur top→impact is backswing/2.8 to backswing/3.5, usually 220–420ms
+      const expectedImpactMs = Math.max(180, Math.min(420, backMsEst / 3.0));
+      const winStart = topFrame.t / 1000;
+      const winEnd = Math.min(video.duration || (winStart + 0.9), winStart + Math.max(0.55, (expectedImpactMs + 180) / 1000));
+      const impactPassN = Math.min(28, Math.max(14, Math.round((winEnd - winStart) * 28)));
       const impactSamples = [];
       for(let i=0;i<impactPassN;i++){
-        const tSec = impactPassStart + (impactPassEnd - impactPassStart) * (i / Math.max(1, impactPassN - 1));
+        const tSec = winStart + (winEnd - winStart) * (i / Math.max(1, impactPassN - 1));
         await seekVideo(video, tSec);
         ctx.drawImage(video, 0, 0, vw, vh);
         const results = await runPoseOnCanvas(canvas);
@@ -7791,59 +7841,81 @@ async function init(){
             ankleMid: ankleMid(lms), hipMid: hipMid(lms), shoulderMid: shoulderMid(lms)
           });
         }
-        setProgress(0.82 + 0.12 * ((i + 1) / impactPassN));
+        setProgress(0.80 + 0.14 * ((i + 1) / impactPassN));
       }
-      // Merge denser pass into samples (by time, prefer denser)
       impactSamples.forEach(s=>{
-        const near = samples.findIndex(x => Math.abs(x.t - s.t) < 25);
+        const near = samples.findIndex(x => Math.abs(x.t - s.t) < 20);
         if(near >= 0) samples[near] = s; else samples.push(s);
       });
       samples.sort((a,b)=>a.t-b.t);
 
-      const wristAfterTop = samples.filter(s => s.wristY != null && s.t > topFrame.t + 40);
+      const postTop = samples.filter(s => s.wristY != null && s.t >= topFrame.t + 60);
       let impactFrame;
-      if(wristAfterTop.length){
+      if(postTop.length){
         const addrY = (addressFrame.wristY != null) ? addressFrame.wristY : (topFrame.wristY + 0.12);
         const topY = topFrame.wristY;
-        // How far hands eventually drop after the top
-        let maxY = topY;
-        wristAfterTop.forEach(s => { if(s.wristY > maxY) maxY = s.wristY; });
-        const fullDrop = Math.max(0.04, maxY - topY);
+        const tTarget = topFrame.t + expectedImpactMs;
 
-        // Typical full-swing top→impact is ~0.22–0.42s; keep a soft prior
-        const tPrior = topFrame.t + 300;
-
-        // Score each post-top frame: prefer near address height + high downward speed + near prior time
-        let best = wristAfterTop[0], bestScore = -Infinity;
-        for(let i=0;i<wristAfterTop.length;i++){
-          const s = wristAfterTop[i];
-          const dropFrac = (s.wristY - topY) / fullDrop; // 0 at top, 1 at lowest hands
-          // Impact is usually mid-downswing: hands have dropped ~45–85% of the way, near address
-          const heightErr = Math.abs(s.wristY - addrY);
-          const heightScore = Math.exp(-heightErr * 14); // peak when wrists ≈ address
-          const midDropScore = Math.exp(-Math.pow((dropFrac - 0.62) / 0.28, 2)); // prefer ~62% of total drop
+        // Precompute downward velocity at each sample
+        const withVel = postTop.map((s,i)=>{
           let vel = 0;
           if(i > 0){
-            const dt = Math.max(8, s.t - wristAfterTop[i-1].t);
-            vel = (s.wristY - wristAfterTop[i-1].wristY) / dt; // positive = moving down
+            const dt = Math.max(6, s.t - postTop[i-1].t);
+            vel = (s.wristY - postTop[i-1].wristY) / dt; // >0 = hands moving down in image
           }
-          const velScore = Math.max(0, Math.min(1.5, vel * 80));
-          const timeScore = Math.exp(-Math.pow((s.t - tPrior) / 220, 2));
-          // Reject very early (still at top) and very late (finish)
-          if(s.t < topFrame.t + 100) continue;
-          if(dropFrac < 0.2) continue;
-          if(dropFrac > 0.95 && s.t > topFrame.t + 700) continue;
-          const score = heightScore * 2.2 + midDropScore * 1.4 + velScore * 1.1 + timeScore * 0.9;
-          if(score > bestScore){ bestScore = score; best = s; }
-        }
-        impactFrame = best;
+          return {s, vel, i};
+        });
 
-        // If scoring failed soft, fall back to closest-to-address in the 0.15–0.55s window after top
-        if(bestScore < 0.5){
-          const win = wristAfterTop.filter(s => s.t >= topFrame.t + 150 && s.t <= topFrame.t + 550);
-          if(win.length){
-            impactFrame = win.reduce((a,b)=> Math.abs(b.wristY-addrY) < Math.abs(a.wristY-addrY) ? b : a, win[0]);
+        // Peak downward speed in the plausible impact window
+        const lo = topFrame.t + Math.max(120, expectedImpactMs * 0.45);
+        const hi = topFrame.t + expectedImpactMs + 140;
+        const inWin = withVel.filter(x => x.s.t >= lo && x.s.t <= hi);
+        const pool = inWin.length >= 3 ? inWin : withVel.filter(x => x.s.t >= topFrame.t + 120 && x.s.t <= topFrame.t + 500);
+
+        let best = pool[0] || withVel[Math.min(withVel.length-1, 2)];
+        let bestScore = -Infinity;
+        pool.forEach(x=>{
+          const heightErr = Math.abs(x.s.wristY - addrY);
+          // Peak hand speed is the strongest cue we have without a club/ball
+          const velScore = Math.max(0, x.vel) * 120;
+          const heightScore = Math.exp(-heightErr * 10) * 1.2;
+          const timeScore = Math.exp(-Math.pow((x.s.t - tTarget) / 120, 2)) * 1.6;
+          // Prefer still moving down (not already decelerating into a post-impact rise)
+          const stillDown = x.vel > 0 ? 0.4 : -0.6;
+          const score = velScore + heightScore + timeScore + stillDown;
+          if(score > bestScore){ bestScore = score; best = x; }
+        });
+        impactFrame = best.s;
+
+        // If peak velocity is clearly later/earlier than height match, bias toward the velocity peak
+        let peakVel = pool[0];
+        pool.forEach(x => { if(x.vel > (peakVel ? peakVel.vel : -1)) peakVel = x; });
+        if(peakVel && peakVel.vel > 0.0008){
+          // Impact is typically at or just before peak hand speed — use 1 frame earlier if available
+          const idx = peakVel.i;
+          const justBefore = postTop[Math.max(0, idx - 1)];
+          const peakT = peakVel.s.t;
+          // Blend: if our score pick is >100ms from peak speed, trust peak speed more
+          if(Math.abs(impactFrame.t - peakT) > 100){
+            impactFrame = justBefore && Math.abs(justBefore.t - peakT) < 80 ? justBefore : peakVel.s;
           }
+        }
+
+        // If vertical hand motion is weak (common in DTL / side-on), trust tempo prior heavily
+        const peakVelVal = peakVel ? peakVel.vel : 0;
+        if(peakVelVal < 0.0005){
+          const near = postTop.reduce((a,b)=> Math.abs(b.t-tTarget)<Math.abs(a.t-tTarget)?b:a, postTop[0]);
+          impactFrame = near;
+        }
+
+        // Absolute guards
+        if(impactFrame.t < topFrame.t + 140){
+          impactFrame = postTop.find(s => s.t >= topFrame.t + 200) || impactFrame;
+        }
+        if(impactFrame.t > topFrame.t + 550){
+          // Too late for a normal full-swing impact — snap toward tempo prior
+          const near = postTop.reduce((a,b)=> Math.abs(b.t-tTarget)<Math.abs(a.t-tTarget)?b:a, postTop[0]);
+          impactFrame = near;
         }
       } else {
         impactFrame = samples[samples.length - 1];
@@ -7885,7 +7957,7 @@ async function init(){
       phaseRow.style.display='flex';await showPhase('top');
       setProgress(1);stateEl.textContent='Done';
       hud.innerHTML='<b>DONE</b> — Tempo '+metrics.display.tempo+' · Conf '+conf+'%';
-      diagnostics.textContent=['View: '+(view==='dtl'?'Down-the-line':'Face-on'),'Frames with pose: '+samples.length+' / '+nFrames,'Address @ '+(addressFrame.t/1000).toFixed(2)+'s · Top @ '+(topFrame.t/1000).toFixed(2)+'s · Impact ~'+(impactFrame.t/1000).toFixed(2)+'s','Backswing: '+Math.round(metrics.backMs)+' ms · Downswing: '+Math.round(metrics.downMs)+' ms','Tempo: '+metrics.display.tempo,'Confidence: '+conf+'%'].join('\n');
+      diagnostics.textContent=['View: '+(view==='dtl'?'Down-the-line':'Face-on'),'Frames with pose: '+samples.length+' / '+nFrames,'Address @ '+(addressFrame.t/1000).toFixed(2)+'s · Top @ '+(topFrame.t/1000).toFixed(2)+'s · Impact @ '+(impactFrame.t/1000).toFixed(2)+'s (target ~'+((topFrame.t+expectedImpactMs)/1000).toFixed(2)+'s)','Backswing: '+Math.round(metrics.backMs)+' ms · Downswing: '+Math.round(metrics.downMs)+' ms','Tempo: '+metrics.display.tempo,'Confidence: '+conf+'%'].join('\n');
       document.getElementById('diagState').textContent='Complete';
     }catch(e){
       stateEl.textContent='Error';hud.innerHTML='<b>FAILED</b> — '+(e.message||e);
