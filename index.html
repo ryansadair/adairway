@@ -295,6 +295,17 @@
 
   svg.chart{width:100%;height:180px;display:block;}
   .chart-label{font-family:'IBM Plex Mono',monospace;font-size:10px;fill:var(--graphite);opacity:0.6;}
+  #chartTip{
+    display:none;position:fixed;z-index:4000;max-width:240px;
+    background:var(--fairway-deep);color:var(--paper-light);
+    font-family:'IBM Plex Mono',monospace;font-size:11.5px;line-height:1.4;
+    padding:8px 11px;border-radius:8px;
+    box-shadow:0 6px 20px rgba(31,58,46,0.28);
+    pointer-events:none;
+  }
+  #chartTip.show{display:block;}
+  svg.chart .hit{cursor:pointer;}
+
 
   .club-tag{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;padding:2px 7px;border-radius:2px;margin:0 4px 4px 0;}
   .club-tag.active{background:var(--turf);color:#fff;}
@@ -1171,14 +1182,15 @@
         Each <span style="color:#C7A876;font-weight:700;">●</span> tan dot is one round's score
         relative to par (0 = even par, above the line = over par, below = under par). A
         <span style="color:#C7A876;">○ hollow</span> dot is a 9-hole round, doubled so it plots
-        on the same scale as an 18 — hover it to see your actual score.
+        on the same scale as an 18. Axis marks months (or weeks on shorter ranges).
         <span style="color:#3F6B4A;font-weight:700;">┊ green</span> dashed lines mark practice sessions.
+        Tap or hover a dot or practice line for the exact date and value.
       </div>
       <svg class="chart" id="scoreChart"></svg>
     </div>
     <div class="card">
       <h2>Putts per round</h2>
-      <div class="hint" style="margin-top:0;">Same idea as the score chart — tan dots are individual rounds. Hollow dots are 9-hole rounds, doubled to compare against an 18. Green dashed lines mark practice sessions.</div>
+      <div class="hint" style="margin-top:0;">Same idea as the score chart — tan dots are individual rounds. Hollow dots are 9-hole rounds, doubled to compare against an 18. Green dashed lines mark practice. Tap or hover a dot or practice line for the exact date and value.</div>
       <svg class="chart" id="puttsChart"></svg>
     </div>
     <div class="grid2">
@@ -2954,10 +2966,83 @@ function niceTicks(min, max, targetCount=4){
 }
 function shortDate(iso){
   if(!iso) return '';
-  const parts = iso.split('-');
+  const parts = String(iso).slice(0,10).split('-');
   if(parts.length<3) return iso;
   return `${+parts[1]}/${+parts[2]}`;
 }
+function shortDateFromTs(ts){
+  const d = new Date(ts);
+  return `${d.getMonth()+1}/${d.getDate()}`;
+}
+function monthLabelFromTs(ts){
+  const d = new Date(ts);
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return months[d.getMonth()] + ' ' + String(d.getFullYear()).slice(2);
+}
+/** Even calendar ticks across a time span (months when long enough). */
+function timeAxisTicks(tMin, tMax){
+  const day = 86400000;
+  const span = Math.max(0, tMax - tMin);
+  const ticks = [];
+  if(!Number.isFinite(tMin) || !Number.isFinite(tMax)) return ticks;
+  if(span <= day){
+    ticks.push({ t: tMin, label: shortDateFromTs(tMin) });
+    return ticks;
+  }
+
+  // >= ~6 weeks → month starts
+  if(span >= 42 * day){
+    const d = new Date(tMin);
+    d.setHours(12, 0, 0, 0);
+    d.setDate(1);
+    if(d.getTime() < tMin - day/2) d.setMonth(d.getMonth() + 1);
+    while(d.getTime() <= tMax + day){
+      ticks.push({ t: d.getTime(), label: monthLabelFromTs(d.getTime()) });
+      d.setMonth(d.getMonth() + 1);
+      if(ticks.length > 24) break;
+    }
+  } else if(span >= 14 * day){
+    // weekly ticks from first day
+    let t = tMin;
+    const d0 = new Date(tMin);
+    d0.setHours(12, 0, 0, 0);
+    t = d0.getTime();
+    while(t <= tMax + day){
+      ticks.push({ t, label: shortDateFromTs(t) });
+      t += 7 * day;
+      if(ticks.length > 12) break;
+    }
+  } else {
+    // a few evenly spaced points including ends
+    const n = span < 5 * day ? 2 : 4;
+    for(let i = 0; i < n; i++){
+      const t = tMin + (span * i) / Math.max(1, n - 1);
+      ticks.push({ t, label: shortDateFromTs(t) });
+    }
+  }
+
+  // Ensure endpoints are represented when far from nearest tick
+  function ensureEnd(ts, atStart){
+    if(!ticks.length){ ticks.push({ t: ts, label: shortDateFromTs(ts) }); return; }
+    const nearest = ticks.reduce((b, x) => Math.abs(x.t - ts) < Math.abs(b.t - ts) ? x : b, ticks[0]);
+    if(Math.abs(nearest.t - ts) > 3 * day){
+      const lab = span >= 42 * day ? monthLabelFromTs(ts) : shortDateFromTs(ts);
+      if(atStart) ticks.unshift({ t: ts, label: lab });
+      else ticks.push({ t: ts, label: lab });
+    }
+  }
+  ensureEnd(tMin, true);
+  ensureEnd(tMax, false);
+
+  // De-dupe labels that would stack
+  const out = [];
+  ticks.sort((a, b) => a.t - b.t);
+  ticks.forEach(tk => {
+    if(!out.length || Math.abs(out[out.length - 1].t - tk.t) > day) out.push(tk);
+  });
+  return out;
+}
+
 function chartXLabels(dates, xAt, h, bottomY){
   if(!dates || !dates.length) return '';
   const n = dates.length;
@@ -2967,6 +3052,72 @@ function chartXLabels(dates, xAt, h, bottomY){
     const anchor = i===0?'start':(i===n-1?'end':'middle');
     return `<text x="${xAt(i).toFixed(1)}" y="${bottomY}" text-anchor="${anchor}" class="chart-label">${shortDate(dates[i])}</text>`;
   }).join('');
+}
+
+function chartTimeXLabels(ticks, xAtTimeTs, bottomY, padL, plotW){
+  if(!ticks || !ticks.length) return '';
+  return ticks.map((tk, i) => {
+    const x = xAtTimeTs(tk.t);
+    let anchor = 'middle';
+    if(x <= padL + 8) anchor = 'start';
+    else if(x >= padL + plotW - 8) anchor = 'end';
+    return `<text x="${x.toFixed(1)}" y="${bottomY}" text-anchor="${anchor}" class="chart-label">${tk.label}</text>`;
+  }).join('');
+}
+
+// Floating tip for chart dots/markers (works on mobile tap; desktop still gets <title> hover)
+function ensureChartTip(){
+  let tip = document.getElementById('chartTip');
+  if(!tip){
+    tip = document.createElement('div');
+    tip.id = 'chartTip';
+    document.body.appendChild(tip);
+  }
+  return tip;
+}
+function showChartTip(text, clientX, clientY){
+  const tip = ensureChartTip();
+  tip.textContent = text;
+  tip.classList.add('show');
+  const pad = 12;
+  const tw = tip.offsetWidth || 160;
+  const th = tip.offsetHeight || 40;
+  let left = (clientX || 0) - tw / 2;
+  let top = (clientY || 0) - th - 14;
+  left = Math.max(pad, Math.min(left, (window.innerWidth || 320) - tw - pad));
+  if(top < pad) top = (clientY || 0) + 18;
+  tip.style.left = left + 'px';
+  tip.style.top = top + 'px';
+}
+function hideChartTip(){
+  const tip = document.getElementById('chartTip');
+  if(tip) tip.classList.remove('show');
+}
+let chartTipBound = false;
+function bindChartTipDismiss(){
+  if(chartTipBound) return;
+  chartTipBound = true;
+  document.addEventListener('click', (e)=>{
+    if(e.target && e.target.closest && e.target.closest('svg.chart [data-tip]')) return;
+    hideChartTip();
+  }, true);
+  document.addEventListener('scroll', hideChartTip, true);
+}
+
+function wireChartTips(svgEl){
+  bindChartTipDismiss();
+  svgEl.querySelectorAll('[data-tip]').forEach(el=>{
+    const show = (e)=>{
+      const t = el.getAttribute('data-tip') || '';
+      if(!t) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const pt = (e.changedTouches && e.changedTouches[0]) || e;
+      showChartTip(t, pt.clientX, pt.clientY);
+    };
+    el.addEventListener('click', show);
+    el.addEventListener('touchend', show, { passive: false });
+  });
 }
 
 function trendChart(svgEl, values, dates, opts={}){
@@ -2993,13 +3144,14 @@ function trendChart(svgEl, values, dates, opts={}){
   const xAtTime = (iso)=>{
     const t = parseISODate(iso);
     if(t==null) return padL + plotW/2;
-    if(values.length===1 && !(opts.markers&&opts.markers.length)) return padL + plotW/2;
+    if(values.length===1 && !(opts.markers&&opts.markers.length) && tSpan<=86400000) return padL + plotW/2;
     return padL + ((t - tMin) / tSpan) * plotW;
   };
+  const xAtTimeTs = (ts)=> padL + ((ts - tMin) / tSpan) * plotW;
   const xAt = i => xAtTime(dates[i]);
   const yAt = v => padT + plotH - ((v-min)/range)*plotH;
   const dateY = h - 8;
-  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
 
   const fmt = v => (opts.zero!=null && v>0 ? '+' : '') + (Number.isInteger(v)?v:v.toFixed(1));
   const gridLines = ticks.map(t=>{
@@ -3010,34 +3162,52 @@ function trendChart(svgEl, values, dates, opts={}){
       ${isZero ? `<text x="${w-padR}" y="${(y-4).toFixed(1)}" text-anchor="end" class="chart-label">${opts.zeroLabel||'even par'}</text>` : ''}`;
   }).join('');
 
+  // Vertical month/week guides (subtle)
+  const xTicks = timeAxisTicks(tMin, tMax);
+  const xGuides = xTicks.map(tk=>{
+    const x = xAtTimeTs(tk.t).toFixed(1);
+    return `<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT+plotH}" stroke="#E3DAC4" stroke-width="1" stroke-dasharray="2,4" opacity="0.7"/>`;
+  }).join('');
+
   let markers = '';
   if(opts.markers && opts.markers.length){
-    markers = opts.markers.map(m=>{
+    markers = opts.markers.map((m, mi)=>{
       if(!m || !m.date) return '';
       const x = xAtTime(m.date).toFixed(1);
-      return `<g><title>${esc(m.label||('Practice '+shortDate(m.date)))}</title><line x1="${x}" y1="${padT}" x2="${x}" y2="${padT+plotH}" stroke="${m.color||'#3F6B4A'}" stroke-width="1.5" stroke-dasharray="3,3"/></g>`;
+      const tip = m.label || ('Practice ' + shortDate(m.date));
+      // Invisible wider hit target for tap + visible dashed line
+      return `<g class="hit" data-tip="${esc(tip)}" role="button">
+        <title>${esc(tip)}</title>
+        <line x1="${x}" y1="${padT}" x2="${x}" y2="${padT+plotH}" stroke="transparent" stroke-width="14"/>
+        <line x1="${x}" y1="${padT}" x2="${x}" y2="${padT+plotH}" stroke="${m.color||'#3F6B4A'}" stroke-width="1.5" stroke-dasharray="3,3"/>
+      </g>`;
     }).join('');
   }
 
   const dots = values.map((v,i)=>{
     const isPartial = opts.partial && opts.partial[i];
     const cx = xAt(i).toFixed(1), cy = yAt(v).toFixed(1);
-    let title = '';
+    let tipTxt = '';
     if(dates && dates[i]){
-      const rawTxt = isPartial && opts.rawValues ? ` (9 holes, actual ${fmt(opts.rawValues[i])})` : '';
-      title = `<title>${esc(shortDate(dates[i]))}: ${esc(fmt(v))}${esc(rawTxt)}</title>`;
+      const rawTxt = isPartial && opts.rawValues ? ` · 9 holes, actual ${fmt(opts.rawValues[i])}` : '';
+      tipTxt = `${shortDate(dates[i])}: ${fmt(v)}${rawTxt}`;
+    } else {
+      tipTxt = fmt(v);
     }
+    const tipAttr = esc(tipTxt);
     return isPartial
-      ? `<g>${title}<circle cx="${cx}" cy="${cy}" r="3" fill="#F5F0E6" stroke="#C7A876" stroke-width="1.5"/></g>`
-      : `<g>${title}<circle cx="${cx}" cy="${cy}" r="2.5" fill="#C7A876"/></g>`;
+      ? `<g class="hit" data-tip="${tipAttr}" role="button"><title>${tipAttr}</title><circle cx="${cx}" cy="${cy}" r="12" fill="transparent"/><circle cx="${cx}" cy="${cy}" r="3.5" fill="#F5F0E6" stroke="#C7A876" stroke-width="1.5"/></g>`
+      : `<g class="hit" data-tip="${tipAttr}" role="button"><title>${tipAttr}</title><circle cx="${cx}" cy="${cy}" r="12" fill="transparent"/><circle cx="${cx}" cy="${cy}" r="3" fill="#C7A876"/></g>`;
   }).join('');
 
   svgEl.innerHTML = `
     ${gridLines}
+    ${xGuides}
     ${markers}
     ${dots}
-    ${chartXLabels(dates, xAt, h, dateY)}
+    ${chartTimeXLabels(xTicks, xAtTimeTs, dateY, padL, plotW)}
   `;
+  wireChartTips(svgEl);
 }
 
 function lineChart(svgEl, points, opts={}){
