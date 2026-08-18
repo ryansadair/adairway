@@ -7797,14 +7797,26 @@ async function init(){
       // onto the finish instead of the top — and every downstream search (impact) chased that,
       // which is why impact kept landing near a "top-looking" position a second or two too late.
       const afterAddr=wristSamples.filter(s=>s.t>addressFrame.t);
-      const swAddr=shoulderWidth(addressFrame.lms)||0.2;
-      const riseThresh=swAddr*0.28;
+      // Rise threshold uses torso length (shoulder-to-hip vertical span), not shoulder width —
+      // shoulder width collapses toward zero in down-the-line view, since the camera looks
+      // almost straight down the line of the shoulders there. Torso length stays a reliable
+      // vertical scale in both face-on and down-the-line shots.
+      const shMidAddr=shoulderMid(addressFrame.lms), hipMidAddr=hipMid(addressFrame.lms);
+      const torsoLen=(shMidAddr&&hipMidAddr)?Math.abs(hipMidAddr.y-shMidAddr.y):null;
+      const scaleRef=torsoLen||shoulderWidth(addressFrame.lms)||0.3;
+      const riseThresh=Math.max(0.045, scaleRef*0.22);
       let topFrame;
       if(afterAddr.length){
         let lowIdx=0,sawRise=false;
         for(let i=1;i<afterAddr.length;i++){
-          if(afterAddr[i].wristY<afterAddr[lowIdx].wristY){lowIdx=i;}
-          else if(afterAddr[i].wristY-afterAddr[lowIdx].wristY>riseThresh){sawRise=true;break;}
+          if(afterAddr[i].wristY<afterAddr[lowIdx].wristY){lowIdx=i;continue;}
+          const risen=afterAddr[i].wristY-afterAddr[lowIdx].wristY;
+          if(risen>riseThresh){
+            // Require the rise to hold on the next sample too, so one noisy frame can't
+            // falsely lock "top" onto a point right after address.
+            const confirmed=(i+1>=afterAddr.length)||(afterAddr[i+1].wristY-afterAddr[lowIdx].wristY>riseThresh*0.6);
+            if(confirmed){sawRise=true;break;}
+          }
         }
         if(sawRise){topFrame=afterAddr[lowIdx];}
         else{let gi=0;for(let i=1;i<afterAddr.length;i++)if(afterAddr[i].wristY<afterAddr[gi].wristY)gi=i;topFrame=afterAddr[gi];}
@@ -7916,8 +7928,10 @@ async function init(){
         // If the chosen frame's hands are still close to the top position, the velocity/tempo
         // scoring above likely got fooled by pose jitter — fall back to whichever frame in the
         // plausible window has hand height closest to address instead.
-        const swTop = shoulderWidth(topFrame.lms) || 0.2;
-        if(Math.abs(impactFrame.wristY - topFrame.wristY) < swTop * 0.15){
+        const shMidTop=shoulderMid(topFrame.lms), hipMidTop=hipMid(topFrame.lms);
+        const torsoLenTop=(shMidTop&&hipMidTop)?Math.abs(hipMidTop.y-shMidTop.y):null;
+        const swTop = torsoLenTop || shoulderWidth(topFrame.lms) || 0.3;
+        if(Math.abs(impactFrame.wristY - topFrame.wristY) < swTop * 0.12){
           const byHeight = pool.reduce((a,b)=> Math.abs(b.s.wristY - addrY) < Math.abs(a.s.wristY - addrY) ? b : a, pool[0]);
           impactFrame = byHeight.s;
         }
