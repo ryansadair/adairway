@@ -1182,7 +1182,7 @@
         Each <span style="color:#C7A876;font-weight:700;">●</span> tan dot is one round's score
         relative to par (0 = even par, above the line = over par, below = under par). A
         <span style="color:#C7A876;">○ hollow</span> dot is a 9-hole round, doubled so it plots
-        on the same scale as an 18. Axis marks months (or weeks on shorter ranges).
+        on the same scale as an 18. When you filter a year, the axis is that full year (Jan–Dec) with monthly ticks; All time pads to the months you actually logged.
         <span style="color:#3F6B4A;font-weight:700;">┊ green</span> dashed lines mark practice sessions.
         Tap or hover a dot or practice line for the exact date and value.
       </div>
@@ -1190,7 +1190,7 @@
     </div>
     <div class="card">
       <h2>Putts per round</h2>
-      <div class="hint" style="margin-top:0;">Same idea as the score chart — tan dots are individual rounds. Hollow dots are 9-hole rounds, doubled to compare against an 18. Green dashed lines mark practice. Tap or hover a dot or practice line for the exact date and value.</div>
+      <div class="hint" style="margin-top:0;">Same idea as the score chart — tan dots are individual rounds. Hollow dots are 9-hole rounds, doubled to compare against an 18. Green dashed lines mark practice. Same time axis as Score trend. Tap or hover a dot or practice line for the exact date and value.</div>
       <svg class="chart" id="puttsChart"></svg>
     </div>
     <div class="grid2">
@@ -2979,88 +2979,49 @@ function monthLabelFromTs(ts){
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   return months[d.getMonth()] + ' ' + String(d.getFullYear()).slice(2);
 }
-/** Even calendar ticks across a time span (months when long enough). */
+/** Month-start ticks between tMin and tMax (inclusive-ish). */
 function timeAxisTicks(tMin, tMax){
   const day = 86400000;
-  const span = Math.max(0, tMax - tMin);
   const ticks = [];
   if(!Number.isFinite(tMin) || !Number.isFinite(tMax)) return ticks;
-  if(span <= day){
-    ticks.push({ t: tMin, label: shortDateFromTs(tMin) });
-    return ticks;
+  const d = new Date(tMin);
+  d.setHours(12, 0, 0, 0);
+  d.setDate(1);
+  // If tMin is mid-month, still include that month
+  if(d.getTime() > tMin + day) d.setMonth(d.getMonth() - 1);
+  while(d.getTime() <= tMax + day){
+    const t = d.getTime();
+    if(t >= tMin - day && t <= tMax + day){
+      ticks.push({ t, label: monthLabelFromTs(t) });
+    }
+    d.setMonth(d.getMonth() + 1);
+    if(ticks.length > 18) break;
   }
-
-  // >= ~6 weeks → month starts
-  if(span >= 42 * day){
-    const d = new Date(tMin);
-    d.setHours(12, 0, 0, 0);
-    d.setDate(1);
-    if(d.getTime() < tMin - day/2) d.setMonth(d.getMonth() + 1);
-    while(d.getTime() <= tMax + day){
-      ticks.push({ t: d.getTime(), label: monthLabelFromTs(d.getTime()) });
-      d.setMonth(d.getMonth() + 1);
-      if(ticks.length > 24) break;
-    }
-  } else if(span >= 14 * day){
-    // weekly ticks from first day
-    let t = tMin;
-    const d0 = new Date(tMin);
-    d0.setHours(12, 0, 0, 0);
-    t = d0.getTime();
-    while(t <= tMax + day){
-      ticks.push({ t, label: shortDateFromTs(t) });
-      t += 7 * day;
-      if(ticks.length > 12) break;
-    }
-  } else {
-    // a few evenly spaced points including ends
-    const n = span < 5 * day ? 2 : 4;
-    for(let i = 0; i < n; i++){
-      const t = tMin + (span * i) / Math.max(1, n - 1);
-      ticks.push({ t, label: shortDateFromTs(t) });
-    }
+  if(!ticks.length){
+    ticks.push({ t: tMin, label: monthLabelFromTs(tMin) });
   }
-
-  // Ensure endpoints are represented when far from nearest tick
-  function ensureEnd(ts, atStart){
-    if(!ticks.length){ ticks.push({ t: ts, label: shortDateFromTs(ts) }); return; }
-    const nearest = ticks.reduce((b, x) => Math.abs(x.t - ts) < Math.abs(b.t - ts) ? x : b, ticks[0]);
-    if(Math.abs(nearest.t - ts) > 3 * day){
-      const lab = span >= 42 * day ? monthLabelFromTs(ts) : shortDateFromTs(ts);
-      if(atStart) ticks.unshift({ t: ts, label: lab });
-      else ticks.push({ t: ts, label: lab });
-    }
-  }
-  ensureEnd(tMin, true);
-  ensureEnd(tMax, false);
-
-  // De-dupe labels that would stack
-  const out = [];
-  ticks.sort((a, b) => a.t - b.t);
-  ticks.forEach(tk => {
-    if(!out.length || Math.abs(out[out.length - 1].t - tk.t) > day) out.push(tk);
-  });
-  return out;
-}
-
-function chartXLabels(dates, xAt, h, bottomY){
-  if(!dates || !dates.length) return '';
-  const n = dates.length;
-  const idxs = n===1 ? [0] : [0, Math.floor((n-1)/2), n-1];
-  const uniq = [...new Set(idxs)];
-  return uniq.map(i=>{
-    const anchor = i===0?'start':(i===n-1?'end':'middle');
-    return `<text x="${xAt(i).toFixed(1)}" y="${bottomY}" text-anchor="${anchor}" class="chart-label">${shortDate(dates[i])}</text>`;
-  }).join('');
+  return ticks;
 }
 
 function chartTimeXLabels(ticks, xAtTimeTs, bottomY, padL, plotW){
   if(!ticks || !ticks.length) return '';
-  return ticks.map((tk, i) => {
+  // Prefer ~6 labels max so mobile stays readable
+  let show = ticks;
+  if(ticks.length > 7){
+    const step = Math.ceil(ticks.length / 6);
+    show = ticks.filter((_, i) => i % step === 0 || i === ticks.length - 1);
+    // de-dupe if last doubled
+    const out = [];
+    show.forEach(tk => {
+      if(!out.length || out[out.length-1].t !== tk.t) out.push(tk);
+    });
+    show = out;
+  }
+  return show.map(tk => {
     const x = xAtTimeTs(tk.t);
     let anchor = 'middle';
-    if(x <= padL + 8) anchor = 'start';
-    else if(x >= padL + plotW - 8) anchor = 'end';
+    if(x <= padL + 10) anchor = 'start';
+    else if(x >= padL + plotW - 10) anchor = 'end';
     return `<text x="${x.toFixed(1)}" y="${bottomY}" text-anchor="${anchor}" class="chart-label">${tk.label}</text>`;
   }).join('');
 }
@@ -3120,6 +3081,53 @@ function wireChartTips(svgEl){
   });
 }
 
+/**
+ * Resolve chart time domain.
+ * - Specific year filter → full calendar year (Jan 1 – Dec 31)
+ * - All time → data extent padded to month boundaries (avoids a sparse full-year on mobile)
+ * opts.tMin / opts.tMax can force a domain from the caller.
+ */
+function resolveChartTimeDomain(dates, markers, opts){
+  const day = 86400000;
+  const samples = [];
+  (dates||[]).forEach(d=>{ const t=parseISODate(d); if(t!=null) samples.push(t); });
+  (markers||[]).forEach(m=>{ const t=parseISODate(m && m.date); if(t!=null) samples.push(t); });
+
+  const yearFilter = opts.yearFilter;
+  if(yearFilter && yearFilter !== 'all' && /^\d{4}$/.test(String(yearFilter))){
+    const y = +yearFilter;
+    return {
+      tMin: Date.parse(y + '-01-01T12:00:00'),
+      tMax: Date.parse(y + '-12-31T12:00:00'),
+      mode: 'year'
+    };
+  }
+
+  if(opts.tMin != null && opts.tMax != null){
+    return { tMin: +opts.tMin, tMax: +opts.tMax, mode: 'forced' };
+  }
+
+  if(!samples.length){
+    const now = new Date();
+    const y = now.getFullYear();
+    return {
+      tMin: Date.parse(y + '-01-01T12:00:00'),
+      tMax: Date.parse(y + '-12-31T12:00:00'),
+      mode: 'empty'
+    };
+  }
+
+  let tMin = Math.min(...samples);
+  let tMax = Math.max(...samples);
+  // Pad to containing month starts / ends
+  const a = new Date(tMin); a.setHours(12,0,0,0); a.setDate(1);
+  const b = new Date(tMax); b.setHours(12,0,0,0); b.setDate(1); b.setMonth(b.getMonth()+1); b.setDate(0); // last day of month
+  tMin = a.getTime();
+  tMax = b.getTime();
+  if(tMax <= tMin) tMax = tMin + 30 * day;
+  return { tMin, tMax, mode: 'data' };
+}
+
 function trendChart(svgEl, values, dates, opts={}){
   const w=380,h=196,padL=34,padR=14,padT=14,padB=30;
   svgEl.setAttribute('viewBox',`0 0 ${w} ${h}`);
@@ -3132,19 +3140,13 @@ function trendChart(svgEl, values, dates, opts={}){
   const range = (max-min)||1;
   const plotW = w-padL-padR, plotH = h-padT-padB;
 
-  // Time-based X axis so practice markers land on their true dates (not snapped to the next round).
-  const timeSamples = [];
-  (dates||[]).forEach(d=>{ const t=parseISODate(d); if(t!=null) timeSamples.push(t); });
-  if(opts.markers && opts.markers.length){
-    opts.markers.forEach(m=>{ const t=parseISODate(m.date); if(t!=null) timeSamples.push(t); });
-  }
-  const tMin = timeSamples.length ? Math.min(...timeSamples) : 0;
-  const tMax = timeSamples.length ? Math.max(...timeSamples) : 1;
+  const domain = resolveChartTimeDomain(dates, opts.markers, opts);
+  const tMin = domain.tMin;
+  const tMax = domain.tMax;
   const tSpan = (tMax - tMin) || 1;
   const xAtTime = (iso)=>{
     const t = parseISODate(iso);
     if(t==null) return padL + plotW/2;
-    if(values.length===1 && !(opts.markers&&opts.markers.length) && tSpan<=86400000) return padL + plotW/2;
     return padL + ((t - tMin) / tSpan) * plotW;
   };
   const xAtTimeTs = (ts)=> padL + ((ts - tMin) / tSpan) * plotW;
@@ -3157,25 +3159,26 @@ function trendChart(svgEl, values, dates, opts={}){
   const gridLines = ticks.map(t=>{
     const y = yAt(t);
     const isZero = opts.zero!=null && Math.abs(t-opts.zero)<1e-6;
-    return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${w-padR}" y2="${y.toFixed(1)}" stroke="${isZero?'#8FA89A':'#E3DAC4'}" stroke-width="1" ${isZero?'':'stroke-dasharray="2,3"'}/>
+    return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${w-padR}" y2="${y.toFixed(1)}" stroke="${isZero?'#1F3A2E':'#E3DAC4'}" stroke-width="${isZero?1.5:1}" ${isZero?'':'stroke-dasharray="2,3"'}/>
       <text x="${padL-6}" y="${(y+3).toFixed(1)}" text-anchor="end" class="chart-label">${fmt(t)}</text>
       ${isZero ? `<text x="${w-padR}" y="${(y-4).toFixed(1)}" text-anchor="end" class="chart-label">${opts.zeroLabel||'even par'}</text>` : ''}`;
   }).join('');
 
-  // Vertical month/week guides (subtle)
+  // Month guides + solid bottom axis (same on score & putts)
   const xTicks = timeAxisTicks(tMin, tMax);
   const xGuides = xTicks.map(tk=>{
     const x = xAtTimeTs(tk.t).toFixed(1);
-    return `<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT+plotH}" stroke="#E3DAC4" stroke-width="1" stroke-dasharray="2,4" opacity="0.7"/>`;
+    return `<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT+plotH}" stroke="#E3DAC4" stroke-width="1" stroke-dasharray="2,4" opacity="0.65"/>`;
   }).join('');
+  const axisBaseline = `<line x1="${padL}" y1="${padT+plotH}" x2="${w-padR}" y2="${padT+plotH}" stroke="#1F3A2E" stroke-width="1.5"/>
+    <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT+plotH}" stroke="#1F3A2E" stroke-width="1.5"/>`;
 
   let markers = '';
   if(opts.markers && opts.markers.length){
-    markers = opts.markers.map((m, mi)=>{
+    markers = opts.markers.map(m=>{
       if(!m || !m.date) return '';
       const x = xAtTime(m.date).toFixed(1);
       const tip = m.label || ('Practice ' + shortDate(m.date));
-      // Invisible wider hit target for tap + visible dashed line
       return `<g class="hit" data-tip="${esc(tip)}" role="button">
         <title>${esc(tip)}</title>
         <line x1="${x}" y1="${padT}" x2="${x}" y2="${padT+plotH}" stroke="transparent" stroke-width="14"/>
@@ -3203,6 +3206,7 @@ function trendChart(svgEl, values, dates, opts={}){
   svgEl.innerHTML = `
     ${gridLines}
     ${xGuides}
+    ${axisBaseline}
     ${markers}
     ${dots}
     ${chartTimeXLabels(xTicks, xAtTimeTs, dateY, padL, plotW)}
@@ -3680,8 +3684,9 @@ function renderStats(){
     date: p.date, color:'#3F6B4A',
     label: `Practice: ${p.focus}${p.duration?' ('+p.duration+' min)':''}`
   }));
-  trendChart(document.getElementById('scoreChart'), scoreToParChart, dates, {zero:0, zeroLabel:'even par', markers: practiceMarkers, partial: partialRound, rawValues: scoreToPar});
-  trendChart(document.getElementById('puttsChart'), puttsRoundsChart, dates, {partial: partialRound, rawValues: puttsRounds, markers: practiceMarkers});
+  const chartYear = yearFilter || 'all';
+  trendChart(document.getElementById('scoreChart'), scoreToParChart, dates, {zero:0, zeroLabel:'even par', markers: practiceMarkers, partial: partialRound, rawValues: scoreToPar, yearFilter: chartYear});
+  trendChart(document.getElementById('puttsChart'), puttsRoundsChart, dates, {partial: partialRound, rawValues: puttsRounds, markers: practiceMarkers, yearFilter: chartYear});
   const firPts = firRounds.map((x,i)=>({x,i})).filter(o=>o.x.eligible > 0);
   const girPts = girRounds.map((x,i)=>({x,i})).filter(o=>o.x.hit>0);
   lineChart(document.getElementById('firChart'), firPts.map(o=>({v:o.x.pct})), {min:0,max:100,pct:true,dates:firPts.map(o=>dates[o.i])});
