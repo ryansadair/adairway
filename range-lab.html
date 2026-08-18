@@ -115,7 +115,7 @@ h1{font-family:'Fraunces',serif;font-size:26px;margin:0 0 6px;font-weight:700}
           <button type="button" class="phaseBtn active" data-phase="top">Top</button>
           <button type="button" class="phaseBtn" data-phase="impact">Impact</button>
         </div>
-        <!-- NEW SCRUBBER -->
+        <!-- Scrubber -->
         <div style="margin-top:10px;display:flex;align-items:center;gap:10px;">
           <input type="range" id="videoScrubber" min="0" max="1000" value="0" style="flex:1;height:4px;background:var(--line);border-radius:2px;-webkit-appearance:none;appearance:none;">
           <span id="scrubberTime" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);min-width:44px;">0:00</span>
@@ -425,6 +425,39 @@ h1{font-family:'Fraunces',serif;font-size:26px;margin:0 0 6px;font-weight:700}
       octx.fill();
     });
   }
+
+  // ---- NEW: real-time overlay update ----
+  function getNearestSample(currentMs) {
+    if (!lastResult || !lastResult.samples || lastResult.samples.length === 0) return null;
+    let best = lastResult.samples[0];
+    let bestDist = Math.abs(best.t - currentMs);
+    for (let i = 1; i < lastResult.samples.length; i++) {
+      const s = lastResult.samples[i];
+      const dist = Math.abs(s.t - currentMs);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = s;
+      }
+    }
+    return best;
+  }
+
+  function updateOverlayFromCurrentTime() {
+    if (!lastResult) {
+      octx.clearRect(0, 0, overlay.width || 1, overlay.height || 1);
+      return;
+    }
+    const currentMs = video.currentTime * 1000;
+    const sample = getNearestSample(currentMs);
+    if (sample && sample.lms) {
+      overlay.width = video.clientWidth || video.videoWidth || 360;
+      overlay.height = video.clientHeight || video.videoHeight || 640;
+      drawSkeleton(sample.lms, overlay.width, overlay.height);
+    }
+  }
+
+  // ---- Attach timeupdate listener ----
+  video.addEventListener('timeupdate', updateOverlayFromCurrentTime);
 
   function seekVideo(v,t){
     return new Promise((resolve)=>{
@@ -757,6 +790,7 @@ h1{font-family:'Fraunces',serif;font-size:26px;margin:0 0 6px;font-weight:700}
     document.querySelectorAll('.phaseBtn').forEach(b=>b.classList.toggle('active',b.dataset.phase===phase));
     const frame=lastResult[phase];
     await seekVideo(video,frame.t/1000);
+    // Explicit draw – timeupdate will also fire and redraw, but this ensures immediate feedback.
     overlay.width=video.clientWidth||video.videoWidth||360;
     overlay.height=video.clientHeight||video.videoHeight||640;
     if(frame.lms)drawSkeleton(frame.lms,overlay.width,overlay.height);
@@ -814,7 +848,7 @@ h1{font-family:'Fraunces',serif;font-size:26px;margin:0 0 6px;font-weight:700}
       else{conf+=metrics.tiltChange!=null||metrics.tiltAddr!=null?10:0;conf+=metrics.sway!=null?8:0;}
       conf=Math.max(22,Math.min(92,Math.round(conf)));
       applyResultUI(metrics,conf);
-      lastResult={metrics,conf,view,address:addressFrame,top:topFrame,impact:impactFrame,samples:samples.length};
+      lastResult={metrics,conf,view,address:addressFrame,top:topFrame,impact:impactFrame,samples:samples};
       writeCoachHistory({
         id:uid(),date:todayISO(),view,
         tempo:metrics.tempoRatio,
