@@ -4060,7 +4060,7 @@ document.getElementById('apiSearchResults').addEventListener('click', async e=>{
   try{
     const cacheKey = `oga_detail_${id}`;
     const detail = await cachedFetch(`${OGA_BASE}/api/v1/courses/${encodeURIComponent(id)}`, cacheKey);
-    applyApiCourseDetail(detail);
+    await applyApiCourseDetail(detail);  // <-- added 'await'
   }catch(err){
     alert("Couldn't load full course details from OpenGolfAPI: "+err.message+". You can add the course manually instead.");
     btn.textContent = originalText; btn.disabled = false;
@@ -4084,7 +4084,26 @@ function pickYardageFromHole(h, preferredColor){
   return null;
 }
 
-function applyApiCourseDetail(detail){
+// ---- NEW: fetch elevation from Open-Elevation API ----
+async function fetchElevation(lat, lng) {
+  try {
+    const url = `https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lng}`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.results && data.results.length > 0) {
+      const elev = data.results[0].elevation;
+      if (elev != null && !isNaN(elev)) return Math.round(elev);
+    }
+    return null;
+  } catch(e) {
+    console.warn('Elevation lookup failed (non-critical):', e);
+    return null;
+  }
+}
+
+// ---- UPDATED applyApiCourseDetail (async) ----
+async function applyApiCourseDetail(detail) {
   const name = detail.course_name || detail.name || 'Unnamed course';
 
   const teesList = (Array.isArray(detail.tees) ? detail.tees : []).map(t=>{
@@ -4200,13 +4219,34 @@ function applyApiCourseDetail(detail){
     if(plTees) plTees.value = teeLabel;
   }
 
+  // ----- AUTO-FILL ELEVATION from lat/lng -----
+  let elevationFt = null;
+  if (detail.lat != null && detail.lng != null) {
+    elevationFt = await fetchElevation(detail.lat, detail.lng);
+  }
+
   pendingApiCourse = {
-    name, par: parArr, yardage: yardageArr, rating, slope,
-    apiCourseId: detail.id, teeLabel, teesList, yardagesByTee,
-    strokeIndex, parTotal: teePar != null ? +teePar : (detail.par != null ? +detail.par : null),
+    name,
+    par: parArr,
+    yardage: yardageArr,
+    rating,
+    slope,
+    apiCourseId: detail.id,
+    teeLabel,
+    teesList,
+    yardagesByTee,
+    strokeIndex,
+    parTotal: teePar != null ? +teePar : (detail.par != null ? +detail.par : null),
     preferredTee: teeLabel || null,
-    lat: detail.lat ?? null, lng: detail.lng ?? null
+    lat: detail.lat ?? null,
+    lng: detail.lng ?? null,
+    elevationFt: elevationFt ?? null
   };
+
+  if (elevationFt != null) {
+    const elevField = document.getElementById('co-elevation');
+    if (elevField) elevField.value = elevationFt;
+  }
 
   populateTeeSelect('pl-tees', pendingApiCourse, teeLabel);
   populateTeeSelect('r-tees', pendingApiCourse, teeLabel);
@@ -4215,8 +4255,9 @@ function applyApiCourseDetail(detail){
   const ydCount = yardageArr ? yardageArr.filter(y=>y>0).length : 0;
   const ydNote = ydCount ? ` · ${ydCount} hole yardages (${teeColor})` : '';
   const teeNote = teesList.length ? ` · ${teesList.length} tee sets` : '';
+  const elevNote = elevationFt != null ? ` · ${elevationFt} ft elev` : '';
   document.getElementById('apiSearchResults').innerHTML = `<div class="empty">
-    Loaded <strong>${escapeHtml(name)}</strong> — ${parNote}${ydNote}${teeNote}${rating!=null?` · rating ${rating}`:''}${slope!=null?` / slope ${slope}`:''}.${parWarning}
+    Loaded <strong>${escapeHtml(name)}</strong> — ${parNote}${ydNote}${teeNote}${rating!=null?` · rating ${rating}`:''}${slope!=null?` / slope ${slope}`:''}${elevNote}.${parWarning}
     Fields below are filled in.
     <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
       <button type="button" class="btn" id="apiQuickSaveBtn">Save course to book</button>
