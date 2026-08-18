@@ -61,6 +61,7 @@ h1{font-family:'Fraunces',serif;font-size:26px;margin:0 0 6px;font-weight:700}
 .cues li{margin-bottom:8px}
 .cues li:last-child{margin-bottom:0}
 .cues strong{color:var(--green)}
+.summary-note{font-size:12px;color:var(--muted);line-height:1.45}.trend-up,.trend-down{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--green)}
 .disclaimer{font-size:11px;color:var(--muted);line-height:1.45;margin:12px 0 0}
 .phases{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
 .phaseBtn{flex:1;min-width:72px;border:1px solid var(--line);border-radius:8px;background:#09120c;color:var(--muted);padding:8px 6px;font-size:11px;font-weight:700;cursor:pointer}
@@ -77,10 +78,9 @@ h1{font-family:'Fraunces',serif;font-size:26px;margin:0 0 6px;font-weight:700}
 <div class="app">
   <div class="top">
     <div class="brand">Adairway Golf — Swing Coach</div>
-    <a class="back" href="index.html">← Main app</a>
   </div>
   <h1>Swing Coach</h1>
-  <p class="lede">Upload a short swing video for view-specific form feedback. Metrics are <strong style="color:var(--text)">2D projections</strong> from on-device pose estimation — useful practice trends, not a 3D lesson or launch monitor.</p>
+  <p class="lede">Upload one swing and I’ll give you <strong style="color:var(--text)">one clear thing to work on next</strong>, plus what to keep. The movement metrics are <strong style="color:var(--text)">2D projections</strong> from on-device pose estimation — useful practice trends, not a 3D lesson or launch monitor.</p>
 
   <div class="views" role="radiogroup" aria-label="Camera view">
     <button type="button" class="viewCard active" data-view="faceon" id="viewFaceOn">
@@ -126,14 +126,24 @@ h1{font-family:'Fraunces',serif;font-size:26px;margin:0 0 6px;font-weight:700}
       <div class="head"><strong>Results</strong><span class="state" id="confLabel">—</span></div>
       <div class="panel">
         <div class="metrics" id="metricsGrid">
-          <div class="metric"><span>Tempo</span><b id="mTempo">—</b><div class="sub" id="mTempoSub">back : down</div></div>
+          <div class="metric"><span>Tempo</span><b id="mTempo">—</b><div class="sub" id="mTempoSub">transition timing</div></div>
           <div class="metric"><span id="m2Label">Shoulder turn</span><b id="m2">—</b><div class="sub" id="m2Sub">projected</div></div>
           <div class="metric"><span id="m3Label">Hip turn</span><b id="m3">—</b><div class="sub" id="m3Sub">projected</div></div>
           <div class="metric"><span id="m4Label">X-factor</span><b id="m4">—</b><div class="sub" id="m4Sub">separation</div></div>
           <div class="metric"><span id="m5Label">Head stability</span><b id="m5">—</b><div class="sub" id="m5Sub">relative</div></div>
           <div class="metric"><span>Confidence</span><b id="mConf">—</b><div class="sub">landmark quality</div></div>
         </div>
-        <div class="cues"><h3>Coaching cues</h3><ul id="cuesList"><li>Upload a swing to get view-specific feedback.</li></ul></div>
+        <div class="cues" id="coachSummary">
+          <h3>Your swing</h3>
+          <div id="primaryFocus" style="font-size:14px;line-height:1.45;margin-bottom:10px"><strong style="color:var(--green)">Primary focus</strong><br><span style="color:var(--muted)">Upload a swing and I'll give you one thing to work on first.</span></div>
+          <div id="nextSwing" style="font-size:13px;line-height:1.5;margin-bottom:10px"><strong style="color:var(--green)">Next swing</strong><br><span style="color:var(--muted)">Your instruction will appear here.</span></div>
+          <div id="positiveSwing" style="font-size:13px;line-height:1.5"><strong style="color:var(--green)">Keep</strong><br><span style="color:var(--muted)">I'll also call out something you're doing well.</span></div>
+        </div>
+        <div class="cues" id="baselineCard" style="display:none">
+          <h3>Your baseline</h3>
+          <div id="baselineText" style="font-size:12.5px;line-height:1.55;color:var(--muted)"></div>
+        </div>
+        <div class="cues"><h3>Why I flagged it</h3><ul id="cuesList"><li>Upload a swing to get view-specific feedback.</li></ul></div>
         <button class="btn primary block" id="savePracticeBtn" style="margin-top:12px" disabled>Save to Practice log</button>
         <p class="disclaimer" id="saveStatus"></p>
         <p class="disclaimer">Angles are <strong style="color:var(--muted)">2D image projections</strong>, not true 3D joint rotations. Compare your own swings over time—not absolute tour numbers.</p>
@@ -290,6 +300,10 @@ h1{font-family:'Fraunces',serif;font-size:26px;margin:0 0 6px;font-weight:700}
     document.getElementById('mTempoSub').textContent='back : down';
     document.getElementById('confLabel').textContent='—';
     document.getElementById('cuesList').innerHTML='<li>Upload a swing to get view-specific feedback.</li>';
+    document.getElementById('primaryFocus').innerHTML='<strong style="color:var(--green)">Primary focus</strong><br><span style="color:var(--muted)">Upload a swing and I\'ll give you one thing to work on first.</span>';
+    document.getElementById('nextSwing').innerHTML='<strong style="color:var(--green)">Next swing</strong><br><span style="color:var(--muted)">Your instruction will appear here.</span>';
+    document.getElementById('positiveSwing').innerHTML='<strong style="color:var(--green)">Keep</strong><br><span style="color:var(--muted)">I\'ll also call out something you\'re doing well.</span>';
+    document.getElementById('baselineCard').style.display='none';
     saveBtn.disabled=true;
     document.getElementById('saveStatus').textContent='';
     phaseRow.style.display='none';
@@ -337,29 +351,32 @@ h1{font-family:'Fraunces',serif;font-size:26px;margin:0 0 6px;font-weight:700}
       const sw=shoulderWidth(address.lms)||0.2;headSway=sw>0.02?(maxDx/sw):maxDx;
     }
     const cues=[];
-    if(tempoRatio<2.0)cues.push('<strong>Tempo is quick</strong> — backswing:downswing ≈ '+tempoRatio.toFixed(1)+':1. Many players feel smoother near 3:1.');
-    else if(tempoRatio>4.5)cues.push('<strong>Tempo is deliberate</strong> — ≈ '+tempoRatio.toFixed(1)+':1. A slightly quicker transition can add speed if balance stays solid.');
-    else cues.push('<strong>Tempo looks balanced</strong> — ≈ '+tempoRatio.toFixed(1)+':1 (a common target band is near 3:1).');
+    if(tempoRatio<2.0)cues.push('<strong>Transition is rushed</strong> — the change from backswing to downswing is happening quickly. This can make the club feel like it has to catch up at the bottom.');
+    else if(tempoRatio>4.5)cues.push('<strong>Transition is very patient</strong> — the change of direction is taking a long time. If contact feels weak or the club gets stuck, try a smoother continuous transition rather than forcing more speed.');
+    else cues.push('<strong>Transition timing looks steady</strong> — there is no obvious timing issue to chase from this clip.');
+
     if(shoulderTurn!=null){
-      if(shoulderTurn<50)cues.push('<strong>Shoulder turn looks restricted</strong> (~'+Math.round(shoulderTurn)+'° projected). A fuller coil with a stable lead knee can free the backswing.');
-      else if(shoulderTurn>105)cues.push('<strong>Large projected shoulder turn</strong> (~'+Math.round(shoulderTurn)+'°). Power potential — check that the lower body still supports the coil.');
-      else cues.push('<strong>Shoulder turn</strong> is in a productive projected range (~'+Math.round(shoulderTurn)+'°).');
+      if(shoulderTurn<50)cues.push('<strong>Turn looks abbreviated</strong> — your shoulders are not getting much behind the ball. Feel your trail shoulder move farther behind you while keeping the lower body quiet enough to support the turn.');
+      else if(shoulderTurn>105)cues.push('<strong>Large shoulder turn</strong> — you are making a big coil. Keep it only if you can return the club with balance; do not add more turn just for the sake of it.');
+      else cues.push('<strong>Shoulder turn looks usable</strong> — no obvious need to manufacture a bigger backswing from this view.');
     }
     if(hipTurn!=null){
-      if(hipTurn<18)cues.push('<strong>Hips are quiet at the top</strong> (~'+Math.round(hipTurn)+'° projected). A bit more hip rotation can free the upper body.');
-      else if(hipTurn>55)cues.push('<strong>Hips are very active</strong> (~'+Math.round(hipTurn)+'° projected). Watch for slide — feel rotation more than lateral push.');
+      if(hipTurn<18)cues.push('<strong>Hips are relatively quiet</strong> — let the pelvis participate in the turn so the upper body does not have to do all the work.');
+      else if(hipTurn>55)cues.push('<strong>Hips are very active</strong> — keep the turn rotational instead of letting the lower body slide toward the target.');
+      else cues.push('<strong>Hip turn looks controlled</strong> — your lower body is contributing without an obvious excess from this 2D view.');
     }
     if(xFactor!=null){
-      if(xFactor<12)cues.push('<strong>Low X-factor</strong> — shoulders and hips are turning together. Create separation: shoulders keep turning after hips stabilize.');
-      else if(xFactor>48)cues.push('<strong>High X-factor</strong> (~'+Math.round(xFactor)+'° projected). Good separation — unwind in sequence without losing posture.');
-      else cues.push('<strong>X-factor</strong> is in a useful projected band (~'+Math.round(xFactor)+'°).');
+      if(xFactor<12)cues.push('<strong>Little separation at the top</strong> — your shoulders and hips are turning together. Feel the shoulders finish their turn while the hips begin to unwind.');
+      else if(xFactor>48)cues.push('<strong>Large separation</strong> — you have plenty of coil between shoulders and hips. Do not chase more; focus on sequencing it smoothly.');
+      else cues.push('<strong>Shoulder/hip separation looks usable</strong> — no obvious need to create more stretch from this clip.');
     }
     if(headSway!=null){
-      if(headSway>0.55)cues.push('<strong>Noticeable head movement</strong> relative to shoulder width. A quieter head often helps centered contact.');
-      else cues.push('<strong>Head stability</strong> looks controlled for this clip.');
+      if(headSway>0.55)cues.push('<strong>Head movement is noticeable</strong> — feel the head staying more centered while the body turns around it. The goal is quieter, not frozen.');
+      else cues.push('<strong>Head movement looks controlled</strong> — that is a good piece to keep while you work on anything else.');
     }
-    cues.push('<span style="opacity:.7">Face-on 2D estimates — compare to your own past swings, not a broadcast graphic.</span>');
+    cues.push('<span style="opacity:.7">These are 2D movement clues. Use contact and ball flight to decide whether a change actually helps.</span>');
     return {view:'faceon',tempoRatio,backMs,downMs,shoulderTurn,hipTurn,xFactor,headSway,
+
       display:{tempo:tempoRatio.toFixed(1)+':1',m2:shoulderTurn!=null?Math.round(shoulderTurn)+'°':'—',m3:hipTurn!=null?Math.round(hipTurn)+'°':'—',m4:xFactor!=null?Math.round(xFactor)+'°':'—',m5:headSway==null?'—':(headSway>0.55?'High':headSway>0.3?'Moderate':'Stable')},
       labels:{m2:'Shoulder turn',m2s:'projected',m3:'Hip turn',m3s:'projected',m4:'X-factor',m4s:'separation',m5:'Head stability',m5s:'rel. shoulders'},
       cues};
@@ -390,35 +407,185 @@ h1{font-family:'Fraunces',serif;font-size:26px;margin:0 0 6px;font-weight:700}
     if(trailKneeAddr!=null&&trailKneeTop!=null)hipDepth=trailKneeTop-trailKneeAddr;
 
     const cues=[];
-    if(tempoRatio<2.0)cues.push('<strong>Tempo is quick</strong> — ≈ '+tempoRatio.toFixed(1)+':1. Smoother transitions often land nearer 3:1.');
-    else if(tempoRatio>4.5)cues.push('<strong>Tempo is deliberate</strong> — ≈ '+tempoRatio.toFixed(1)+':1.');
-    else cues.push('<strong>Tempo</strong> ≈ '+tempoRatio.toFixed(1)+':1 — in a balanced band for many players.');
+    if(tempoRatio<2.0)cues.push('<strong>Transition is rushed</strong> — the change of direction is happening quickly. Feel the backswing finish before the downswing takes over; the goal is smoother, not simply slower.');
+    else if(tempoRatio>4.5)cues.push('<strong>Transition is very patient</strong> — if the swing feels stalled at the top, try a more continuous change of direction instead of holding the club there.');
+    else cues.push('<strong>Transition timing looks steady</strong> — nothing here suggests you need to rebuild your tempo.');
+
     if(tiltChange!=null){
-      if(tiltChange>18)cues.push('<strong>Spine tilt changes a lot</strong> from address to top (~'+Math.round(tiltChange)+'° in-image). Try keeping posture angles more constant while you turn.');
-      else cues.push('<strong>Spine tilt</strong> holds reasonably from address to top (Δ ~'+Math.round(tiltChange)+'° projected).');
-    }else if(tiltAddr!=null)cues.push('<strong>Address spine tilt</strong> ~'+Math.round(Math.abs(tiltAddr))+'° from vertical (projected).');
+      if(tiltChange>18)cues.push('<strong>Posture changes a lot</strong> — your spine angle shifts noticeably going to the top. Feel your torso turn around a more stable setup rather than standing up or crunching down.');
+      else cues.push('<strong>Spine angle is fairly consistent</strong> from address to the top. Keep that feeling while you work on other pieces.');
+    }else if(tiltAddr!=null)cues.push('<strong>Setup posture recorded</strong> — use the phase replay to check whether the address position is comfortable and repeatable.');
     if(sway!=null){
-      if(sway>0.45)cues.push('<strong>Lateral sway is elevated</strong> (head vs feet). Feel more rotation around a steadier lower body.');
-      else cues.push('<strong>Lateral sway</strong> looks controlled in this clip.');
+      if(sway>0.45)cues.push('<strong>You are moving laterally</strong> — the head is traveling noticeably relative to the feet. Feel pressure shift without letting the whole body drift away from the ball.');
+      else cues.push('<strong>Lateral movement looks controlled</strong> — you are not showing an obvious excessive slide in this clip.');
     }
     if(postureLoss!=null){
-      if(postureLoss>0.12)cues.push('<strong>Posture height drops</strong> toward the top (proxy). Losing height early can force a re-route down.');
-      else cues.push('<strong>Posture height</strong> is relatively maintained into the top.');
+      if(postureLoss>0.12)cues.push('<strong>You lose some height</strong> going to the top. Feel your chest turning around your hips instead of sinking lower into the backswing.');
+      else cues.push('<strong>Height is reasonably maintained</strong> into the top. That is a useful piece to keep.');
     }
     if(hipDepth!=null){
-      if(hipDepth>12)cues.push('<strong>Trail leg straightens notably</strong> into the top (knee angle change ~'+Math.round(hipDepth)+'°). That can pair with early extension — keep flex in the trail knee as you turn.');
-      else if(hipDepth<-8)cues.push('<strong>Trail knee adds flex</strong> into the top — fine if balance stays centered.');
-      else cues.push('<strong>Trail knee flex</strong> is fairly stable address → top.');
+      if(hipDepth>12)cues.push('<strong>Trail knee straightens early</strong> — keep some flex in the trail knee as you turn so the lower body does not lock up.');
+      else if(hipDepth<-8)cues.push('<strong>Trail knee adds flex</strong> — that can be fine if you remain balanced and centered.');
+      else cues.push('<strong>Trail knee looks stable</strong> from address to the top.');
     }
-    cues.push('<span style="opacity:.7">Down-the-line 2D proxies — great for posture/sway trends, not club path in degrees.</span>');
+    cues.push('<span style="opacity:.7">These are 2D posture/movement clues. They do not measure club path or face angle.</span>');
     return {view:'dtl',tempoRatio,backMs,downMs,tiltAddr,tiltChange,sway,postureLoss,hipDepth,
+
       display:{tempo:tempoRatio.toFixed(1)+':1',m2:tiltChange!=null?Math.round(tiltChange)+'°':(tiltAddr!=null?Math.round(Math.abs(tiltAddr))+'°':'—'),m3:sway==null?'—':(sway>0.45?'High':sway>0.25?'Moderate':'Low'),m4:postureLoss==null?'—':(postureLoss>0.12?'Loses height':'Holds'),m5:hipDepth==null?'—':(hipDepth>12?'Extends':hipDepth<-8?'Adds flex':'Stable')},
       labels:{m2:'Spine tilt Δ',m2s:'address → top',m3:'Lateral sway',m3s:'head vs ankles',m4:'Posture height',m4s:'proxy',m5:'Trail knee',m5s:'early ext. proxy'},
       cues};
   }
 
+
+  const COACH_HISTORY_KEY='adairway_swing_coach_history_v2';
+
+  function readCoachHistory(){
+    try{
+      const data=JSON.parse(localStorage.getItem(COACH_HISTORY_KEY)||'[]');
+      return Array.isArray(data)?data:[];
+    }catch(e){return [];}
+  }
+
+  function writeCoachHistory(entry){
+    try{
+      const list=readCoachHistory();
+      list.push(entry);
+      localStorage.setItem(COACH_HISTORY_KEY,JSON.stringify(list.slice(-40)));
+      return true;
+    }catch(e){return false;}
+  }
+
+  function historyMetricValues(history,view,key){
+    return history.filter(x=>x.view===view && Number.isFinite(x[key])).map(x=>x[key]);
+  }
+
+  function average(arr){
+    return arr.length?arr.reduce((a,b)=>a+b,0)/arr.length:null;
+  }
+
+  function directionText(current,baseline,lowerIsBetter=false){
+    if(current==null||baseline==null)return '';
+    const delta=current-baseline;
+    const threshold=Math.max(Math.abs(baseline)*0.08,0.08);
+    if(Math.abs(delta)<threshold)return 'roughly in line with your recent swings';
+    if(lowerIsBetter)return delta<0?'better than your recent average':'higher than your recent average';
+    return delta>0?'up from your recent average':'down from your recent average';
+  }
+
+  function buildPersonalBaseline(metrics, view){
+    const history=readCoachHistory().filter(x=>x.view===view);
+    if(history.length<5){
+      return {
+        count:history.length,
+        text:history.length===0
+          ? 'This is your first saved swing. Analyze a few more swings and Adairway will start learning what is normal for you.'
+          : `${history.length} ${history.length===1?'swing':'swings'} recorded. After 5, I can compare this swing with your own recent pattern instead of generic targets.`
+      };
+    }
+
+    const parts=[];
+    const tempoAvg=average(history.map(x=>x.tempo).filter(Number.isFinite));
+    if(tempoAvg!=null){
+      const delta=metrics.tempoRatio-tempoAvg;
+      parts.push(`Your transition is ${Math.abs(delta)<0.25?'close to':delta<0?'quicker than':'more deliberate than'} your recent average.`);
+    }
+
+    if(view==='faceon'){
+      const shAvg=average(historyMetricValues(history,view,'shoulderTurn'));
+      const headAvg=average(historyMetricValues(history,view,'headSway'));
+      if(shAvg!=null&&metrics.shoulderTurn!=null){
+        parts.push(`Shoulder turn is ${Math.abs(metrics.shoulderTurn-shAvg)<6?'close to':metrics.shoulderTurn>shAvg?'above':'below'} your recent pattern.`);
+      }
+      if(headAvg!=null&&metrics.headSway!=null){
+        parts.push(`Head movement is ${metrics.headSway<=headAvg*1.08?'similar to':'more noticeable than'} your recent swings.`);
+      }
+    }else{
+      const swayAvg=average(historyMetricValues(history,view,'sway'));
+      const tiltAvg=average(historyMetricValues(history,view,'tiltChange'));
+      if(swayAvg!=null&&metrics.sway!=null){
+        parts.push(`Lateral movement is ${metrics.sway<=swayAvg*1.08?'similar to':'more noticeable than'} your recent swings.`);
+      }
+      if(tiltAvg!=null&&metrics.tiltChange!=null){
+        parts.push(`Spine-angle change is ${Math.abs(metrics.tiltChange-tiltAvg)<4?'close to':metrics.tiltChange>tiltAvg?'larger than':'smaller than'} your recent pattern.`);
+      }
+    }
+
+    return {count:history.length,text:parts.join(' ')};
+  }
+
+  function buildCoachSummary(metrics){
+    const primary=[], secondary=[], positive=[];
+    const add=(arr,title,text)=>arr.push({title,text});
+
+    // The summary deliberately prioritizes one actionable change rather than dumping numbers on the golfer.
+    if(metrics.tempoRatio<2.0){
+      add(primary,'Your transition looks rushed','Try this on the next swing: make a complete backswing, then feel a tiny moment of direction change before the club starts down. Do not try to swing slower—try to make the change of direction smoother.');
+    }else if(metrics.tempoRatio>4.5){
+      add(primary,'Your transition looks stalled','Try this on the next swing: let the backswing flow directly into the downswing instead of holding the top. Think continuous motion, not a pause.');
+    }
+
+    if(metrics.view==='faceon'){
+      if(metrics.shoulderTurn!=null && metrics.shoulderTurn<50 && primary.length===0)
+        add(primary,'Your turn looks abbreviated','On the next swing, feel your trail shoulder move farther behind you. Keep your head quiet and let the turn create the depth rather than reaching with the arms.');
+      if(metrics.xFactor!=null && metrics.xFactor<12 && primary.length===0)
+        add(primary,'Your upper and lower body turn together','At the top, feel the shoulders finish turning while the hips begin unwinding. You are looking for a sequence change, not a bigger backswing.');
+      if(metrics.headSway!=null && metrics.headSway>0.55 && primary.length===0)
+        add(primary,'Your head is moving noticeably','Feel your head stay centered while your chest and hips turn around it. Quiet is the goal—not locking your head in place.');
+
+      if(metrics.shoulderTurn!=null && metrics.shoulderTurn>=50 && metrics.shoulderTurn<=105)
+        add(secondary,'Your shoulder turn is usable','You do not need to manufacture a bigger turn just because the number is available.');
+      if(metrics.xFactor!=null && metrics.xFactor>=12 && metrics.xFactor<=48)
+        add(secondary,'Your shoulder/hip separation is usable','Leave this alone for now unless your contact or ball flight gives you a reason to change it.');
+      if(metrics.headSway!=null && metrics.headSway<=0.55)
+        add(positive,'Head movement is controlled','That is a good piece to keep while you work on the primary focus.');
+      else if(metrics.hipTurn!=null && metrics.hipTurn>=18 && metrics.hipTurn<=55)
+        add(positive,'Lower-body turn looks controlled','You are contributing rotation without an obvious excess from this 2D view.');
+    }else{
+      if(metrics.tiltChange!=null && metrics.tiltChange>18 && primary.length===0)
+        add(primary,'Your posture changes a lot','Feel your chest turning around your hips instead of standing up or sinking down as you reach the top.');
+      if(metrics.sway!=null && metrics.sway>0.45 && primary.length===0)
+        add(primary,'You are drifting laterally','Feel pressure move without letting your head and torso travel with it. Keep the body turning around a steadier base.');
+      if(metrics.hipDepth!=null && metrics.hipDepth>12 && primary.length===0)
+        add(primary,'Your trail knee is straightening early','Keep some flex in the trail knee as you turn. Think rotation around the trail leg rather than locking it straight.');
+
+      if(metrics.sway!=null && metrics.sway<=0.45)
+        add(positive,'Lateral movement looks controlled','Keep that centered feeling while you work on anything else.');
+      else if(metrics.postureLoss!=null && metrics.postureLoss<=0.12)
+        add(positive,'Height is reasonably maintained','That is a useful piece to keep through the backswing.');
+      if(metrics.hipDepth!=null && metrics.hipDepth<=12)
+        add(secondary,'Trail-knee movement is not a major flag','There is no obvious reason to chase this piece from this clip.');
+    }
+
+    if(!primary.length)
+      add(primary,'No major red flag from this swing','I would not rebuild your motion from one video. Use the phase replay and let contact, start direction, and ball flight tell us what deserves attention.');
+
+    if(!secondary.length)
+      add(secondary,'Use the phase replay','Tap Address, Top, and Impact to see where the movement changes. One swing is a snapshot, not a diagnosis.');
+
+    if(!positive.length)
+      add(positive,'Keep the process simple','Make one change, hit a few balls, and see whether contact and ball flight improve.');
+
+    return {primary:primary[0],secondary:secondary[0],positive:positive[0]};
+  }
+
+  function renderCoachSummary(metrics){
+    const s=buildCoachSummary(metrics);
+    document.getElementById('primaryFocus').innerHTML='<strong style="color:var(--green)">Primary focus</strong><br><span>'+s.primary.title+'</span><div class="summary-note" style="margin-top:4px">'+s.primary.text+'</div>';
+    document.getElementById('nextSwing').innerHTML='<strong style="color:var(--green)">Next swing</strong><br><span>'+s.secondary.title+'</span><div class="summary-note" style="margin-top:4px">'+s.secondary.text+'</div>';
+    document.getElementById('positiveSwing').innerHTML='<strong style="color:var(--green)">Keep</strong><br><span>'+s.positive.title+'</span><div class="summary-note" style="margin-top:4px">'+s.positive.text+'</div>';
+  }
+
+  function renderBaseline(metrics){
+    const baseline=buildPersonalBaseline(metrics,metrics.view);
+    const card=document.getElementById('baselineCard');
+    document.getElementById('baselineText').textContent=baseline.text;
+    card.style.display='block';
+  }
+
   function applyResultUI(metrics,conf){
-    document.getElementById('mTempo').textContent=metrics.display.tempo;
+    const tempoLabel=metrics.tempoRatio<2.0?'Quick':metrics.tempoRatio>4.5?'Deliberate':'Steady';
+    document.getElementById('mTempo').textContent=tempoLabel;
+    document.getElementById('mTempoSub').textContent='transition timing · '+metrics.display.tempo;
     document.getElementById('m2').textContent=metrics.display.m2;
     document.getElementById('m3').textContent=metrics.display.m3;
     document.getElementById('m4').textContent=metrics.display.m4;
@@ -430,6 +597,8 @@ h1{font-family:'Fraunces',serif;font-size:26px;margin:0 0 6px;font-weight:700}
     setLabel('m4Label',metrics.labels.m4);setLabel('m4Sub',metrics.labels.m4s);
     setLabel('m5Label',metrics.labels.m5);setLabel('m5Sub',metrics.labels.m5s);
     document.getElementById('cuesList').innerHTML=metrics.cues.map(c=>'<li>'+c+'</li>').join('');
+    renderCoachSummary(metrics);
+    renderBaseline(metrics);
     saveBtn.disabled=false;
   }
 
@@ -487,6 +656,21 @@ h1{font-family:'Fraunces',serif;font-size:26px;margin:0 0 6px;font-weight:700}
       conf=Math.max(22,Math.min(92,Math.round(conf)));
       applyResultUI(metrics,conf);
       lastResult={metrics,conf,view,address:addressFrame,top:topFrame,impact:impactFrame,samples:samples.length};
+      writeCoachHistory({
+        id:uid(),date:todayISO(),view,
+        tempo:metrics.tempoRatio,
+        shoulderTurn:metrics.shoulderTurn,
+        hipTurn:metrics.hipTurn,
+        xFactor:metrics.xFactor,
+        headSway:metrics.headSway,
+        tiltAddr:metrics.tiltAddr,
+        tiltChange:metrics.tiltChange,
+        sway:metrics.sway,
+        postureLoss:metrics.postureLoss,
+        hipDepth:metrics.hipDepth,
+        conf
+      });
+      renderBaseline(metrics);
       phaseRow.style.display='flex';await showPhase('top');
       setProgress(1);stateEl.textContent='Done';
       hud.innerHTML='<b>DONE</b> — Tempo '+metrics.display.tempo+' · Conf '+conf+'%';
@@ -510,8 +694,9 @@ h1{font-family:'Fraunces',serif;font-size:26px;margin:0 0 6px;font-weight:700}
     if(!lastResult)return;
     const m=lastResult.metrics;
     const viewLabel=lastResult.view==='dtl'?'Down-the-line':'Face-on';
-    const cueText=(m.cues||[]).map(c=>c.replace(/<[^>]+>/g,'').replace(/\s+/g,' ').trim()).filter(c=>c&&!/2D/i.test(c)).slice(0,3).join(' · ');
-    const notes=['Swing Coach ('+viewLabel+')','Tempo '+m.display.tempo,m.labels.m2+': '+m.display.m2,m.labels.m3+': '+m.display.m3,m.labels.m4+': '+m.display.m4,m.labels.m5+': '+m.display.m5,'Confidence '+lastResult.conf+'%',cueText].filter(Boolean).join(' · ');
+    const summary=buildCoachSummary(m);
+    const cueText=[summary.primary.title+': '+summary.primary.text,summary.positive.title+': '+summary.positive.text].join(' · ');
+    const notes=['Swing Coach ('+viewLabel+')','Tempo '+(m.tempoRatio<2?'quick':m.tempoRatio>4.5?'deliberate':'steady')+' ('+m.display.tempo+')',m.labels.m2+': '+m.display.m2,m.labels.m3+': '+m.display.m3,m.labels.m4+': '+m.display.m4,m.labels.m5+': '+m.display.m5,'Confidence '+lastResult.conf+'%',cueText].filter(Boolean).join(' · ');
     const entry={id:uid(),date:todayISO(),focus:'Swing Coach — '+viewLabel,duration:null,notes,source:'swing-coach',coachView:lastResult.view,coachConf:lastResult.conf};
     try{
       const key='adairway_coach_practice_queue';
