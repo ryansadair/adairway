@@ -2866,7 +2866,11 @@ document.getElementById('roundsList').addEventListener('click', async e=>{
         renderNotifBadge();
       } else {
         shareBtn.textContent = round.sharedPostId ? 'shared ✓' : 'share';
-        alert('Could not update sharing — check your connection and try again.');
+        const err = (round.sharedPostId ? unshareRound.lastError : shareRoundToFeed.lastError) || null;
+        const detail = err ? (err.code || err.message || String(err)) : '';
+        alert(detail
+          ? ('Could not update sharing: ' + detail)
+          : 'Could not update sharing — check your connection and try again.');
       }
     }
     return;
@@ -2887,7 +2891,14 @@ function rollingAvg(values, window=5){
     return slice.reduce((s,x)=>s+x,0)/slice.length;
   });
 }
+function parseISODate(iso){
+  if(!iso) return null;
+  // Noon avoids timezone edge cases flipping the calendar day
+  const t = Date.parse(String(iso).slice(0,10) + 'T12:00:00');
+  return Number.isFinite(t) ? t : null;
+}
 function mapDateToIndex(dateStr, dates){
+  // Legacy ordinal snap (kept for any residual callers). Prefer time-based x in charts.
   if(dates.length===0) return null;
   for(let i=0;i<dates.length;i++){ if(dates[i] >= dateStr) return i; }
   return dates.length-1;
@@ -2969,8 +2980,23 @@ function trendChart(svgEl, values, dates, opts={}){
   const min = ticks[0], max = ticks[ticks.length-1];
   const range = (max-min)||1;
   const plotW = w-padL-padR, plotH = h-padT-padB;
-  const stepX = values.length>1 ? plotW/(values.length-1) : 0;
-  const xAt = i => padL + i*stepX;
+
+  // Time-based X axis so practice markers land on their true dates (not snapped to the next round).
+  const timeSamples = [];
+  (dates||[]).forEach(d=>{ const t=parseISODate(d); if(t!=null) timeSamples.push(t); });
+  if(opts.markers && opts.markers.length){
+    opts.markers.forEach(m=>{ const t=parseISODate(m.date); if(t!=null) timeSamples.push(t); });
+  }
+  const tMin = timeSamples.length ? Math.min(...timeSamples) : 0;
+  const tMax = timeSamples.length ? Math.max(...timeSamples) : 1;
+  const tSpan = (tMax - tMin) || 1;
+  const xAtTime = (iso)=>{
+    const t = parseISODate(iso);
+    if(t==null) return padL + plotW/2;
+    if(values.length===1 && !(opts.markers&&opts.markers.length)) return padL + plotW/2;
+    return padL + ((t - tMin) / tSpan) * plotW;
+  };
+  const xAt = i => xAtTime(dates[i]);
   const yAt = v => padT + plotH - ((v-min)/range)*plotH;
   const dateY = h - 8;
   const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
@@ -2987,10 +3013,9 @@ function trendChart(svgEl, values, dates, opts={}){
   let markers = '';
   if(opts.markers && opts.markers.length){
     markers = opts.markers.map(m=>{
-      const idx = mapDateToIndex(m.date, dates);
-      if(idx==null) return '';
-      const x = xAt(idx).toFixed(1);
-      return `<g><title>${esc(m.label)}</title><line x1="${x}" y1="${padT}" x2="${x}" y2="${padT+plotH}" stroke="${m.color}" stroke-width="1.5" stroke-dasharray="3,3"/></g>`;
+      if(!m || !m.date) return '';
+      const x = xAtTime(m.date).toFixed(1);
+      return `<g><title>${esc(m.label||('Practice '+shortDate(m.date)))}</title><line x1="${x}" y1="${padT}" x2="${x}" y2="${padT+plotH}" stroke="${m.color||'#3F6B4A'}" stroke-width="1.5" stroke-dasharray="3,3"/></g>`;
     }).join('');
   }
 
@@ -3422,11 +3447,13 @@ function renderStats(){
 
   const firRounds = withScores.map(r=>{
     const played = r.holes.filter(h=>h.score>0);
-    const eligible = played.filter(h=>h.par!==3 && h.par>0).length || 1;
-    const hit = played.filter(h=>h.fir).length;
-    return {pct: hit/eligible*100, hit, any: played.some(h=>h.fir)};
+    // Eligible = scored non-par-3s. Unchecked FIR counts as a miss (0%), not "untracked".
+    const eligibleHoles = played.filter(h=>h.par!==3 && h.par>0);
+    const eligible = eligibleHoles.length;
+    const hit = eligibleHoles.filter(h=>h.fir).length;
+    return {pct: eligible ? (hit/eligible*100) : null, hit, eligible, any: eligible > 0};
   });
-  const firHave = firRounds.filter(x=>x.hit>0 || x.any);
+  const firHave = firRounds.filter(x=>x.eligible > 0);
   const avgFir = firHave.length ? (firHave.reduce((s,x)=>s+x.pct,0)/firHave.length) : null;
 
   const girRounds = withScores.map(r=>{
@@ -3484,8 +3511,8 @@ function renderStats(){
     label: `Practice: ${p.focus}${p.duration?' ('+p.duration+' min)':''}`
   }));
   trendChart(document.getElementById('scoreChart'), scoreToParChart, dates, {zero:0, zeroLabel:'even par', markers: practiceMarkers, partial: partialRound, rawValues: scoreToPar});
-  trendChart(document.getElementById('puttsChart'), puttsRoundsChart, dates, {partial: partialRound, rawValues: puttsRounds});
-  const firPts = firRounds.map((x,i)=>({x,i})).filter(o=>o.x.hit>0||o.x.any);
+  trendChart(document.getElementById('puttsChart'), puttsRoundsChart, dates, {partial: partialRound, rawValues: puttsRounds, markers: practiceMarkers});
+  const firPts = firRounds.map((x,i)=>({x,i})).filter(o=>o.x.eligible > 0);
   const girPts = girRounds.map((x,i)=>({x,i})).filter(o=>o.x.hit>0);
   lineChart(document.getElementById('firChart'), firPts.map(o=>({v:o.x.pct})), {min:0,max:100,pct:true,dates:firPts.map(o=>dates[o.i])});
   lineChart(document.getElementById('girChart'), girPts.map(o=>({v:o.x.pct})), {min:0,max:100,pct:true,dates:girPts.map(o=>dates[o.i])});
@@ -3517,7 +3544,7 @@ function renderStats(){
 
   const firScatterPts = withScores.map((r,i)=>{
     const fr = firRounds[i];
-    if(!(fr.hit>0||fr.any)) return null;
+    if(!(fr.eligible > 0)) return null;
     return {x: fr.pct, y: scoreToPar[i]};
   }).filter(Boolean);
   const girScatterPts = withScores.map((r,i)=>{
@@ -5181,9 +5208,14 @@ async function renderLeaderboard(){
 
 // ---------- Activity feed ----------
 async function shareRoundToFeed(round){
-  if(!currentUser) return false;
+  shareRoundToFeed.lastError = null;
+  if(!currentUser){
+    shareRoundToFeed.lastError = { code: 'not-signed-in', message: 'Not signed in' };
+    return false;
+  }
   if(currentProfile.shareActivityWithFriends === false){
     alert('You have “Share activity with friends” turned off in Profile. Turn it on to post rounds to the feed.');
+    shareRoundToFeed.lastError = { code: 'sharing-disabled', message: 'Share activity with friends is turned off' };
     return false;
   }
   try{
@@ -5207,15 +5239,27 @@ async function shareRoundToFeed(round){
     });
     round.sharedPostId = postRef.id;
     return true;
-  }catch(e){ return false; }
+  }catch(e){
+    console.error('shareRoundToFeed failed', e);
+    shareRoundToFeed.lastError = e;
+    return false;
+  }
 }
 async function unshareRound(round){
-  if(!currentUser || !round.sharedPostId) return false;
+  unshareRound.lastError = null;
+  if(!currentUser || !round.sharedPostId){
+    unshareRound.lastError = { code: 'nothing-to-unshare', message: 'No shared post to remove' };
+    return false;
+  }
   try{
     await deleteDoc(doc(db, 'posts', round.sharedPostId));
     delete round.sharedPostId;
     return true;
-  }catch(e){ return false; }
+  }catch(e){
+    console.error('unshareRound failed', e);
+    unshareRound.lastError = e;
+    return false;
+  }
 }
 async function loadFeed(){
   if(!currentUser) return [];
