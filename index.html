@@ -7753,36 +7753,43 @@ async function init(){
     setImpactBtn.addEventListener('click', async ()=>{
       if(!lastResult || busy) return;
       const tMs = scrubInput ? (+scrubInput.value || 0) : 0;
+      // Must be after top — impact before top is invalid
+      if(lastResult.top && tMs <= lastResult.top.t + 40){
+        const st = document.getElementById('saveStatus');
+        if(st) st.textContent = 'Impact must be after the top of the swing. Scrub further into the downswing.';
+        return;
+      }
       let frame = nearestSample(tMs);
       if(!frame){
-        // Build a lightweight frame at this time from last seek
         frame = { t: tMs, lms: null, wristY: null };
       } else {
         frame = Object.assign({}, frame, { t: tMs });
       }
-      // Prefer landmarks from nearest sample; seek video to exact scrub time
       lastResult.impact = frame;
-      // Recompute tempo with new impact for display
+
+      // Rebuild metrics + coaching tips with the corrected impact time
       try{
-        const m = lastResult.metrics;
-        if(m && lastResult.top && lastResult.address){
-          const backMs = Math.max(50, lastResult.top.t - lastResult.address.t);
-          const downMs = Math.max(30, frame.t - lastResult.top.t);
-          m.backMs = backMs; m.downMs = downMs; m.tempoRatio = backMs / downMs;
-          m.display = m.display || {};
-          m.display.tempo = m.tempoRatio.toFixed(1) + ':1';
-          const tempoLabel = m.tempoRatio < 2.0 ? 'Quick' : m.tempoRatio > 4.5 ? 'Deliberate' : 'Steady';
-          const el = document.getElementById('mTempo');
-          if(el) el.textContent = tempoLabel;
-          const sub = document.getElementById('mTempoSub');
-          if(sub) sub.textContent = 'transition timing · ' + m.display.tempo;
+        const samples = Array.isArray(lastResult.samples) ? lastResult.samples : [];
+        const address = lastResult.address;
+        const top = lastResult.top;
+        if(address && top){
+          const metrics = (lastResult.view === 'dtl')
+            ? buildDtlMetrics(samples, address, top, frame)
+            : buildFaceOnMetrics(samples, address, top, frame);
+          lastResult.metrics = metrics;
+          applyResultUI(metrics, lastResult.conf || 0);
+          // Keep baseline card in sync (uses tempo etc.)
+          if(typeof renderBaseline === 'function') renderBaseline(metrics);
         }
-      }catch(e){}
+      }catch(e){
+        console.warn('Set impact recompute failed', e);
+      }
+
       document.querySelectorAll('#swingCoachRoot .phaseBtn').forEach(b=>b.classList.toggle('active', b.dataset.phase==='impact'));
       await showAtTime(tMs, 'Impact');
       if(scrubPhaseHint) scrubPhaseHint.textContent = 'Impact (set)';
       const st = document.getElementById('saveStatus');
-      if(st) st.textContent = 'Impact marker updated to ' + (tMs/1000).toFixed(2) + 's. Tempo recalculated.';
+      if(st) st.textContent = 'Impact set to ' + (tMs/1000).toFixed(2) + 's. Tempo, cues, and coaching tips updated.';
     });
   }
 
