@@ -1169,18 +1169,16 @@
       <h2>Score trend</h2>
       <div class="hint" style="margin-top:0;">
         Each <span style="color:#C7A876;font-weight:700;">●</span> tan dot is one round's score
-        relative to par (0 = even par, above the line = over par, below = under par). The
-        <span style="color:#1F3A2E;font-weight:700;">—</span> dark green line is your 5-round
-        rolling average, so it smooths out any one bad or great day — <strong>trending downward
-        is what improvement looks like.</strong> A <span style="color:#C7A876;">○ hollow</span> dot
-        is a 9-hole round, doubled so it plots on the same scale as an 18 — hover it to see your
-        actual score. Small dots along the bottom mark gear changes and practice sessions.
+        relative to par (0 = even par, above the line = over par, below = under par). A
+        <span style="color:#C7A876;">○ hollow</span> dot is a 9-hole round, doubled so it plots
+        on the same scale as an 18 — hover it to see your actual score.
+        <span style="color:#3F6B4A;font-weight:700;">┊ green</span> dashed lines mark practice sessions.
       </div>
       <svg class="chart" id="scoreChart"></svg>
     </div>
     <div class="card">
       <h2>Putts per round</h2>
-      <div class="hint" style="margin-top:0;">Same idea as the score chart — tan dots are individual rounds, the dark green line is your 5-round rolling average. <strong>Trending downward is good</strong> (fewer putts). Hollow dots are 9-hole rounds, doubled to compare against an 18.</div>
+      <div class="hint" style="margin-top:0;">Same idea as the score chart — tan dots are individual rounds. Hollow dots are 9-hole rounds, doubled to compare against an 18. Green dashed lines mark practice sessions.</div>
       <svg class="chart" id="puttsChart"></svg>
     </div>
     <div class="grid2">
@@ -2961,14 +2959,11 @@ function chartXLabels(dates, xAt, h, bottomY){
 }
 
 function trendChart(svgEl, values, dates, opts={}){
-  const hasMarkers = !!(opts.markers && opts.markers.length);
-  const w=380,h=212,padL=34,padR=14,padT=14,padB = hasMarkers ? 46 : 30;
+  const w=380,h=196,padL=34,padR=14,padT=14,padB=30;
   svgEl.setAttribute('viewBox',`0 0 ${w} ${h}`);
   if(values.length===0){ svgEl.innerHTML = `<text x="${w/2}" y="${h/2}" text-anchor="middle" class="chart-label">No data yet</text>`; return; }
-  const rolling = rollingAvg(values, opts.window||5);
-  const allVals = values.concat(rolling.filter(v=>v!=null));
-  let dataMin = Math.min(...allVals, opts.min ?? Math.min(...allVals));
-  let dataMax = Math.max(...allVals, opts.max ?? Math.max(...allVals));
+  let dataMin = Math.min(...values, opts.min ?? Math.min(...values));
+  let dataMax = Math.max(...values, opts.max ?? Math.max(...values));
   if(opts.zero!=null){ dataMin=Math.min(dataMin,opts.zero); dataMax=Math.max(dataMax,opts.zero); }
   const ticks = niceTicks(dataMin, dataMax, 4);
   const min = ticks[0], max = ticks[ticks.length-1];
@@ -2977,7 +2972,6 @@ function trendChart(svgEl, values, dates, opts={}){
   const stepX = values.length>1 ? plotW/(values.length-1) : 0;
   const xAt = i => padL + i*stepX;
   const yAt = v => padT + plotH - ((v-min)/range)*plotH;
-  const markerY = padT + plotH + 14;
   const dateY = h - 8;
   const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
 
@@ -2989,6 +2983,16 @@ function trendChart(svgEl, values, dates, opts={}){
       <text x="${padL-6}" y="${(y+3).toFixed(1)}" text-anchor="end" class="chart-label">${fmt(t)}</text>
       ${isZero ? `<text x="${w-padR}" y="${(y-4).toFixed(1)}" text-anchor="end" class="chart-label">${opts.zeroLabel||'even par'}</text>` : ''}`;
   }).join('');
+
+  let markers = '';
+  if(opts.markers && opts.markers.length){
+    markers = opts.markers.map(m=>{
+      const idx = mapDateToIndex(m.date, dates);
+      if(idx==null) return '';
+      const x = xAt(idx).toFixed(1);
+      return `<g><title>${esc(m.label)}</title><line x1="${x}" y1="${padT}" x2="${x}" y2="${padT+plotH}" stroke="${m.color}" stroke-width="1.5" stroke-dasharray="3,3"/></g>`;
+    }).join('');
+  }
 
   const dots = values.map((v,i)=>{
     const isPartial = opts.partial && opts.partial[i];
@@ -3002,24 +3006,11 @@ function trendChart(svgEl, values, dates, opts={}){
       ? `<g>${title}<circle cx="${cx}" cy="${cy}" r="3" fill="#F5F0E6" stroke="#C7A876" stroke-width="1.5"/></g>`
       : `<g>${title}<circle cx="${cx}" cy="${cy}" r="2.5" fill="#C7A876"/></g>`;
   }).join('');
-  const rollPts = rolling.map((v,i)=> v==null ? null : {x:xAt(i), y:yAt(v)}).filter(Boolean);
-  const rollPath = rollPts.map((c,i)=>(i===0?'M':'L')+c.x.toFixed(1)+','+c.y.toFixed(1)).join(' ');
-
-  let markers = '';
-  if(hasMarkers){
-    markers = opts.markers.map(m=>{
-      const idx = mapDateToIndex(m.date, dates);
-      if(idx==null) return '';
-      const x = xAt(idx);
-      return `<g><title>${esc(m.label)}</title><circle cx="${x.toFixed(1)}" cy="${markerY}" r="3.5" fill="${m.color}" stroke="#F5F0E6" stroke-width="1"/></g>`;
-    }).join('');
-  }
 
   svgEl.innerHTML = `
     ${gridLines}
-    ${dots}
-    ${rollPts.length>1 ? `<path d="${rollPath}" fill="none" stroke="#1F3A2E" stroke-width="2.5"/>` : ''}
     ${markers}
+    ${dots}
     ${chartXLabels(dates, xAt, h, dateY)}
   `;
 }
@@ -3488,15 +3479,11 @@ function renderStats(){
 
   const yearFilter = (document.getElementById('statsYearFilter')||{}).value || 'all';
   const inYear = (d) => yearFilter==='all' || (d||'').startsWith(yearFilter);
-  const gearMarkers = bag.filter(c=>c.dateAdded && inYear(c.dateAdded)).map(c=>({
-    date: c.dateAdded, color:'#C7A876',
-    label: `${c.status==='retired'?'Retired':'Added'} ${c.name}${c.model?' ('+c.model+')':''}`
-  }));
   const practiceMarkers = practice.filter(p=>inYear(p.date)).map(p=>({
     date: p.date, color:'#3F6B4A',
     label: `Practice: ${p.focus}${p.duration?' ('+p.duration+' min)':''}`
   }));
-  trendChart(document.getElementById('scoreChart'), scoreToParChart, dates, {zero:0, zeroLabel:'even par', markers: gearMarkers.concat(practiceMarkers), partial: partialRound, rawValues: scoreToPar});
+  trendChart(document.getElementById('scoreChart'), scoreToParChart, dates, {zero:0, zeroLabel:'even par', markers: practiceMarkers, partial: partialRound, rawValues: scoreToPar});
   trendChart(document.getElementById('puttsChart'), puttsRoundsChart, dates, {partial: partialRound, rawValues: puttsRounds});
   const firPts = firRounds.map((x,i)=>({x,i})).filter(o=>o.x.hit>0||o.x.any);
   const girPts = girRounds.map((x,i)=>({x,i})).filter(o=>o.x.hit>0);
