@@ -862,6 +862,16 @@
   #swingCoachRoot .summary-note{ font-size:12px; color: var(--sc-muted); line-height:1.45; }
   #swingCoachRoot .disclaimer{ font-size:11px; color: var(--sc-muted); line-height:1.45; margin:12px 0 0; }
   #swingCoachRoot .phases{ display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; }
+  #swingCoachRoot .sc-scrub{ margin-top:12px; }
+  #swingCoachRoot .sc-scrub input[type=range]{
+    width:100%; margin:0; accent-color: var(--fairway-deep);
+    height:28px; cursor:pointer;
+  }
+  #swingCoachRoot .sc-scrub-meta{
+    display:flex; justify-content:space-between; align-items:center;
+    margin-top:4px; font-family:'IBM Plex Mono',monospace; font-size:11px; color: var(--sc-muted);
+  }
+  #swingCoachRoot .sc-scrub-meta #scrubPhaseHint{ color: var(--turf); font-weight:600; }
   #swingCoachRoot .phaseBtn{
     flex:1; min-width:72px; border:1px solid var(--sc-line); border-radius:6px;
     background:#fff; color: var(--sc-muted); padding:8px 6px; font-size:11px; font-weight:700; cursor:pointer;
@@ -1515,6 +1525,13 @@
                 <button type="button" class="phaseBtn" data-phase="address">Address</button>
                 <button type="button" class="phaseBtn active" data-phase="top">Top</button>
                 <button type="button" class="phaseBtn" data-phase="impact">Impact</button>
+              </div>
+              <div class="sc-scrub" id="scrubRow" style="display:none">
+                <input type="range" id="coachScrub" min="0" max="1000" value="0" step="1" aria-label="Scrub swing video">
+                <div class="sc-scrub-meta">
+                  <span id="scrubTime">0.00s</span>
+                  <span id="scrubPhaseHint"></span>
+                </div>
               </div>
             </div>
             <div class="controls">
@@ -7215,6 +7232,10 @@ async function init(){
   const progressWrap=document.getElementById('coachProgressWrap');
   const progressBar=document.getElementById('coachProgress');
   const phaseRow=document.getElementById('phaseRow');
+  const scrubRow=document.getElementById('scrubRow');
+  const scrubInput=document.getElementById('coachScrub');
+  const scrubTimeEl=document.getElementById('scrubTime');
+  const scrubPhaseHint=document.getElementById('scrubPhaseHint');
   const diagnostics=document.getElementById('diagnostics');
 
   let view='faceon', coachUrl=null, busy=false, poseReady=false, pose=null, lastResult=null;
@@ -7346,6 +7367,7 @@ async function init(){
     saveBtn.disabled=true;
     document.getElementById('saveStatus').textContent='';
     phaseRow.style.display='none';
+    if(scrubRow) scrubRow.style.display='none';
     octx.clearRect(0,0,overlay.width||1,overlay.height||1);
     resetMetricLabels();
   }
@@ -7653,16 +7675,70 @@ async function init(){
     saveBtn.disabled=false;
   }
 
+  function nearestSample(tMs){
+    const list = (lastResult && Array.isArray(lastResult.samples)) ? lastResult.samples : [];
+    if(!list.length) return null;
+    let best = list[0], bestD = Math.abs(list[0].t - tMs);
+    for(let i=1;i<list.length;i++){
+      const d = Math.abs(list[i].t - tMs);
+      if(d < bestD){ bestD = d; best = list[i]; }
+    }
+    return best;
+  }
+
+  function phaseLabelAt(tMs){
+    if(!lastResult) return '';
+    const pts = [
+      {name:'Address', t: lastResult.address && lastResult.address.t},
+      {name:'Top', t: lastResult.top && lastResult.top.t},
+      {name:'Impact', t: lastResult.impact && lastResult.impact.t}
+    ].filter(p => p.t != null);
+    if(!pts.length) return '';
+    let best = pts[0];
+    pts.forEach(p => { if(Math.abs(p.t - tMs) < Math.abs(best.t - tMs)) best = p; });
+    if(Math.abs(best.t - tMs) < 90) return best.name;
+    if(lastResult.address && lastResult.top && tMs < lastResult.top.t) return 'Backswing';
+    if(lastResult.top && lastResult.impact && tMs < lastResult.impact.t) return 'Downswing';
+    if(lastResult.impact && tMs >= lastResult.impact.t) return 'Follow-through';
+    return '';
+  }
+
+  async function showAtTime(tMs, phaseName){
+    if(!video) return;
+    await seekVideo(video, Math.max(0, tMs / 1000));
+    overlay.width = video.clientWidth || video.videoWidth || 360;
+    overlay.height = video.clientHeight || video.videoHeight || 640;
+    const sample = nearestSample(tMs);
+    if(sample && sample.lms) drawSkeleton(sample.lms, overlay.width, overlay.height);
+    else octx.clearRect(0, 0, overlay.width, overlay.height);
+    if(scrubInput) scrubInput.value = String(Math.round(tMs));
+    if(scrubTimeEl) scrubTimeEl.textContent = (tMs / 1000).toFixed(2) + 's';
+    if(scrubPhaseHint) scrubPhaseHint.textContent = phaseName || phaseLabelAt(tMs);
+  }
+
   async function showPhase(phase){
     if(!lastResult||!lastResult[phase])return;
     document.querySelectorAll('#swingCoachRoot .phaseBtn').forEach(b=>b.classList.toggle('active',b.dataset.phase===phase));
     const frame=lastResult[phase];
-    await seekVideo(video,frame.t/1000);
-    overlay.width=video.clientWidth||video.videoWidth||360;
-    overlay.height=video.clientHeight||video.videoHeight||640;
-    if(frame.lms)drawSkeleton(frame.lms,overlay.width,overlay.height);
+    await showAtTime(frame.t, phase.charAt(0).toUpperCase() + phase.slice(1));
   }
   phaseRow.addEventListener('click',e=>{const btn=e.target.closest('.phaseBtn');if(!btn||!lastResult)return;showPhase(btn.dataset.phase);});
+
+  let scrubSeekTimer = null;
+  if(scrubInput){
+    const onScrub = ()=>{
+      if(!lastResult || busy) return;
+      const tMs = +scrubInput.value || 0;
+      if(scrubTimeEl) scrubTimeEl.textContent = (tMs / 1000).toFixed(2) + 's';
+      if(scrubPhaseHint) scrubPhaseHint.textContent = phaseLabelAt(tMs);
+      // Clear phase-button highlight while free-scrubbing
+      document.querySelectorAll('#swingCoachRoot .phaseBtn').forEach(b=>b.classList.remove('active'));
+      clearTimeout(scrubSeekTimer);
+      scrubSeekTimer = setTimeout(()=>{ showAtTime(tMs); }, 40);
+    };
+    scrubInput.addEventListener('input', onScrub);
+    scrubInput.addEventListener('change', onScrub);
+  }
 
   analyzeBtn.addEventListener('click',async()=>{
     if(busy||!coachUrl)return;
@@ -7695,43 +7771,82 @@ async function init(){
       let addressFrame;
       if(earlyWrist.length){const ys=earlyWrist.map(s=>s.wristY).sort((a,b)=>a-b);const med=ys[Math.floor(ys.length/2)];addressFrame=earlyWrist.reduce((best,s)=>Math.abs(s.wristY-med)<Math.abs(best.wristY-med)?s:best,earlyWrist[0]);}
       else addressFrame=samples[0];
-      const afterTop=wristSamples.filter(s=>s.t>topFrame.t+30);
+      // --- Impact: denser second pass around the downswing, then multi-signal pick ---
+      // Uniform first pass often undersamples the fast downswing. Resample top→~1.2s after.
+      const impactPassStart = topFrame.t / 1000;
+      const impactPassEnd = Math.min((video.duration || impactPassStart + 1.2), impactPassStart + 1.25);
+      const impactPassN = Math.min(24, Math.max(12, Math.round((impactPassEnd - impactPassStart) * 20)));
+      const impactSamples = [];
+      for(let i=0;i<impactPassN;i++){
+        const tSec = impactPassStart + (impactPassEnd - impactPassStart) * (i / Math.max(1, impactPassN - 1));
+        await seekVideo(video, tSec);
+        ctx.drawImage(video, 0, 0, vw, vh);
+        const results = await runPoseOnCanvas(canvas);
+        const lms = results && results.poseLandmarks ? results.poseLandmarks : null;
+        if(lms && lms.length >= 29){
+          impactSamples.push({
+            t: tSec * 1000, lms,
+            shoulder: shoulderAngle(lms), hip: hipAngle(lms), wristY: wristY(lms),
+            headX: headX(lms), spineTilt: spineTiltFromVertical(lms),
+            ankleMid: ankleMid(lms), hipMid: hipMid(lms), shoulderMid: shoulderMid(lms)
+          });
+        }
+        setProgress(0.82 + 0.12 * ((i + 1) / impactPassN));
+      }
+      // Merge denser pass into samples (by time, prefer denser)
+      impactSamples.forEach(s=>{
+        const near = samples.findIndex(x => Math.abs(x.t - s.t) < 25);
+        if(near >= 0) samples[near] = s; else samples.push(s);
+      });
+      samples.sort((a,b)=>a.t-b.t);
+
+      const wristAfterTop = samples.filter(s => s.wristY != null && s.t > topFrame.t + 40);
       let impactFrame;
-      if(afterTop.length){
-        // MediaPipe y grows downward: top-of-swing = low wristY; downswing = rising wristY.
-        // Impact ≈ hands returning near address height, or peak downward speed — not the finish.
-        const addrY = (addressFrame.wristY!=null) ? addressFrame.wristY : (topFrame.wristY+0.12);
-        const lastT = samples[samples.length-1].t;
-        const maxImpactT = topFrame.t + Math.min(1400, Math.max(280, (lastT-topFrame.t)*0.5));
-        const downWindow = afterTop.filter(s=>s.t<=maxImpactT);
-        const pool = downWindow.length ? downWindow : afterTop;
+      if(wristAfterTop.length){
+        const addrY = (addressFrame.wristY != null) ? addressFrame.wristY : (topFrame.wristY + 0.12);
+        const topY = topFrame.wristY;
+        // How far hands eventually drop after the top
+        let maxY = topY;
+        wristAfterTop.forEach(s => { if(s.wristY > maxY) maxY = s.wristY; });
+        const fullDrop = Math.max(0.04, maxY - topY);
 
-        // Peak downward wrist velocity in the early/mid downswing
-        let bestVelI = 0, bestVel = -1;
-        for(let i=1;i<pool.length;i++){
-          const dt=Math.max(8, pool[i].t-pool[i-1].t);
-          const vel=(pool[i].wristY-pool[i-1].wristY)/dt;
-          if(vel>bestVel){ bestVel=vel; bestVelI=i; }
+        // Typical full-swing top→impact is ~0.22–0.42s; keep a soft prior
+        const tPrior = topFrame.t + 300;
+
+        // Score each post-top frame: prefer near address height + high downward speed + near prior time
+        let best = wristAfterTop[0], bestScore = -Infinity;
+        for(let i=0;i<wristAfterTop.length;i++){
+          const s = wristAfterTop[i];
+          const dropFrac = (s.wristY - topY) / fullDrop; // 0 at top, 1 at lowest hands
+          // Impact is usually mid-downswing: hands have dropped ~45–85% of the way, near address
+          const heightErr = Math.abs(s.wristY - addrY);
+          const heightScore = Math.exp(-heightErr * 14); // peak when wrists ≈ address
+          const midDropScore = Math.exp(-Math.pow((dropFrac - 0.62) / 0.28, 2)); // prefer ~62% of total drop
+          let vel = 0;
+          if(i > 0){
+            const dt = Math.max(8, s.t - wristAfterTop[i-1].t);
+            vel = (s.wristY - wristAfterTop[i-1].wristY) / dt; // positive = moving down
+          }
+          const velScore = Math.max(0, Math.min(1.5, vel * 80));
+          const timeScore = Math.exp(-Math.pow((s.t - tPrior) / 220, 2));
+          // Reject very early (still at top) and very late (finish)
+          if(s.t < topFrame.t + 100) continue;
+          if(dropFrac < 0.2) continue;
+          if(dropFrac > 0.95 && s.t > topFrame.t + 700) continue;
+          const score = heightScore * 2.2 + midDropScore * 1.4 + velScore * 1.1 + timeScore * 0.9;
+          if(score > bestScore){ bestScore = score; best = s; }
         }
+        impactFrame = best;
 
-        // First frame where wrists have dropped back to ~address height
-        const crossed = pool.find(s=>s.wristY >= addrY - 0.015);
-
-        if(crossed && crossed.t <= maxImpactT){
-          impactFrame = crossed;
-        }else if(bestVel > 0){
-          // Use a frame slightly after peak velocity (club still presenting through impact)
-          impactFrame = pool[Math.min(pool.length-1, bestVelI + 1)] || pool[bestVelI];
-        }else{
-          impactFrame = pool[Math.min(pool.length-1, Math.floor(pool.length*0.4))];
-        }
-
-        // Guard: impact must be meaningfully after top
-        if(impactFrame.t < topFrame.t + 80){
-          impactFrame = pool.find(s=>s.t>=topFrame.t+120) || pool[Math.min(2, pool.length-1)] || impactFrame;
+        // If scoring failed soft, fall back to closest-to-address in the 0.15–0.55s window after top
+        if(bestScore < 0.5){
+          const win = wristAfterTop.filter(s => s.t >= topFrame.t + 150 && s.t <= topFrame.t + 550);
+          if(win.length){
+            impactFrame = win.reduce((a,b)=> Math.abs(b.wristY-addrY) < Math.abs(a.wristY-addrY) ? b : a, win[0]);
+          }
         }
       } else {
-        impactFrame = samples[samples.length-1];
+        impactFrame = samples[samples.length - 1];
       }
 
       const metrics=view==='dtl'?buildDtlMetrics(samples,addressFrame,topFrame,impactFrame):buildFaceOnMetrics(samples,addressFrame,topFrame,impactFrame);
@@ -7740,7 +7855,18 @@ async function init(){
       else{conf+=metrics.tiltChange!=null||metrics.tiltAddr!=null?10:0;conf+=metrics.sway!=null?8:0;}
       conf=Math.max(22,Math.min(92,Math.round(conf)));
       applyResultUI(metrics,conf);
-      lastResult={metrics,conf,view,address:addressFrame,top:topFrame,impact:impactFrame,samples:samples.length};
+      lastResult={metrics,conf,view,address:addressFrame,top:topFrame,impact:impactFrame,samples,sampleCount:samples.length};
+      // Scrubber: full clip, skeleton from nearest analyzed frame
+      if(scrubRow && scrubInput){
+        const durMs = Math.max(100, (video.duration || 3) * 1000);
+        scrubInput.min = '0';
+        scrubInput.max = String(Math.round(durMs));
+        scrubInput.step = '20';
+        scrubInput.value = String(Math.round(topFrame.t));
+        scrubRow.style.display = 'block';
+        if(scrubTimeEl) scrubTimeEl.textContent = (topFrame.t/1000).toFixed(2) + 's';
+        if(scrubPhaseHint) scrubPhaseHint.textContent = 'Top';
+      }
       writeCoachHistory({
         id:uid(),date:todayISO(),view,
         tempo:metrics.tempoRatio,
