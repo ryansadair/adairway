@@ -789,15 +789,15 @@
     font-family:'IBM Plex Mono',monospace; font-size:11px; color: var(--sc-muted);
   }
   #swingCoachRoot .stage{
-    position:relative; aspect-ratio:9/14; max-height:min(62vh,560px);
-    min-height: 280px;
+    position:relative; width:100%;
+    aspect-ratio:3/4;
+    max-height:min(72vh,680px);
+    min-height: 300px;
     background: var(--sc-stage); overflow:hidden;
   }
-  @media(min-width:800px){
-    #swingCoachRoot .stage{ aspect-ratio:3/4; max-height:min(70vh,620px); }
-  }
   #swingCoachRoot .stage video{
-    width:100%; height:100%; object-fit:contain; display:block; background: var(--sc-stage);
+    width:100%; height:100%; object-fit:contain; object-position:center center;
+    display:block; background: var(--sc-stage);
   }
   #swingCoachRoot .stage canvas{
     position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none;
@@ -1483,8 +1483,6 @@
     
     <div class="subview" id="subview-rangelab">
       <div id="swingCoachRoot">
-        <p class="sc-lede">Upload one swing and I’ll give you <strong>one clear thing to work on next</strong>, plus what to keep. The movement metrics are <strong>2D projections</strong> from on-device pose estimation — useful practice trends, not a 3D lesson or launch monitor.</p>
-
         <div class="views" role="radiogroup" aria-label="Camera view">
           <button type="button" class="viewCard active" data-view="faceon" id="viewFaceOn">
             <strong>Face-on</strong>
@@ -7358,6 +7356,14 @@ async function init(){
     coachUrl=URL.createObjectURL(f);
     video.src=coachUrl;video.muted=true;
     try{await video.play();video.pause();video.currentTime=0;}catch(e){}
+    // Size the stage to the clip so the frame fills the container (no letterbox gaps)
+    try{
+      const vw=video.videoWidth||0, vh=video.videoHeight||0;
+      const stageEl=document.querySelector('#swingCoachRoot .stage');
+      if(stageEl && vw>0 && vh>0){
+        stageEl.style.aspectRatio = vw + ' / ' + vh;
+      }
+    }catch(e){}
     analyzeBtn.disabled=false;clearBtn.disabled=false;
     stateEl.textContent='Loaded';
     hud.innerHTML='<b>READY</b> — '+f.name+(video.duration?(' · '+video.duration.toFixed(1)+'s'):'');
@@ -7371,6 +7377,10 @@ async function init(){
     fileInput.value='';
     if(coachUrl){URL.revokeObjectURL(coachUrl);coachUrl=null;}
     video.removeAttribute('src');video.load();
+    try{
+      const stageEl=document.querySelector('#swingCoachRoot .stage');
+      if(stageEl) stageEl.style.aspectRatio='';
+    }catch(e){}
     analyzeBtn.disabled=true;clearBtn.disabled=true;
     stateEl.textContent='Ready';
     hud.innerHTML='<b>Setup</b> — Pick a view, then upload a 2–6 second clip of one swing. Full body in frame, good light.';
@@ -7665,7 +7675,7 @@ async function init(){
       const duration=video.duration||3,vw=video.videoWidth||720,vh=video.videoHeight||1280;
       const canvas=document.createElement('canvas');canvas.width=vw;canvas.height=vh;
       const ctx=canvas.getContext('2d',{willReadFrequently:true});
-      const nFrames=Math.min(28,Math.max(16,Math.round(duration*8)));const dt=duration/nFrames;
+      const nFrames=Math.min(36,Math.max(20,Math.round(duration*10)));const dt=duration/nFrames;
       for(let i=0;i<nFrames;i++){
         const t=i*dt;await seekVideo(video,t);ctx.drawImage(video,0,0,vw,vh);
         const results=await runPoseOnCanvas(canvas);
@@ -7685,10 +7695,44 @@ async function init(){
       let addressFrame;
       if(earlyWrist.length){const ys=earlyWrist.map(s=>s.wristY).sort((a,b)=>a-b);const med=ys[Math.floor(ys.length/2)];addressFrame=earlyWrist.reduce((best,s)=>Math.abs(s.wristY-med)<Math.abs(best.wristY-med)?s:best,earlyWrist[0]);}
       else addressFrame=samples[0];
-      const afterTop=wristSamples.filter(s=>s.t>topFrame.t+40);
+      const afterTop=wristSamples.filter(s=>s.t>topFrame.t+30);
       let impactFrame;
-      if(afterTop.length){const riseTarget=topFrame.wristY+(afterTop[afterTop.length-1].wristY-topFrame.wristY)*0.55;impactFrame=afterTop.find(s=>s.wristY>=riseTarget)||afterTop[Math.min(2,afterTop.length-1)];}
-      else impactFrame=samples[samples.length-1];
+      if(afterTop.length){
+        // MediaPipe y grows downward: top-of-swing = low wristY; downswing = rising wristY.
+        // Impact ≈ hands returning near address height, or peak downward speed — not the finish.
+        const addrY = (addressFrame.wristY!=null) ? addressFrame.wristY : (topFrame.wristY+0.12);
+        const lastT = samples[samples.length-1].t;
+        const maxImpactT = topFrame.t + Math.min(1400, Math.max(280, (lastT-topFrame.t)*0.5));
+        const downWindow = afterTop.filter(s=>s.t<=maxImpactT);
+        const pool = downWindow.length ? downWindow : afterTop;
+
+        // Peak downward wrist velocity in the early/mid downswing
+        let bestVelI = 0, bestVel = -1;
+        for(let i=1;i<pool.length;i++){
+          const dt=Math.max(8, pool[i].t-pool[i-1].t);
+          const vel=(pool[i].wristY-pool[i-1].wristY)/dt;
+          if(vel>bestVel){ bestVel=vel; bestVelI=i; }
+        }
+
+        // First frame where wrists have dropped back to ~address height
+        const crossed = pool.find(s=>s.wristY >= addrY - 0.015);
+
+        if(crossed && crossed.t <= maxImpactT){
+          impactFrame = crossed;
+        }else if(bestVel > 0){
+          // Use a frame slightly after peak velocity (club still presenting through impact)
+          impactFrame = pool[Math.min(pool.length-1, bestVelI + 1)] || pool[bestVelI];
+        }else{
+          impactFrame = pool[Math.min(pool.length-1, Math.floor(pool.length*0.4))];
+        }
+
+        // Guard: impact must be meaningfully after top
+        if(impactFrame.t < topFrame.t + 80){
+          impactFrame = pool.find(s=>s.t>=topFrame.t+120) || pool[Math.min(2, pool.length-1)] || impactFrame;
+        }
+      } else {
+        impactFrame = samples[samples.length-1];
+      }
 
       const metrics=view==='dtl'?buildDtlMetrics(samples,addressFrame,topFrame,impactFrame):buildFaceOnMetrics(samples,addressFrame,topFrame,impactFrame);
       let conf=38;conf+=Math.min(24,samples.length*1.1);conf+=(metrics.tempoRatio>0.5&&metrics.tempoRatio<7)?10:0;
