@@ -1263,7 +1263,6 @@
           <button class="btn outline" id="gpsBtn" type="button" style="min-width:132px;">Get distance</button>
           <button class="btn outline" id="aerialViewBtn" type="button" style="margin-left:6px;min-width:132px;">Aerial view</button>
           <div id="gpsResult" class="hint" style="margin-top:8px;margin-bottom:8px;"></div>
-          <button class="del" id="gpsSaveBtn" type="button">Save my current spot as this hole's green</button>
         </div>
       </div>
 
@@ -4618,16 +4617,11 @@ function updateGpsAvailability(){
   currentApiCourseId = (c && c.apiCourseId) ? c.apiCourseId : null;
   const btn = document.getElementById('gpsBtn');
   const result = document.getElementById('gpsResult');
-  const saveBtn = document.getElementById('gpsSaveBtn');
   if(!btn) return;
   btn.disabled = false;
   const holeNum = playHoles[currentHole] ? playHoles[currentHole].hole : null;
   const hasManual = c && Array.isArray(c.greens) && holeNum && c.greens[holeNum-1];
-  result.textContent = hasManual ? 'You have a saved green location for this hole.' : '';
-  // Only offer "save my spot" when this hole doesn't already have a green saved —
-  // once one exists, an accidental tap here would silently overwrite good data.
-  // Fixing an existing pin is a deliberate trip to the Courses tab editor instead.
-  if(saveBtn) saveBtn.style.display = hasManual ? 'none' : '';
+  if(result) result.textContent = hasManual ? 'You have a saved green location for this hole.' : '';
 }
 function extractFeatureArray(data){
   if(Array.isArray(data)) return data;
@@ -4693,36 +4687,7 @@ document.getElementById('gpsBtn').addEventListener('click', ()=>{
       }catch(err){}
     }
 
-    resultEl.textContent = `No green location on file for hole ${holeNum} yet. Stand near the green and tap "Save my current spot" below — only needs doing once, ever, per hole.`;
-  }, ()=>{
-    resultEl.textContent = 'Location permission denied or unavailable.';
-  }, {enableHighAccuracy:true, timeout:8000});
-});
-
-async function saveGreenForCurrentHole(lat, lng, source){
-  const courseName = document.getElementById('pl-course').value;
-  if(!courseName.trim()) return { ok:false, message:'Select a course above first.' };
-  const holeNum = playHoles[currentHole].hole;
-  const course = getOrCreateCourseByName(courseName);
-  if(!Array.isArray(course.greens)) course.greens = Array(18).fill(null);
-  course.greens[holeNum-1] = { lat, lng, savedAt: Date.now(), source: source || 'manual' };
-  await saveList('courses', courses);
-  populatePresetDropdown();
-  return { ok:true, course, holeNum };
-}
-
-document.getElementById('gpsSaveBtn').addEventListener('click', ()=>{
-  const resultEl = document.getElementById('gpsResult');
-  if(!navigator.geolocation){ resultEl.textContent = 'Geolocation not supported in this browser.'; return; }
-  if(!document.getElementById('pl-course').value.trim()){ resultEl.textContent = 'Select a course above first.'; return; }
-  resultEl.textContent = 'Getting your location…';
-  navigator.geolocation.getCurrentPosition(async pos=>{
-    const {latitude, longitude} = pos.coords;
-    const res = await saveGreenForCurrentHole(latitude, longitude, 'gps');
-    if(res.ok) updateGpsAvailability();
-    resultEl.textContent = res.ok
-      ? `Saved — hole ${res.holeNum}'s green is set for ${res.course.name}. GPS will use this from now on, no internet required.`
-      : res.message;
+    resultEl.textContent = `No green location on file for hole ${holeNum} yet. Map greens on the Courses tab (map greens / edit greens), then try again.`;
   }, ()=>{
     resultEl.textContent = 'Location permission denied or unavailable.';
   }, {enableHighAccuracy:true, timeout:8000});
