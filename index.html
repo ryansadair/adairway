@@ -729,6 +729,14 @@
   }
 
   /* ===== Swing Coach (integrated) ===== */
+  /* Nested <section> tags would be hidden by global section{display:none} */
+  #swingCoachRoot section.sc-card,
+  #swingCoachRoot section {
+    display: block;
+  }
+  #swingCoachRoot aside.sc-card {
+    display: block;
+  }
   #swingCoachRoot{
     --sc-bg: var(--paper-light);
     --sc-line: var(--line);
@@ -782,6 +790,7 @@
   }
   #swingCoachRoot .stage{
     position:relative; aspect-ratio:9/14; max-height:min(62vh,560px);
+    min-height: 280px;
     background: var(--sc-stage); overflow:hidden;
   }
   @media(min-width:800px){
@@ -1490,7 +1499,7 @@
         </div>
 
         <div class="sc-grid">
-          <section class="sc-card">
+          <div class="sc-card">
             <div class="sc-head"><strong id="stageTitle">Face-on video</strong><span class="state" id="coachState">Ready</span></div>
             <div class="stage">
               <video id="coachVideo" playsinline muted></video>
@@ -1514,7 +1523,7 @@
               <button class="sc-btn primary" id="coachAnalyze" disabled>Analyze swing</button>
               <button class="sc-btn" id="coachClear" disabled>Clear</button>
             </div>
-          </section>
+          </div>
 
           <aside class="sc-card">
             <div class="sc-head"><strong>Results</strong><span class="state" id="confLabel">—</span></div>
@@ -1544,15 +1553,15 @@
             </div>
           </aside>
 
-          <section class="sc-card wide">
+          <div class="sc-card wide">
             <div class="sc-head"><strong>Setup checklist</strong><span class="state" id="viewChecklistLabel">Face-on</span></div>
             <div class="panel"><ul class="setup" id="setupList"></ul></div>
-          </section>
+          </div>
 
-          <section class="sc-card wide">
+          <div class="sc-card wide">
             <div class="sc-head"><strong>Diagnostics</strong><span class="state" id="diagState">Idle</span></div>
             <div class="panel"><pre class="diag" id="diagnostics">Pick Face-on or Down-the-line, then upload a clip.</pre></div>
-          </section>
+          </div>
         </div>
       </div>
     </div>
