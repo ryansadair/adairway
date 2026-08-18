@@ -3749,6 +3749,35 @@ function renderStats(){
   renderAdvancedStats(withScores);
 }
 
+
+// Import swing-coach sessions queued from range-lab.html (same origin localStorage)
+async function importCoachPracticeQueue(){
+  let list = [];
+  try{
+    list = JSON.parse(localStorage.getItem('adairway_coach_practice_queue') || '[]');
+  }catch(e){ list = []; }
+  if(!Array.isArray(list) || list.length === 0) return 0;
+  let added = 0;
+  list.forEach(entry=>{
+    if(!entry || !entry.focus) return;
+    if(entry.id && practice.some(p=>p.id === entry.id)) return;
+    practice.push({
+      id: entry.id || uid(),
+      date: entry.date || todayISO(),
+      focus: entry.focus,
+      duration: entry.duration != null ? entry.duration : null,
+      notes: entry.notes || ''
+    });
+    added++;
+  });
+  if(added > 0){
+    await saveList('practice', practice);
+    try{ localStorage.removeItem('adairway_coach_practice_queue'); }catch(e){}
+    if(typeof renderPractice === 'function') renderPractice();
+  }
+  return added;
+}
+
 // ---------- PRACTICE ----------
 let editingPracticeId = null;
 
@@ -6888,6 +6917,7 @@ async function init(){
 
   populatePresetDropdown();
   renderRounds();
+  await importCoachPracticeQueue();
   renderPractice();
   renderBag();
   renderCourses();
