@@ -33,7 +33,7 @@ h1{font-family:'Fraunces',serif;font-size:26px;margin:0 0 6px;font-weight:700}
 .head{padding:12px 15px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px}
 .head strong{font-size:11px;text-transform:uppercase;letter-spacing:.09em}
 .head .state{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted)}
-.stage{position:relative;width:100%;max-height:min(62vh,560px);background:#0A140F;overflow:hidden;aspect-ratio:9/14}
+.stage{position:relative;width:100%;max-height:min(62vh,560px);background:#0A140F;overflow:hidden;aspect-ratio:9/14;transition:border 0.2s}
 @media(min-width:800px){.stage{max-height:min(70vh,620px)}}
 .stage video{width:100%;height:100%;object-fit:contain;display:block;background:#0A140F}
 .stage canvas{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
@@ -115,6 +115,11 @@ h1{font-family:'Fraunces',serif;font-size:26px;margin:0 0 6px;font-weight:700}
           <button type="button" class="phaseBtn active" data-phase="top">Top</button>
           <button type="button" class="phaseBtn" data-phase="impact">Impact</button>
         </div>
+        <!-- NEW SCRUBBER -->
+        <div style="margin-top:10px;display:flex;align-items:center;gap:10px;">
+          <input type="range" id="videoScrubber" min="0" max="1000" value="0" style="flex:1;height:4px;background:var(--line);border-radius:2px;-webkit-appearance:none;appearance:none;">
+          <span id="scrubberTime" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);min-width:44px;">0:00</span>
+        </div>
       </div>
       <div class="controls">
         <button class="btn primary" id="coachAnalyze" disabled>Analyze swing</button>
@@ -178,10 +183,12 @@ h1{font-family:'Fraunces',serif;font-size:26px;margin:0 0 6px;font-weight:700}
   const phaseRow=document.getElementById('phaseRow');
   const diagnostics=document.getElementById('diagnostics');
   const stageEl=document.getElementById('videoStage');
+  const scrubber=document.getElementById('videoScrubber');
+  const scrubberTime=document.getElementById('scrubberTime');
 
   let view='faceon', coachUrl=null, busy=false, poseReady=false, pose=null, lastResult=null;
 
-  // ----- FIX 1: dynamic stage aspect ratio -----
+  // ---- Dynamic aspect ratio ----
   function resizeStage() {
     const vw = video.videoWidth;
     const vh = video.videoHeight;
@@ -190,6 +197,67 @@ h1{font-family:'Fraunces',serif;font-size:26px;margin:0 0 6px;font-weight:700}
     }
   }
   video.addEventListener('loadedmetadata', resizeStage);
+
+  // ---- Scrubber ----
+  video.addEventListener('loadedmetadata', () => {
+    scrubber.max = Math.floor(video.duration * 1000);
+  });
+  video.addEventListener('timeupdate', () => {
+    if (document.activeElement !== scrubber) {
+      scrubber.value = Math.floor(video.currentTime * 1000);
+    }
+    scrubberTime.textContent = formatTime(video.currentTime);
+  });
+  scrubber.addEventListener('input', () => {
+    const t = +scrubber.value / 1000;
+    if (Number.isFinite(t) && t <= video.duration) {
+      video.currentTime = t;
+    }
+  });
+  function formatTime(s) {
+    s = Math.round(s);
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return m + ':' + String(sec).padStart(2, '0');
+  }
+
+  // ---- Keyboard shortcuts ----
+  document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT') return;
+    if (e.key === ' ' || e.key === 'Space') {
+      e.preventDefault();
+      if (video.paused) video.play();
+      else video.pause();
+    }
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      video.currentTime = Math.min(video.duration, video.currentTime + 0.05);
+    }
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      video.currentTime = Math.max(0, video.currentTime - 0.05);
+    }
+  });
+
+  // ---- Drag and drop ----
+  stageEl.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    stageEl.style.border = '2px solid var(--green)';
+  });
+  stageEl.addEventListener('dragleave', () => {
+    stageEl.style.border = 'none';
+  });
+  stageEl.addEventListener('drop', (e) => {
+    e.preventDefault();
+    stageEl.style.border = 'none';
+    const files = e.dataTransfer.files;
+    if (files.length && files[0].type.startsWith('video/')) {
+      const dt = new DataTransfer();
+      dt.items.add(files[0]);
+      fileInput.files = dt.files;
+      fileInput.dispatchEvent(new Event('change'));
+    }
+  });
 
   const SETUP={
     faceon:[
@@ -278,13 +346,84 @@ h1{font-family:'Fraunces',serif;font-size:26px;margin:0 0 6px;font-weight:700}
   }
   function shoulderWidth(lms){const ls=lms[LM.L_SHOULDER],rs=lms[LM.R_SHOULDER];if(!visible(ls)||!visible(rs))return null;return Math.hypot(ls.x-rs.x,ls.y-rs.y);}
 
-  function drawSkeleton(lms,w,h){
-    octx.clearRect(0,0,w,h);if(!lms||!lms.length)return;
-    const connections=[[LM.L_SHOULDER,LM.R_SHOULDER],[LM.L_SHOULDER,LM.L_ELBOW],[LM.L_ELBOW,LM.L_WRIST],[LM.R_SHOULDER,LM.R_ELBOW],[LM.R_ELBOW,LM.R_WRIST],[LM.L_SHOULDER,LM.L_HIP],[LM.R_SHOULDER,LM.R_HIP],[LM.L_HIP,LM.R_HIP],[LM.L_HIP,LM.L_KNEE],[LM.L_KNEE,LM.L_ANKLE],[LM.R_HIP,LM.R_KNEE],[LM.R_KNEE,LM.R_ANKLE]];
-    octx.lineWidth=3;octx.strokeStyle='rgba(123,174,134,0.92)';octx.lineCap='round';
-    connections.forEach(([i,j])=>{const a=lms[i],b=lms[j];if(!visible(a,0.3)||!visible(b,0.3))return;octx.beginPath();octx.moveTo(a.x*w,a.y*h);octx.lineTo(b.x*w,b.y*h);octx.stroke();});
-    octx.fillStyle='#F5F0E6';
-    [LM.NOSE,LM.L_SHOULDER,LM.R_SHOULDER,LM.L_ELBOW,LM.R_ELBOW,LM.L_WRIST,LM.R_WRIST,LM.L_HIP,LM.R_HIP,LM.L_KNEE,LM.R_KNEE,LM.L_ANKLE,LM.R_ANKLE].forEach(i=>{const p=lms[i];if(!visible(p,0.3))return;octx.beginPath();octx.arc(p.x*w,p.y*h,4,0,Math.PI*2);octx.fill();});
+  // ---- UPDATED drawSkeleton with angle lines ----
+  function drawSkeleton(lms, w, h) {
+    octx.clearRect(0, 0, w, h);
+    if (!lms || !lms.length) return;
+
+    // Standard skeleton
+    const connections = [
+      [LM.L_SHOULDER, LM.R_SHOULDER], [LM.L_SHOULDER, LM.L_ELBOW],
+      [LM.L_ELBOW, LM.L_WRIST], [LM.R_SHOULDER, LM.R_ELBOW],
+      [LM.R_ELBOW, LM.R_WRIST], [LM.L_SHOULDER, LM.L_HIP],
+      [LM.R_SHOULDER, LM.R_HIP], [LM.L_HIP, LM.R_HIP],
+      [LM.L_HIP, LM.L_KNEE], [LM.L_KNEE, LM.L_ANKLE],
+      [LM.R_HIP, LM.R_KNEE], [LM.R_KNEE, LM.R_ANKLE]
+    ];
+    octx.lineWidth = 3;
+    octx.strokeStyle = 'rgba(123,174,134,0.92)';
+    octx.lineCap = 'round';
+    connections.forEach(([i, j]) => {
+      const a = lms[i], b = lms[j];
+      if (!visible(a, 0.3) || !visible(b, 0.3)) return;
+      octx.beginPath();
+      octx.moveTo(a.x * w, a.y * h);
+      octx.lineTo(b.x * w, b.y * h);
+      octx.stroke();
+    });
+
+    // Angle lines
+    const ls = lms[LM.L_SHOULDER], rs = lms[LM.R_SHOULDER];
+    const lh = lms[LM.L_HIP], rh = lms[LM.R_HIP];
+    const nose = lms[LM.NOSE];
+
+    // Shoulder line (yellow)
+    if (visible(ls, 0.3) && visible(rs, 0.3)) {
+      octx.beginPath();
+      octx.moveTo(ls.x * w, ls.y * h);
+      octx.lineTo(rs.x * w, rs.y * h);
+      octx.strokeStyle = '#F5D76E';
+      octx.lineWidth = 2.5;
+      octx.setLineDash([]);
+      octx.stroke();
+    }
+
+    // Hip line (cyan)
+    if (visible(lh, 0.3) && visible(rh, 0.3)) {
+      octx.beginPath();
+      octx.moveTo(lh.x * w, lh.y * h);
+      octx.lineTo(rh.x * w, rh.y * h);
+      octx.strokeStyle = '#5DADE2';
+      octx.lineWidth = 2.5;
+      octx.setLineDash([]);
+      octx.stroke();
+    }
+
+    // Spine line (red dashed) – from hip center to shoulder center
+    const hm = mid(lh, rh);
+    const sm = mid(ls, rs);
+    if (visible(hm, 0.3) && visible(sm, 0.3)) {
+      octx.beginPath();
+      octx.moveTo(hm.x * w, hm.y * h);
+      octx.lineTo(sm.x * w, sm.y * h);
+      octx.strokeStyle = '#E74C3C';
+      octx.lineWidth = 2;
+      octx.setLineDash([6, 5]);
+      octx.stroke();
+      octx.setLineDash([]);
+    }
+
+    // Landmarks
+    octx.fillStyle = '#F5F0E6';
+    [LM.NOSE, LM.L_SHOULDER, LM.R_SHOULDER, LM.L_ELBOW, LM.R_ELBOW,
+     LM.L_WRIST, LM.R_WRIST, LM.L_HIP, LM.R_HIP, LM.L_KNEE, LM.R_KNEE,
+     LM.L_ANKLE, LM.R_ANKLE].forEach(i => {
+      const p = lms[i];
+      if (!visible(p, 0.3)) return;
+      octx.beginPath();
+      octx.arc(p.x * w, p.y * h, 4, 0, Math.PI * 2);
+      octx.fill();
+    });
   }
 
   function seekVideo(v,t){
@@ -633,6 +772,10 @@ h1{font-family:'Fraunces',serif;font-size:26px;margin:0 0 6px;font-weight:700}
     try{
       await ensurePose();setProgress(0.1);
       const duration=video.duration||3,vw=video.videoWidth||720,vh=video.videoHeight||1280;
+      // ---- Long clip warning ----
+      if (duration > 8) {
+        hud.innerHTML = '<b>WARNING</b> — Clip is ' + duration.toFixed(1) + 's. I\'ll analyze the middle 6 seconds. For best results, upload a shorter clip (2–6s) of just the swing.';
+      }
       const canvas=document.createElement('canvas');canvas.width=vw;canvas.height=vh;
       const ctx=canvas.getContext('2d',{willReadFrequently:true});
       const nFrames=Math.min(28,Math.max(16,Math.round(duration*8)));const dt=duration/nFrames;
@@ -656,11 +799,10 @@ h1{font-family:'Fraunces',serif;font-size:26px;margin:0 0 6px;font-weight:700}
       if(earlyWrist.length){const ys=earlyWrist.map(s=>s.wristY).sort((a,b)=>a-b);const med=ys[Math.floor(ys.length/2)];addressFrame=earlyWrist.reduce((best,s)=>Math.abs(s.wristY-med)<Math.abs(best.wristY-med)?s:best,earlyWrist[0]);}
       else addressFrame=samples[0];
 
-      // ----- FIX 2: Impact detection — find the lowest hands after the top -----
+      // ---- FIXED IMPACT: lowest hands after top ----
       const afterTop = wristSamples.filter(s => s.t > topFrame.t + 40);
       let impactFrame;
       if (afterTop.length) {
-        // The frame with the maximum wristY = lowest hand position = impact
         impactFrame = afterTop.reduce((a, b) => (a.wristY > b.wristY ? a : b));
       } else {
         impactFrame = samples[samples.length - 1];
@@ -693,6 +835,9 @@ h1{font-family:'Fraunces',serif;font-size:26px;margin:0 0 6px;font-weight:700}
       hud.innerHTML='<b>DONE</b> — Tempo '+metrics.display.tempo+' · Conf '+conf+'%';
       diagnostics.textContent=['View: '+(view==='dtl'?'Down-the-line':'Face-on'),'Frames with pose: '+samples.length+' / '+nFrames,'Address @ '+(addressFrame.t/1000).toFixed(2)+'s · Top @ '+(topFrame.t/1000).toFixed(2)+'s · Impact ~'+(impactFrame.t/1000).toFixed(2)+'s','Backswing: '+Math.round(metrics.backMs)+' ms · Downswing: '+Math.round(metrics.downMs)+' ms','Tempo: '+metrics.display.tempo,'Confidence: '+conf+'%'].join('\n');
       document.getElementById('diagState').textContent='Complete';
+      // Auto-play after analyze
+      video.currentTime = 0;
+      video.play();
     }catch(e){
       stateEl.textContent='Error';hud.innerHTML='<b>FAILED</b> — '+(e.message||e);
       document.getElementById('cuesList').innerHTML='<li>'+(e.message||e)+'</li>';
