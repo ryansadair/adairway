@@ -33,8 +33,8 @@ h1{font-family:'Fraunces',serif;font-size:26px;margin:0 0 6px;font-weight:700}
 .head{padding:12px 15px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px}
 .head strong{font-size:11px;text-transform:uppercase;letter-spacing:.09em}
 .head .state{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted)}
-.stage{position:relative;aspect-ratio:9/14;max-height:min(62vh,560px);background:#0A140F;overflow:hidden}
-@media(min-width:800px){.stage{aspect-ratio:3/4;max-height:min(70vh,620px)}}
+.stage{position:relative;width:100%;max-height:min(62vh,560px);background:#0A140F;overflow:hidden;aspect-ratio:9/14}
+@media(min-width:800px){.stage{max-height:min(70vh,620px)}}
 .stage video{width:100%;height:100%;object-fit:contain;display:block;background:#0A140F}
 .stage canvas{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
 .hud{position:absolute;left:10px;right:10px;bottom:10px;background:rgba(0,0,0,.72);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:8px 10px;font-size:11.5px;line-height:1.4;color:var(--muted)}
@@ -98,7 +98,7 @@ h1{font-family:'Fraunces',serif;font-size:26px;margin:0 0 6px;font-weight:700}
   <div class="grid">
     <section class="card">
       <div class="head"><strong id="stageTitle">Face-on video</strong><span class="state" id="coachState">Ready</span></div>
-      <div class="stage">
+      <div class="stage" id="videoStage">
         <video id="coachVideo" playsinline muted></video>
         <canvas id="coachOverlay"></canvas>
         <div class="hud" id="coachHud"><b>Setup</b> — Pick a view, then upload a 2–6 second clip of one swing. Full body in frame, good light.</div>
@@ -177,8 +177,19 @@ h1{font-family:'Fraunces',serif;font-size:26px;margin:0 0 6px;font-weight:700}
   const progressBar=document.getElementById('coachProgress');
   const phaseRow=document.getElementById('phaseRow');
   const diagnostics=document.getElementById('diagnostics');
+  const stageEl=document.getElementById('videoStage');
 
   let view='faceon', coachUrl=null, busy=false, poseReady=false, pose=null, lastResult=null;
+
+  // ----- FIX 1: dynamic stage aspect ratio -----
+  function resizeStage() {
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (vw && vh) {
+      stageEl.style.aspectRatio = vw / vh;
+    }
+  }
+  video.addEventListener('loadedmetadata', resizeStage);
 
   const SETUP={
     faceon:[
@@ -644,10 +655,16 @@ h1{font-family:'Fraunces',serif;font-size:26px;margin:0 0 6px;font-weight:700}
       let addressFrame;
       if(earlyWrist.length){const ys=earlyWrist.map(s=>s.wristY).sort((a,b)=>a-b);const med=ys[Math.floor(ys.length/2)];addressFrame=earlyWrist.reduce((best,s)=>Math.abs(s.wristY-med)<Math.abs(best.wristY-med)?s:best,earlyWrist[0]);}
       else addressFrame=samples[0];
-      const afterTop=wristSamples.filter(s=>s.t>topFrame.t+40);
+
+      // ----- FIX 2: Impact detection — find the lowest hands after the top -----
+      const afterTop = wristSamples.filter(s => s.t > topFrame.t + 40);
       let impactFrame;
-      if(afterTop.length){const riseTarget=topFrame.wristY+(afterTop[afterTop.length-1].wristY-topFrame.wristY)*0.55;impactFrame=afterTop.find(s=>s.wristY>=riseTarget)||afterTop[Math.min(2,afterTop.length-1)];}
-      else impactFrame=samples[samples.length-1];
+      if (afterTop.length) {
+        // The frame with the maximum wristY = lowest hand position = impact
+        impactFrame = afterTop.reduce((a, b) => (a.wristY > b.wristY ? a : b));
+      } else {
+        impactFrame = samples[samples.length - 1];
+      }
 
       const metrics=view==='dtl'?buildDtlMetrics(samples,addressFrame,topFrame,impactFrame):buildFaceOnMetrics(samples,addressFrame,topFrame,impactFrame);
       let conf=38;conf+=Math.min(24,samples.length*1.1);conf+=(metrics.tempoRatio>0.5&&metrics.tempoRatio<7)?10:0;
