@@ -326,6 +326,13 @@
   .dot{width:9px;height:9px;border-radius:50%;background:var(--line);flex-shrink:0;}
   .dot.done{background:var(--turf);}
   .dot.current{background:var(--flag);width:12px;height:12px;}
+  .round-total{display:flex;justify-content:center;align-items:baseline;gap:8px;margin:-8px 0 12px;font-family:'IBM Plex Mono',monospace;}
+  .round-total .rt-thru{font-size:11.5px;color:var(--graphite);opacity:0.65;text-transform:uppercase;letter-spacing:0.06em;}
+  .round-total .rt-strokes{font-size:13px;color:var(--graphite);opacity:0.8;}
+  .round-total .rt-topar{font-size:15px;font-weight:600;}
+  .round-total .rt-topar.over{color:var(--flag);}
+  .round-total .rt-topar.under{color:var(--turf);}
+  .round-total .rt-topar.even{color:var(--graphite);opacity:0.8;}
   .hole-card{text-align:center;padding:8px 0 4px;}
   .course-label{
     font-family:'Fraunces',serif;font-weight:600;font-size:16px;color:var(--fairway-deep);
@@ -987,6 +994,11 @@
 
     <div class="card">
       <div class="dots" id="playDots"></div>
+      <div class="round-total" id="playRoundTotal" style="display:none;">
+        <span class="rt-thru" id="rtThru"></span>
+        <span class="rt-topar" id="rtToPar"></span>
+        <span class="rt-strokes" id="rtStrokes"></span>
+      </div>
       <div class="hole-card">
         <div class="course-label" id="playCourseLabel"></div>
         <div class="holenum" id="playHoleNum">Hole 1</div>
@@ -2512,7 +2524,25 @@ function renderPlayHole(){
     return `<div class="${cls}" data-idx="${i}"></div>`;
   }).join('');
 
+  updatePlayRoundTotal();
   savePlayDraft();
+}
+function updatePlayRoundTotal(){
+  const el = document.getElementById('playRoundTotal');
+  if(!el) return;
+  const inRange = playHoles.filter((ph,i)=> i>=playRange.start && i<=playRange.end);
+  const played = inRange.filter(ph=> ph.score>0);
+  if(played.length===0){ el.style.display='none'; return; }
+  const strokes = played.reduce((s,ph)=>s+ph.score,0);
+  const par = played.reduce((s,ph)=>s+ph.par,0);
+  const toPar = strokes - par;
+  const totalHoles = inRange.length;
+  document.getElementById('rtThru').textContent = played.length===totalHoles ? 'Final' : `Thru ${played.length}`;
+  document.getElementById('rtStrokes').textContent = `(${strokes})`;
+  const toParEl = document.getElementById('rtToPar');
+  toParEl.textContent = toPar===0 ? 'E' : (toPar>0 ? `+${toPar}` : `${toPar}`);
+  toParEl.className = 'rt-topar ' + (toPar>0?'over':toPar<0?'under':'even');
+  el.style.display = 'flex';
 }
 document.getElementById('playDots').addEventListener('click', e=>{
   const dot = e.target.closest('.dot');
