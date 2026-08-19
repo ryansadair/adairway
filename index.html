@@ -3178,16 +3178,31 @@ function courseLookup(name){
 function computeDifferential(round){
   const c = courseLookup(round.course);
   if(!c) return null;
+  // Prefer tee-specific rating/slope when the round recorded tees and the course has teesList
+  let rating = c.rating;
+  let slope = c.slope;
+  if(round.tees && Array.isArray(c.teesList) && c.teesList.length){
+    const teeKey = String(round.tees).trim().toLowerCase();
+    const tee = c.teesList.find(t=>{
+      const n = String(t.name || t.color || '').trim().toLowerCase();
+      return n && (n === teeKey || n.includes(teeKey) || teeKey.includes(n));
+    });
+    if(tee && tee.rating != null && tee.slope != null && +tee.slope > 0){
+      rating = +tee.rating;
+      slope = +tee.slope;
+    }
+  }
+  if(rating == null || slope == null || !(+slope > 0)) return null;
   const played = round.holes.filter(h=>h.score>0);
   const totalScore = played.reduce((s,h)=>s+h.score,0);
   if(totalScore===0) return null;
   const holesPlayed = round.holesPlayed
     || (played.length<=10 ? (played.every(h=>h.hole<=9) ? 'front' : played.every(h=>h.hole>=10) ? 'back' : 'full') : 'full');
   if(holesPlayed==='full'){
-    return (totalScore - c.rating) * 113 / c.slope;
+    return (totalScore - rating) * 113 / slope;
   }
-  const halfRating = c.rating / 2;
-  const diff9 = (totalScore - halfRating) * 113 / c.slope;
+  const halfRating = rating / 2;
+  const diff9 = (totalScore - halfRating) * 113 / slope;
   return diff9 * 2;
 }
 function computeHandicapIndex(withScores){
@@ -3942,7 +3957,7 @@ function renderStats(){
     hcBlock.innerHTML = `
       <div class="hc-wrap">
         <div class="hc-number">${hc.index.toFixed(1)}</div>
-        <div class="hc-detail">Best ${hc.used} of your last ${hc.n} scoring differentials (score − course rating) × 113 / slope, averaged and shaved 4% per USGA convention. Only rounds at courses with rating/slope set count. 9-hole rounds are scaled to an 18-hole-equivalent differential rather than skewing your index.</div>
+        <div class="hc-detail">Best ${hc.used} of your last ${hc.n} scoring differentials (score − rating) × 113 / slope, averaged and shaved 4% (USGA-style estimate — not a certified WHS index). Uses tee rating/slope when available, otherwise the course defaults. Only rounds at courses with rating/slope set count. 9-hole rounds are scaled to an 18-hole-equivalent differential rather than skewing your index.</div>
       </div>`;
   }
 
@@ -4240,7 +4255,7 @@ function renderCourses(){
         ${c.notes?`<div class="notes">${escapeHtml(c.notes)}</div>`:''}
       </div>
       <div style="text-align:right;">
-        <button class="edit-btn" data-idx="${idx}" data-id="${c.id}" data-name="${escapeHtml(c.name)}" data-kind="course-map" type="button">${savedGreens>0 ? 'edit greens' : 'map greens'}</button>
+        <button class="edit-btn" data-idx="${idx}" data-id="${c.id}" data-kind="course-map" type="button">${savedGreens>0 ? 'edit greens' : 'map greens'}</button>
         <button class="edit-btn" data-id="${c.id}" data-kind="course-edit" type="button">edit</button>
         <button class="edit-btn" data-id="${c.id}" data-kind="course-share" type="button">${c.sharedId ? 'update share' : 'share'}</button>
         <button class="del" data-id="${c.id}" data-kind="course">delete</button>
@@ -4594,7 +4609,8 @@ function recommendClub(yards, course){
 }
 function formatClubAdvice(rec){
   if(!rec) return '';
-  const label = rec.club.model ? `${rec.club.name} (${rec.club.model})` : rec.club.name;
+  const rawLabel = rec.club.model ? `${rec.club.name} (${rec.club.model})` : rec.club.name;
+  const label = escapeHtml(rawLabel);
   let s = `Suggested: ${label} · stock ${rec.club.d} yds`;
   if(rec.elev != null && rec.elev >= 500){
     s += ` · plays ~${rec.playsLike} yds at ${rec.elev} ft`;
@@ -4604,7 +4620,8 @@ function formatClubAdvice(rec){
 }
 function showDistanceWithClub(resultEl, yards, course, sourceLabel){
   const rec = recommendClub(yards, course);
-  const main = `≈ ${Math.round(yards)} yds to green${sourceLabel ? ' ('+sourceLabel+')' : ''}`;
+  const src = sourceLabel ? ' (' + escapeHtml(String(sourceLabel)) + ')' : '';
+  const main = `≈ ${Math.round(yards)} yds to green${src}`;
   const advice = formatClubAdvice(rec);
   resultEl.innerHTML = advice
     ? `${main}<br><span style="color:var(--fairway-deep);font-weight:600;">${advice}</span>`
@@ -6200,7 +6217,7 @@ document.getElementById('coursesList').addEventListener('click', async e=>{
   const mapBtn = e.target.closest('button[data-kind="course-map"]');
   if(mapBtn){
     const idx = mapBtn.dataset.idx !== undefined ? parseInt(mapBtn.dataset.idx, 10) : -1;
-    openGreenMapEditor(mapBtn.dataset.id, mapBtn.dataset.name || '', idx);
+    openGreenMapEditor(mapBtn.dataset.id, '', idx);
     return;
   }
   const editBtn = e.target.closest('button[data-kind="course-edit"]');
@@ -6536,11 +6553,11 @@ async function autoFillGreensFromOsm(course, opts = {}){
     course.lng = center.lng;
   }
 
-  const { greens, matched } = await fetchOsmGreensAround(center.lat, center.lng);
+  const { greens, matched, totalCandidates } = await fetchOsmGreensAround(center.lat, center.lng);
   if(matched === 0){
     return {
       ok: false,
-      message: `OpenStreetMap has no usable golf greens near “${course.name}” (${greenCandidates?.length || 0} features found). Map them once manually — many smaller courses simply aren’t drawn in OSM yet.`
+      message: `OpenStreetMap has no usable golf greens near “${course.name}” (${totalCandidates || 0} features found). Map them once manually — many smaller courses simply aren’t drawn in OSM yet.`
     };
   }
 
