@@ -1692,7 +1692,7 @@
         </label>
         <label style="display:flex;align-items:flex-start;gap:10px;margin-bottom:4px;text-transform:none;letter-spacing:0;font-size:13.5px;font-weight:500;color:var(--graphite);cursor:pointer;">
           <input type="checkbox" id="profile-shareActivity" checked style="width:18px;height:18px;margin-top:2px;flex-shrink:0;">
-          <span><strong>Share activity with friends</strong><br><span style="opacity:0.75;font-size:12px;">Rounds you share appear in friends’ activity feeds.</span></span>
+          <span><strong>Share activity with friends</strong><br><span style="opacity:0.75;font-size:12px;">When on, finishing a round auto-posts it to friends’ activity feeds. You can still unshare any round from the Rounds tab.</span></span>
         </label>
       </div>
       <button class="btn" id="saveProfileBtn" type="button">Save profile</button>
@@ -3059,13 +3059,26 @@ document.getElementById('cancelEditRoundBtn').addEventListener('click', ()=>{
 async function commitRound(holes, course, tees, date, notes, holesPlayed){
   const round = { id: uid(), date: date || todayISO(), course: (course||'').trim(), tees: (tees||'').trim(), holes, notes: (notes||'').trim(), holesPlayed: holesPlayed || 'full' };
   rounds.push(round);
+  let autoShared = false;
   if(currentProfile.shareActivityWithFriends !== false){
-    const ok = await shareRoundToFeed(round);
+    // Silent auto-share (no alert). Manual share button still uses shareRoundToFeed with alerts.
+    const ok = await shareRoundToFeed(round, { silent: true });
     if(!ok) console.warn('Auto-share failed for round', round.id);
-    else { renderFeed(); renderNotifBadge(); }
+    else {
+      autoShared = true;
+      renderFeed();
+      renderNotifBadge();
+    }
   }
   await saveList('rounds', rounds);
   renderRounds();
+  if(autoShared){
+    // Brief non-blocking confirmation — rounds list will show "shared ✓"
+    try{
+      const pill = document.getElementById('roundSavePill');
+      if(pill){ pill.textContent = 'saved · shared'; pill.classList.add('show'); setTimeout(()=>{ pill.textContent = 'saved'; pill.classList.remove('show'); }, 1800); }
+    }catch(e){}
+  }
   return round;
 }
 
@@ -4354,22 +4367,55 @@ function pickYardageFromHole(h, preferredColor){
   return null;
 }
 
-// ---- NEW: fetch elevation from Open-Elevation API ----
-async function fetchElevation(lat, lng) {
-  try {
-    const url = `https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lng}`;
+// ---- Elevation from Open-Elevation (meters→feet). Used for course save + live Get distance. ----
+const _elevCache = new Map();
+function elevCacheKey(lat, lng){
+  // ~50m grid so repeat taps reuse a value
+  return (Math.round(+lat * 2000) / 2000) + ',' + (Math.round(+lng * 2000) / 2000);
+}
+async function fetchElevations(points){
+  // points: [{lat,lng}, ...] → parallel array of elevation in feet (or null)
+  if(!points || !points.length) return [];
+  const out = points.map(() => null);
+  const need = [];
+  points.forEach((p, i)=>{
+    if(p == null || p.lat == null || p.lng == null || isNaN(+p.lat) || isNaN(+p.lng)) return;
+    const key = elevCacheKey(p.lat, p.lng);
+    if(_elevCache.has(key)) out[i] = _elevCache.get(key);
+    else need.push({ i, lat: +p.lat, lng: +p.lng, key });
+  });
+  if(!need.length) return out;
+  try{
+    const url = 'https://api.open-elevation.com/api/v1/lookup?locations=' +
+      need.map(n => n.lat + ',' + n.lng).join('|');
     const res = await fetch(url);
-    if (!res.ok) return null;
+    if(!res.ok) return out;
     const data = await res.json();
-    if (data.results && data.results.length > 0) {
-      const elev = data.results[0].elevation;
-      if (elev != null && !isNaN(elev)) return Math.round(elev);
-    }
-    return null;
-  } catch(e) {
+    const results = (data && data.results) || [];
+    need.forEach((n, j)=>{
+      const elevM = results[j] && results[j].elevation;
+      if(elevM == null || isNaN(+elevM)) return;
+      const elevFt = Math.round(+elevM * 3.28084);
+      _elevCache.set(n.key, elevFt);
+      out[n.i] = elevFt;
+    });
+  }catch(e){
     console.warn('Elevation lookup failed (non-critical):', e);
-    return null;
   }
+  return out;
+}
+async function fetchElevation(lat, lng) {
+  const [e] = await fetchElevations([{ lat, lng }]);
+  return e != null ? e : null;
+}
+/** Relative elevation green − player (ft). Positive = uphill to the green (plays longer). */
+async function fetchRelativeElevFt(playerLat, playerLng, greenLat, greenLng){
+  const [youFt, greenFt] = await fetchElevations([
+    { lat: playerLat, lng: playerLng },
+    { lat: greenLat, lng: greenLng }
+  ]);
+  if(youFt == null || greenFt == null) return null;
+  return { youFt, greenFt, deltaFt: greenFt - youFt };
 }
 
 // ---- UPDATED applyApiCourseDetail (async) ----
@@ -4581,19 +4627,34 @@ function getOrCreateCourseByName(name){
 }
 
 function altitudeCarryFactor(elevFt){
+  // Thin-air: ball carries farther at altitude. ~2% per 1000 ft is a common rule of thumb.
   if(elevFt == null || isNaN(+elevFt)) return 1;
   return 1 + 0.02 * (+elevFt / 1000);
 }
-function recommendClub(yards, course){
+/** Relative elev adjustment: ~1 yard of play per 1.5 ft of elevation change (conservative). */
+function relativeElevYards(deltaFt){
+  if(deltaFt == null || isNaN(+deltaFt)) return 0;
+  return +deltaFt / 1.5;
+}
+function recommendClub(yards, course, opts){
   if(yards == null || !(yards > 0)) return null;
+  opts = opts || {};
   const clubs = bag
     .filter(c => (c.status||'active') !== 'retired' && c.distance != null && +c.distance > 0)
     .map(c => ({ name: c.name, model: c.model||'', d: +c.distance }))
     .sort((a,b) => a.d - b.d);
   if(!clubs.length) return null;
-  const elev = course && course.elevationFt != null ? +course.elevationFt : null;
+  // Prefer live absolute elev (player or green) for thin-air when provided; else course elev
+  const elev = (opts.elevFt != null && !isNaN(+opts.elevFt))
+    ? +opts.elevFt
+    : (course && course.elevationFt != null ? +course.elevationFt : null);
   const factor = altitudeCarryFactor(elev);
-  const playsLike = yards / factor;
+  let playsLike = yards / factor;
+  const deltaFt = (opts.elevDeltaFt != null && !isNaN(+opts.elevDeltaFt)) ? +opts.elevDeltaFt : null;
+  if(deltaFt != null){
+    // Positive delta = green above you → plays longer
+    playsLike += relativeElevYards(deltaFt);
+  }
   let pick = null;
   for(const c of clubs){
     if(c.d <= playsLike + 0.5) pick = c;
@@ -4604,6 +4665,7 @@ function recommendClub(yards, course){
     yards: Math.round(yards),
     playsLike: Math.round(playsLike),
     elev: elev != null ? Math.round(elev) : null,
+    elevDeltaFt: deltaFt != null ? Math.round(deltaFt) : null,
     factor
   };
 }
@@ -4612,20 +4674,47 @@ function formatClubAdvice(rec){
   const rawLabel = rec.club.model ? `${rec.club.name} (${rec.club.model})` : rec.club.name;
   const label = escapeHtml(rawLabel);
   let s = `Suggested: ${label} · stock ${rec.club.d} yds`;
-  if(rec.elev != null && rec.elev >= 500){
-    s += ` · plays ~${rec.playsLike} yds at ${rec.elev} ft`;
+  if(rec.playsLike != null && rec.playsLike !== rec.yards){
+    s += ` · plays ~${rec.playsLike} yds`;
   }
   s += ' (errs short)';
   return s;
 }
-function showDistanceWithClub(resultEl, yards, course, sourceLabel){
-  const rec = recommendClub(yards, course);
+function formatElevLine(rec){
+  if(!rec || rec.elevDeltaFt == null) return '';
+  const d = rec.elevDeltaFt;
+  if(Math.abs(d) < 3) return 'Relatively flat to the green';
+  const dir = d > 0 ? 'Uphill' : 'Downhill';
+  return `${dir} ${Math.abs(d)} ft to green`;
+}
+function showDistanceWithClub(resultEl, yards, course, sourceLabel, elevInfo){
+  const opts = {};
+  if(elevInfo){
+    if(elevInfo.deltaFt != null) opts.elevDeltaFt = elevInfo.deltaFt;
+    // Use mid elevation for thin-air when we have both samples
+    if(elevInfo.youFt != null && elevInfo.greenFt != null){
+      opts.elevFt = Math.round((elevInfo.youFt + elevInfo.greenFt) / 2);
+    }else if(elevInfo.youFt != null){
+      opts.elevFt = elevInfo.youFt;
+    }else if(elevInfo.greenFt != null){
+      opts.elevFt = elevInfo.greenFt;
+    }
+  }
+  const rec = recommendClub(yards, course, opts);
   const src = sourceLabel ? ' (' + escapeHtml(String(sourceLabel)) + ')' : '';
   const main = `≈ ${Math.round(yards)} yds to green${src}`;
+  const elevLine = formatElevLine(rec);
   const advice = formatClubAdvice(rec);
-  resultEl.innerHTML = advice
-    ? `${main}<br><span style="color:var(--fairway-deep);font-weight:600;">${advice}</span>`
-    : main + (bag.some(c=>c.distance) ? '' : '<br><span class="hint">Add club distances in Bag for a suggestion.</span>');
+  let html = main;
+  if(elevLine){
+    html += `<br><span style="color:var(--turf);">${escapeHtml(elevLine)}</span>`;
+  }
+  if(advice){
+    html += `<br><span style="color:var(--fairway-deep);font-weight:600;">${advice}</span>`;
+  }else if(!bag.some(c=>c.distance)){
+    html += '<br><span class="hint">Add club distances in Bag for a suggestion.</span>';
+  }
+  resultEl.innerHTML = html;
 }
 
 function updateGpsAvailability(){
@@ -4685,10 +4774,19 @@ document.getElementById('gpsBtn').addEventListener('click', ()=>{
     const holeNum = playHoles[currentHole].hole;
     const course = getCourseByName(courseName);
 
+    async function showWithLiveElev(yds, greenLat, greenLng, sourceLabel){
+      resultEl.textContent = `≈ ${Math.round(yds)} yds — checking elevation…`;
+      let elevInfo = null;
+      try{
+        elevInfo = await fetchRelativeElevFt(latitude, longitude, greenLat, greenLng);
+      }catch(e){ elevInfo = null; }
+      showDistanceWithClub(resultEl, yds, course, sourceLabel, elevInfo);
+    }
+
     const manual = course && Array.isArray(course.greens) && course.greens[holeNum-1];
     if(manual){
       const yds = distanceYards(latitude, longitude, manual.lat, manual.lng);
-      showDistanceWithClub(resultEl, yds, course, 'your saved spot');
+      await showWithLiveElev(yds, manual.lat, manual.lng, 'your saved spot');
       return;
     }
 
@@ -4698,7 +4796,7 @@ document.getElementById('gpsBtn').addEventListener('click', ()=>{
         const {center, attempts} = await fetchGreenCenter(course.apiCourseId, holeNum);
         if(center){
           const yds = distanceYards(latitude, longitude, center.lat, center.lng);
-          showDistanceWithClub(resultEl, yds, course, 'OpenGolfAPI');
+          await showWithLiveElev(yds, center.lat, center.lng, 'OpenGolfAPI');
           return;
         }
       }catch(err){}
@@ -5703,16 +5801,23 @@ async function renderLeaderboard(){
 }
 
 // ---------- Activity feed ----------
-async function shareRoundToFeed(round){
+async function shareRoundToFeed(round, opts){
   shareRoundToFeed.lastError = null;
+  opts = opts || {};
   if(!currentUser){
     shareRoundToFeed.lastError = { code: 'not-signed-in', message: 'Not signed in' };
     return false;
   }
   if(currentProfile.shareActivityWithFriends === false){
-    alert('You have “Share activity with friends” turned off in Profile. Turn it on to post rounds to the feed.');
+    if(!opts.silent){
+      alert('You have “Share activity with friends” turned off in Profile. Turn it on to post rounds to the feed.');
+    }
     shareRoundToFeed.lastError = { code: 'sharing-disabled', message: 'Share activity with friends is turned off' };
     return false;
+  }
+  if(round.sharedPostId){
+    // Already shared — treat as success so auto-share is idempotent
+    return true;
   }
   try{
     const played = round.holes.filter(h=>h.score>0);
