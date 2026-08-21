@@ -885,6 +885,22 @@
   #swingCoachRoot .sc-set-phase.is-set{
     border-color: var(--turf); background: rgba(63,107,74,0.12);
   }
+  #swingCoachRoot .sc-advice-tabs{
+    display:flex; gap:0; border:1px solid var(--sc-line); border-radius:8px 8px 0 0;
+    overflow:hidden; background:#fff;
+  }
+  #swingCoachRoot .sc-advice-tab{
+    flex:1; border:none; background:#fff; color: var(--sc-muted);
+    font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600;
+    text-transform:uppercase; letter-spacing:0.04em; padding:10px 8px; cursor:pointer;
+  }
+  #swingCoachRoot .sc-advice-tab + .sc-advice-tab{ border-left:1px solid var(--sc-line); }
+  #swingCoachRoot .sc-advice-tab.active{
+    background: var(--fairway-deep); color: var(--paper-light);
+  }
+  #swingCoachRoot .sc-advice-tab:disabled{
+    opacity:0.45; cursor:not-allowed;
+  }
   #swingCoachRoot .phaseBtn{
     flex:1; min-width:72px; border:1px solid var(--sc-line); border-radius:6px;
     background:#fff; color: var(--sc-muted); padding:8px 6px; font-size:11px; font-weight:700; cursor:pointer;
@@ -1463,6 +1479,11 @@
     </div>
 
     <div class="subview active" id="subview-sessions">
+      <div class="card" id="practiceFocusCard" style="display:none;padding:14px 16px;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--turf);margin-bottom:4px;">Current swing focus</div>
+        <div id="practiceFocusTitle" style="font-family:'Fraunces',serif;font-weight:600;font-size:16px;color:var(--fairway-deep);"></div>
+        <div id="practiceFocusMeta" class="hint" style="margin:4px 0 0;"></div>
+      </div>
       <div class="card">
         <details class="form-toggle" id="practiceFormDetails">
           <summary><span class="marker"></span>Log a practice session</summary>
@@ -1543,6 +1564,10 @@
                   <button type="button" class="sc-set-phase" id="setTopBtn" title="Mark the current frame as Top">Set Top</button>
                   <button type="button" class="sc-set-phase" id="setImpactBtn" title="Mark the current frame as Impact">Set Impact</button>
                 </div>
+                <div id="phaseConfirmWrap" style="display:none;margin-top:10px;">
+                  <p class="hint" id="phaseConfirmHint" style="margin:0 0 8px;">Check Address, Top, and Impact (adjust if needed), then confirm so coaching uses the right timing.</p>
+                  <button type="button" class="sc-btn primary block" id="confirmPhasesBtn">Confirm phases</button>
+                </div>
               </div>
               <label class="drop" id="coachDrop">
                 <strong>Choose swing video</strong>
@@ -1560,6 +1585,14 @@
           <aside class="sc-card">
             <div class="sc-head"><strong>Results</strong><span class="state" id="confLabel">—</span></div>
             <div class="panel">
+              <div id="coachCurrentFocus" class="cues" style="display:none;margin-bottom:12px;padding:10px 12px;">
+                <h3 style="margin:0 0 4px;">Current practice focus</h3>
+                <div id="coachCurrentFocusText" style="font-size:13px;line-height:1.45;color:var(--graphite);"></div>
+              </div>
+              <div id="phaseGateMsg" class="cues" style="display:none;margin-bottom:12px;padding:10px 12px;border-color:var(--flag);">
+                <h3 style="margin:0 0 4px;">Confirm phases first</h3>
+                <div style="font-size:13px;line-height:1.45;color:var(--graphite);">Auto-detect is a starting point. Scrub the video, adjust Address / Top / Impact if needed, then tap <strong>Confirm phases</strong> so coaching uses the right timing.</div>
+              </div>
               <div class="metrics" id="metricsGrid">
                 <div class="metric"><span>Tempo</span><b id="mTempo">—</b><div class="sub" id="mTempoSub">transition timing</div></div>
                 <div class="metric"><span id="m2Label">Shoulder turn</span><b id="m2">—</b><div class="sub" id="m2Sub">projected</div></div>
@@ -1568,25 +1601,33 @@
                 <div class="metric"><span id="m5Label">Head stability</span><b id="m5">—</b><div class="sub" id="m5Sub">relative</div></div>
                 <div class="metric"><span>Confidence</span><b id="mConf">—</b><div class="sub">landmark quality</div></div>
               </div>
-              <div class="cues" id="coachSummary">
-                <h3>Your swing</h3>
-                <div id="primaryFocus" style="font-size:14px;line-height:1.45;margin-bottom:10px"><strong style="color:var(--turf)">Primary focus</strong><br><span style="color:var(--turf);opacity:.85">Upload a swing and I'll give you one thing to work on first.</span></div>
-                <div id="nextSwing" style="font-size:13px;line-height:1.5;margin-bottom:10px"><strong style="color:var(--turf)">Next swing</strong><br><span style="color:var(--turf);opacity:.85">Your instruction will appear here.</span></div>
-                <div id="positiveSwing" style="font-size:13px;line-height:1.5"><strong style="color:var(--turf)">Keep</strong><br><span style="color:var(--turf);opacity:.85">I'll also call out something you're doing well.</span></div>
-                <div id="drillBlock" style="display:none;margin-top:12px;padding-top:10px;border-top:1px solid var(--line);">
-                  <strong style="color:var(--turf);font-size:12px;text-transform:uppercase;letter-spacing:0.06em;font-family:'IBM Plex Mono',monospace;">Try this drill</strong>
-                  <div id="drillText" style="font-size:13px;line-height:1.5;margin-top:6px;color:var(--graphite);"></div>
+              <div id="compareStrip" class="cues" style="display:none;margin-top:10px;padding:10px 12px;">
+                <h3 style="margin:0 0 4px;">Vs last confirmed</h3>
+                <div id="compareStripText" style="font-size:12.5px;line-height:1.5;color:var(--turf);"></div>
+              </div>
+              <div id="adviceSection" style="display:none;margin-top:12px;">
+                <div class="sc-advice-tabs" id="adviceTabs" role="tablist">
+                  <button type="button" class="sc-advice-tab active" data-advice="fundamentals" id="adviceTabFund">Fundamentals</button>
+                  <button type="button" class="sc-advice-tab" data-advice="baseline" id="adviceTabBase">Vs your baseline</button>
                 </div>
-                <p id="impactNote" class="disclaimer" style="display:none;margin:10px 0 0;"></p>
+                <div class="cues" id="coachSummary" style="margin-top:8px;border-radius:0 0 8px 8px;">
+                  <div id="primaryFocus" style="font-size:14px;line-height:1.45;margin-bottom:10px"><strong style="color:var(--turf)">Primary focus</strong><br><span style="color:var(--turf);opacity:.85">Confirm phases to unlock coaching.</span></div>
+                  <div id="positiveSwing" style="font-size:13px;line-height:1.5"><strong style="color:var(--turf)">Keep</strong><br><span style="color:var(--turf);opacity:.85">—</span></div>
+                  <div id="drillBlock" style="display:none;margin-top:12px;padding-top:10px;border-top:1px solid var(--line);">
+                    <strong style="color:var(--turf);font-size:12px;text-transform:uppercase;letter-spacing:0.06em;font-family:'IBM Plex Mono',monospace;">Try this drill</strong>
+                    <div id="drillText" style="font-size:13px;line-height:1.5;margin-top:6px;color:var(--graphite);"></div>
+                  </div>
+                  <p id="impactNote" class="disclaimer" style="display:none;margin:10px 0 0;"></p>
+                  <p id="baselineCountNote" class="disclaimer" style="margin:8px 0 0;"></p>
+                </div>
               </div>
-              <div class="cues" id="baselineCard" style="display:none">
-                <h3>Your baseline</h3>
-                <div id="baselineText" style="font-size:12.5px;line-height:1.55;color:var(--turf)"></div>
-              </div>
-              <div class="cues"><h3>Why I flagged it</h3><ul id="cuesList"><li>Upload a swing to get view-specific feedback.</li></ul></div>
+              <details id="coachDetails" style="margin-top:12px;display:none;">
+                <summary style="cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--turf);">Details — why it was flagged</summary>
+                <div class="cues" style="margin-top:8px;"><ul id="cuesList"><li>Upload a swing to get view-specific feedback.</li></ul></div>
+              </details>
               <button class="sc-btn primary block" id="coachSavePracticeBtn" style="margin-top:12px" disabled>Save to Practice log</button>
               <p class="disclaimer" id="saveStatus"></p>
-              <p class="disclaimer">Angles are <strong style="color:var(--graphite)">2D image projections</strong>, not true 3D joint rotations. Compare your own swings over time—not absolute tour numbers.</p>
+              <p class="disclaimer">Angles are <strong style="color:var(--graphite)">2D image projections</strong>, not true 3D joint rotations. Coaching unlocks after you confirm phases. Baseline only uses confirmed swings.</p>
             </div>
           </aside>
 
@@ -4105,6 +4146,23 @@ function loadPracticeIntoForm(p){
 }
 
 function renderPractice(){
+  // Current swing focus from Swing Coach (if set)
+  try{
+    const raw = localStorage.getItem('adairway_swing_coach_current_focus');
+    const focus = raw ? JSON.parse(raw) : null;
+    const pCard = document.getElementById('practiceFocusCard');
+    const pTitle = document.getElementById('practiceFocusTitle');
+    const pMeta = document.getElementById('practiceFocusMeta');
+    if(pCard && pTitle){
+      if(focus && focus.title){
+        pCard.style.display = 'block';
+        pTitle.textContent = focus.title;
+        if(pMeta) pMeta.textContent = [focus.viewLabel, focus.date, focus.drillTitle ? ('Drill: '+focus.drillTitle) : ''].filter(Boolean).join(' · ');
+      }else{
+        pCard.style.display = 'none';
+      }
+    }
+  }catch(e){}
   const list = document.getElementById('practiceList');
   if(practice.length===0){ list.innerHTML = '<div class="empty">No practice sessions logged yet.</div>'; return; }
   const sorted = [...practice].sort((a,b)=>b.date.localeCompare(a.date));
@@ -7466,18 +7524,31 @@ async function init(){
 
   function clearUI(){
     lastResult=null;
+    phasesConfirmed=false;
+    adviceTab='fundamentals';
     ['mTempo','m2','m3','m4','m5','mConf'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='—';});
     document.getElementById('mTempoSub').textContent='back : down';
     document.getElementById('confLabel').textContent='—';
-    document.getElementById('cuesList').innerHTML='<li>Upload a swing to get view-specific feedback.</li>';
-    document.getElementById('primaryFocus').innerHTML='<strong style="color:var(--green)">Primary focus</strong><br><span style="color:var(--muted)">Upload a swing and I\'ll give you one thing to work on first.</span>';
-    document.getElementById('nextSwing').innerHTML='<strong style="color:var(--green)">Next swing</strong><br><span style="color:var(--muted)">Your instruction will appear here.</span>';
-    document.getElementById('positiveSwing').innerHTML='<strong style="color:var(--green)">Keep</strong><br><span style="color:var(--muted)">I\'ll also call out something you\'re doing well.</span>';
+    const cuesList=document.getElementById('cuesList');
+    if(cuesList) cuesList.innerHTML='<li>Upload a swing to get view-specific feedback.</li>';
+    const pf=document.getElementById('primaryFocus');
+    if(pf) pf.innerHTML='<strong style="color:var(--green)">Primary focus</strong><br><span style="color:var(--muted)">Confirm phases to unlock coaching.</span>';
+    const pos=document.getElementById('positiveSwing');
+    if(pos) pos.innerHTML='<strong style="color:var(--green)">Keep</strong><br><span style="color:var(--muted)">—</span>';
     const drillBlock=document.getElementById('drillBlock');
     if(drillBlock) drillBlock.style.display='none';
     const impactNote=document.getElementById('impactNote');
     if(impactNote){ impactNote.style.display='none'; impactNote.textContent=''; }
-    document.getElementById('baselineCard').style.display='none';
+    const gate=document.getElementById('phaseGateMsg');
+    if(gate) gate.style.display='none';
+    const advice=document.getElementById('adviceSection');
+    if(advice) advice.style.display='none';
+    const details=document.getElementById('coachDetails');
+    if(details) details.style.display='none';
+    const compare=document.getElementById('compareStrip');
+    if(compare) compare.style.display='none';
+    const pcw=document.getElementById('phaseConfirmWrap');
+    if(pcw) pcw.style.display='none';
     saveBtn.disabled=true;
     document.getElementById('saveStatus').textContent='';
     phaseRow.style.display='none';
@@ -7485,6 +7556,7 @@ async function init(){
     octx.clearRect(0,0,overlay.width||1,overlay.height||1);
     resetMetricLabels();
     try{ updatePhaseSetButtons(); }catch(e){}
+    try{ renderCurrentFocusUI(); }catch(e){}
   }
 
   fileInput.addEventListener('change',async()=>{
@@ -7677,12 +7749,20 @@ async function init(){
 
 
   const COACH_HISTORY_KEY='adairway_swing_coach_history_v2';
+  const COACH_FOCUS_KEY='adairway_swing_coach_current_focus';
+  let phasesConfirmed=false;
+  let adviceTab='fundamentals';
 
   function readCoachHistory(){
     try{
       const data=JSON.parse(localStorage.getItem(COACH_HISTORY_KEY)||'[]');
       return Array.isArray(data)?data:[];
     }catch(e){return [];}
+  }
+
+  /** Baseline only uses confirmed swings (quality over quantity). */
+  function readConfirmedHistory(view){
+    return readCoachHistory().filter(x => x && x.confirmed && (!view || x.view===view));
   }
 
   function writeCoachHistory(entry){
@@ -7700,6 +7780,49 @@ async function init(){
 
   function average(arr){
     return arr.length?arr.reduce((a,b)=>a+b,0)/arr.length:null;
+  }
+
+  function readCurrentFocus(){
+    try{
+      const raw=localStorage.getItem(COACH_FOCUS_KEY);
+      if(!raw) return null;
+      const o=JSON.parse(raw);
+      return o && o.title ? o : null;
+    }catch(e){return null;}
+  }
+
+  function writeCurrentFocus(focus){
+    try{
+      if(!focus){ localStorage.removeItem(COACH_FOCUS_KEY); return; }
+      localStorage.setItem(COACH_FOCUS_KEY, JSON.stringify(focus));
+    }catch(e){}
+  }
+
+  function renderCurrentFocusUI(){
+    const focus=readCurrentFocus();
+    const coachEl=document.getElementById('coachCurrentFocus');
+    const coachText=document.getElementById('coachCurrentFocusText');
+    if(coachEl && coachText){
+      if(focus){
+        coachEl.style.display='block';
+        coachText.textContent=(focus.title||'')+(focus.viewLabel?(' · '+focus.viewLabel):'')+(focus.date?(' · '+focus.date):'');
+      }else{
+        coachEl.style.display='none';
+        coachText.textContent='';
+      }
+    }
+    const pCard=document.getElementById('practiceFocusCard');
+    const pTitle=document.getElementById('practiceFocusTitle');
+    const pMeta=document.getElementById('practiceFocusMeta');
+    if(pCard && pTitle){
+      if(focus){
+        pCard.style.display='block';
+        pTitle.textContent=focus.title||'';
+        if(pMeta) pMeta.textContent=[focus.viewLabel, focus.date, focus.drillTitle?('Drill: '+focus.drillTitle):''].filter(Boolean).join(' · ');
+      }else{
+        pCard.style.display='none';
+      }
+    }
   }
 
   /** How trustworthy is auto-detected impact for tempo? */
@@ -7789,7 +7912,7 @@ async function init(){
 
   function focusStreak(view, focusId){
     if(!focusId || focusId==='none') return 0;
-    const hist = readCoachHistory().filter(x => x.view === view && x.focusId);
+    const hist = readConfirmedHistory(view).filter(x => x.focusId);
     let n = 0;
     for(let i = hist.length - 1; i >= 0; i--){
       if(hist[i].focusId === focusId) n++;
@@ -7798,7 +7921,7 @@ async function init(){
     return n;
   }
 
-  /** Tempo averages for baseline — prefer higher-confidence impact when available. */
+  /** Tempo averages for baseline — confirmed only; prefer higher-confidence impact. */
   function qualityTempoHistory(history){
     const withTempo = (history||[]).filter(x => Number.isFinite(x.tempo));
     const trusted = withTempo.filter(x => x.impactLevel === 'high' || x.impactLevel === 'medium' || x.impactManual);
@@ -7806,13 +7929,13 @@ async function init(){
   }
 
   function buildPersonalBaseline(metrics, view){
-    const history=readCoachHistory().filter(x=>x.view===view);
+    const history=readConfirmedHistory(view);
     if(history.length<5){
       return {
         count:history.length,
         text:history.length===0
-          ? 'This is your first saved swing. Analyze a few more swings and Adairway will start learning what is normal for you.'
-          : `${history.length} ${history.length===1?'swing':'swings'} recorded. After 5, I can compare this swing with your own recent pattern instead of generic targets.`
+          ? 'No confirmed swings in this view yet. Confirm phases on a few swings and baseline coaching will unlock.'
+          : `${history.length} confirmed ${history.length===1?'swing':'swings'} in this view. After 5 confirmed, this card compares you to your own pattern.`
       };
     }
 
@@ -7886,7 +8009,7 @@ async function init(){
     const tempoTrusted = impactLvl === 'high' || impactLvl === 'medium';
     const preferBody = impactLvl === 'low';
     const view = metrics.view || 'faceon';
-    const history = readCoachHistory().filter(x => x.view === view);
+    const history = readConfirmedHistory(view);
     const hasPersonal = history.length >= 5;
     const ratio = metrics.tempoRatio;
     // Absolute tempo buckets — single source of truth for direction
@@ -8236,38 +8359,135 @@ async function init(){
     };
   }
 
-  function renderCoachSummary(metrics){
+  function renderCompareStrip(metrics){
+    const strip=document.getElementById('compareStrip');
+    const textEl=document.getElementById('compareStripText');
+    if(!strip||!textEl||!metrics){ if(strip) strip.style.display='none'; return; }
+    const hist=readConfirmedHistory(metrics.view||'faceon');
+    // Exclude the swing we just confirmed if it's already the last entry with same tempo
+    const prev=hist.length ? hist[hist.length-1] : null;
+    if(!prev || hist.length < 1){
+      strip.style.display='none';
+      return;
+    }
+    // If current session just wrote history, compare to second-to-last
+    let ref=prev;
+    if(phasesConfirmed && hist.length>=2){
+      const last=hist[hist.length-1];
+      if(last && metrics.tempoRatio!=null && Math.abs((last.tempo||0)-(metrics.tempoRatio||0))<0.05){
+        ref=hist[hist.length-2];
+      }
+    }
+    if(!ref){ strip.style.display='none'; return; }
+    const parts=[];
+    if(Number.isFinite(ref.tempo) && metrics.tempoRatio!=null){
+      const d=metrics.tempoRatio-ref.tempo;
+      parts.push('Tempo '+ref.tempo.toFixed(1)+':1 → '+metrics.tempoRatio.toFixed(1)+':1 ('+(d>0.15?'more deliberate':d<-0.15?'quicker':'similar')+')');
+    }
+    if(metrics.view==='faceon' && Number.isFinite(ref.shoulderTurn) && metrics.shoulderTurn!=null){
+      parts.push('Shoulder turn '+Math.round(ref.shoulderTurn)+'° → '+Math.round(metrics.shoulderTurn)+'°');
+    }
+    if(metrics.view==='dtl' && Number.isFinite(ref.sway) && metrics.sway!=null){
+      const lab=v=>v>0.45?'High':v>0.25?'Moderate':'Low';
+      parts.push('Lateral sway '+lab(ref.sway)+' → '+lab(metrics.sway));
+    }
+    if(!parts.length){ strip.style.display='none'; return; }
+    textEl.textContent=parts.join(' · ');
+    strip.style.display='block';
+  }
+
+  function renderAdviceTab(metrics){
+    const section=document.getElementById('adviceSection');
+    if(!section) return;
+    if(!phasesConfirmed || !metrics){
+      section.style.display='none';
+      return;
+    }
+    section.style.display='block';
     const s=buildCoachSummary(metrics);
-    const layerLbl = s.layerTag ? ' <span style="font-family:IBM Plex Mono,monospace;font-size:10px;letter-spacing:0.04em;text-transform:uppercase;opacity:0.75;">· '+s.layerTag+'</span>' : '';
-    document.getElementById('primaryFocus').innerHTML='<strong style="color:var(--green)">Primary focus</strong>'+layerLbl+'<br><span>'+s.primary.title+'</span><div class="summary-note" style="margin-top:4px">'+s.primary.text+'</div>';
-    document.getElementById('nextSwing').innerHTML='<strong style="color:var(--green)">Next swing</strong><br><span>'+s.secondary.title+'</span><div class="summary-note" style="margin-top:4px">'+s.secondary.text+'</div>';
-    document.getElementById('positiveSwing').innerHTML='<strong style="color:var(--green)">Keep</strong><br><span>'+s.positive.title+'</span><div class="summary-note" style="margin-top:4px">'+s.positive.text+'</div>';
+    const baseline=buildPersonalBaseline(metrics, metrics.view||'faceon');
+    const tabFund=document.getElementById('adviceTabFund');
+    const tabBase=document.getElementById('adviceTabBase');
+    if(tabFund) tabFund.classList.toggle('active', adviceTab==='fundamentals');
+    if(tabBase){
+      tabBase.classList.toggle('active', adviceTab==='baseline');
+      tabBase.disabled = !s.hasPersonal;
+      if(!s.hasPersonal && adviceTab==='baseline') adviceTab='fundamentals';
+      if(tabFund) tabFund.classList.toggle('active', adviceTab==='fundamentals');
+      tabBase.classList.toggle('active', adviceTab==='baseline');
+    }
+
+    const countNote=document.getElementById('baselineCountNote');
+    let primary=s.primary, positive=s.positive, drill=s.drill, layerLbl='';
+
+    if(adviceTab==='baseline'){
+      layerLbl=' <span style="font-family:IBM Plex Mono,monospace;font-size:10px;letter-spacing:0.04em;text-transform:uppercase;opacity:0.75;">· Vs baseline</span>';
+      if(!s.hasPersonal){
+        primary={title:'Baseline not ready yet', text:baseline.text, id:'none'};
+        positive={title:'Keep building quality data', text:'Confirm phases on more swings in this camera view. Only confirmed swings count toward your pattern.', id:null};
+        drill=COACH_DRILLS.none;
+      }else if(s.primary.layer==='personal'){
+        primary=s.primary;
+        drill=COACH_DRILLS[primary.id]||COACH_DRILLS.none;
+        positive=s.positive;
+      }else{
+        // Fundamentals won ranking — still show baseline narrative as the card content
+        primary={title:'On track vs your pattern for the main flags', text:baseline.text+' Primary coaching is under Fundamentals when absolute ranges matter more than drift.', id:'none', layer:'personal'};
+        drill=COACH_DRILLS.none;
+        positive=s.positive;
+      }
+      if(countNote) countNote.textContent=baseline.count+' confirmed '+(baseline.count===1?'swing':'swings')+' in this view · only confirmed analyses build baseline.';
+    }else{
+      layerLbl=' <span style="font-family:IBM Plex Mono,monospace;font-size:10px;letter-spacing:0.04em;text-transform:uppercase;opacity:0.75;">· Fundamentals</span>';
+      // Prefer absolute/fundamental primary for this tab
+      if(s.primary.layer==='personal' && s.secondary && s.secondary.layer==='fundamentals'){
+        primary=s.secondary;
+        drill=COACH_DRILLS[primary.id]||COACH_DRILLS.none;
+      }else if(s.primary.layer==='personal'){
+        // Personal-only primary while on fundamentals tab: still show fund message
+        primary={title:'No major fundamental red flag', text:'Absolute ranges look usable on this clip. Check “Vs your baseline” for drift from your normal pattern.', id:'none', layer:'fundamentals'};
+        drill=COACH_DRILLS.none;
+      }else{
+        primary=s.primary;
+        drill=COACH_DRILLS[primary.id]||s.drill||COACH_DRILLS.none;
+      }
+      positive=s.positive;
+      if(countNote) countNote.textContent=s.hasPersonal
+        ? 'Fundamentals use fixed ranges. Switch tabs to see drift from your confirmed baseline.'
+        : baseline.text;
+    }
+
+    document.getElementById('primaryFocus').innerHTML='<strong style="color:var(--green)">Primary focus</strong>'+layerLbl+'<br><span>'+primary.title+'</span><div class="summary-note" style="margin-top:4px">'+primary.text+'</div>';
+    document.getElementById('positiveSwing').innerHTML='<strong style="color:var(--green)">Keep</strong><br><span>'+positive.title+'</span><div class="summary-note" style="margin-top:4px">'+positive.text+'</div>';
     const drillBlock=document.getElementById('drillBlock');
     const drillText=document.getElementById('drillText');
-    if(drillBlock && drillText && s.drill){
-      drillText.textContent = s.drill.text;
-      drillBlock.style.display = 'block';
+    if(drillBlock && drillText){
+      if(drill && drill.text){
+        drillText.textContent=(drill.title?drill.title+': ':'')+drill.text;
+        drillBlock.style.display='block';
+      }else{
+        drillBlock.style.display='none';
+      }
     }
     const impactNote=document.getElementById('impactNote');
     if(impactNote){
       if(s.impactNote){
-        impactNote.textContent = s.impactNote;
-        impactNote.style.display = 'block';
+        impactNote.textContent=s.impactNote;
+        impactNote.style.display='block';
       }else{
-        impactNote.textContent = '';
-        impactNote.style.display = 'none';
+        impactNote.textContent='';
+        impactNote.style.display='none';
       }
+    }
+    // Stash active advice for Save
+    if(lastResult){
+      lastResult.activeAdvice={primary, positive, drill, tab:adviceTab};
+      metrics.focusId=primary.id||metrics.focusId;
+      metrics.coachLayer=adviceTab==='baseline'?'personal':'fundamentals';
     }
   }
 
-  function renderBaseline(metrics){
-    const baseline=buildPersonalBaseline(metrics,metrics.view);
-    const card=document.getElementById('baselineCard');
-    document.getElementById('baselineText').textContent=baseline.text;
-    card.style.display='block';
-  }
-
-  function applyResultUI(metrics,conf){
+  function applyMetricsOnly(metrics,conf){
     const impactLvl = (metrics.impactConfidence && metrics.impactConfidence.level) || 'high';
     let tempoLabel=metrics.tempoRatio<2.0?'Quick':metrics.tempoRatio>4.5?'Deliberate':'Steady';
     if(impactLvl === 'low') tempoLabel = tempoLabel + '?';
@@ -8283,9 +8503,26 @@ async function init(){
     setLabel('m3Label',metrics.labels.m3);setLabel('m3Sub',metrics.labels.m3s);
     setLabel('m4Label',metrics.labels.m4);setLabel('m4Sub',metrics.labels.m4s);
     setLabel('m5Label',metrics.labels.m5);setLabel('m5Sub',metrics.labels.m5s);
-    document.getElementById('cuesList').innerHTML=metrics.cues.map(c=>'<li>'+c+'</li>').join('');
-    renderCoachSummary(metrics);
-    renderBaseline(metrics);
+    const cuesList=document.getElementById('cuesList');
+    if(cuesList) cuesList.innerHTML=(metrics.cues||[]).map(c=>'<li>'+c+'</li>').join('');
+  }
+
+  function applyResultUI(metrics,conf){
+    applyMetricsOnly(metrics,conf);
+    const gate=document.getElementById('phaseGateMsg');
+    const details=document.getElementById('coachDetails');
+    if(!phasesConfirmed){
+      if(gate) gate.style.display='block';
+      if(details) details.style.display='none';
+      document.getElementById('adviceSection').style.display='none';
+      document.getElementById('compareStrip').style.display='none';
+      saveBtn.disabled=true;
+      return;
+    }
+    if(gate) gate.style.display='none';
+    if(details) details.style.display='block';
+    renderAdviceTab(metrics);
+    renderCompareStrip(metrics);
     saveBtn.disabled=false;
   }
 
@@ -8394,36 +8631,38 @@ async function init(){
       metrics.impactConfidence = impactConf;
       lastResult.metrics = metrics;
       applyResultUI(metrics, lastResult.conf || 0);
-      if(typeof renderBaseline === 'function') renderBaseline(metrics);
-      // Patch last history entry so baseline uses corrected tempo/phases
-      try{
-        const list = readCoachHistory();
-        if(list.length){
-          const last = list[list.length - 1];
-          if(last && last.view === lastResult.view){
-            last.tempo = metrics.tempoRatio;
-            last.shoulderTurn = metrics.shoulderTurn;
-            last.hipTurn = metrics.hipTurn;
-            last.xFactor = metrics.xFactor;
-            last.headSway = metrics.headSway;
-            last.tiltAddr = metrics.tiltAddr;
-            last.tiltChange = metrics.tiltChange;
-            last.sway = metrics.sway;
-            last.postureLoss = metrics.postureLoss;
-            last.hipDepth = metrics.hipDepth;
-            last.earlyArmDominance = metrics.earlyArmDominance;
-            last.earlyArmHigh = !!metrics.earlyArmHigh;
-            last.focusId = metrics.focusId || last.focusId;
-            last.coachLayer = metrics.coachLayer || last.coachLayer;
-            last.impactLevel = impactConf.level;
-            last.impactManual = !!lastResult.impactManual;
-            last.addressManual = !!lastResult.addressManual;
-            last.topManual = !!lastResult.topManual;
-            localStorage.setItem(COACH_HISTORY_KEY, JSON.stringify(list.slice(-40)));
+      // If already confirmed, patch last confirmed history entry with corrected metrics
+      if(phasesConfirmed){
+        try{
+          const list = readCoachHistory();
+          for(let i=list.length-1;i>=0;i--){
+            const last=list[i];
+            if(last && last.view===lastResult.view && last.confirmed){
+              last.tempo = metrics.tempoRatio;
+              last.shoulderTurn = metrics.shoulderTurn;
+              last.hipTurn = metrics.hipTurn;
+              last.xFactor = metrics.xFactor;
+              last.headSway = metrics.headSway;
+              last.tiltAddr = metrics.tiltAddr;
+              last.tiltChange = metrics.tiltChange;
+              last.sway = metrics.sway;
+              last.postureLoss = metrics.postureLoss;
+              last.hipDepth = metrics.hipDepth;
+              last.earlyArmDominance = metrics.earlyArmDominance;
+              last.earlyArmHigh = !!metrics.earlyArmHigh;
+              last.focusId = metrics.focusId || last.focusId;
+              last.coachLayer = metrics.coachLayer || last.coachLayer;
+              last.impactLevel = impactConf.level;
+              last.impactManual = !!lastResult.impactManual;
+              last.addressManual = !!lastResult.addressManual;
+              last.topManual = !!lastResult.topManual;
+              last.confirmed = true;
+              localStorage.setItem(COACH_HISTORY_KEY, JSON.stringify(list.slice(-40)));
+              break;
+            }
           }
-        }
-      }catch(e){}
-      // Refresh diagnostics timestamps
+        }catch(e){}
+      }
       try{
         diagnostics.textContent = [
           'View: '+(lastResult.view==='dtl'?'Down-the-line':'Face-on'),
@@ -8434,6 +8673,7 @@ async function init(){
           'Backswing: '+Math.round(metrics.backMs)+' ms · Downswing: '+Math.round(metrics.downMs)+' ms',
           'Tempo: '+metrics.display.tempo,
           'Confidence: '+(lastResult.conf||'—')+'%',
+          'Phases: '+(phasesConfirmed?'confirmed':'awaiting confirm'),
           'Focus: '+(metrics.focusId||'—')
         ].join('\n');
       }catch(e){}
@@ -8507,6 +8747,69 @@ async function init(){
   document.getElementById('setTopBtn')?.addEventListener('click', ()=> setPhaseManual('top'));
   document.getElementById('setImpactBtn')?.addEventListener('click', ()=> setPhaseManual('impact'));
 
+  document.getElementById('confirmPhasesBtn')?.addEventListener('click', ()=>{
+    if(!lastResult || busy) return;
+    const m=lastResult.metrics;
+    if(!m || !lastResult.address || !lastResult.top || !lastResult.impact){
+      const st=document.getElementById('saveStatus');
+      if(st) st.textContent='Need Address, Top, and Impact before confirming.';
+      return;
+    }
+    if(lastResult.address.t >= lastResult.top.t - 20 || lastResult.top.t >= lastResult.impact.t - 20){
+      const st=document.getElementById('saveStatus');
+      if(st) st.textContent='Phases must be in order: Address → Top → Impact. Adjust, then confirm.';
+      return;
+    }
+    phasesConfirmed=true;
+    // Build advice once so history gets a real focusId
+    applyResultUI(m, lastResult.conf||0);
+    const active=lastResult.activeAdvice;
+    const impactConf=(m.impactConfidence)||{level:'high'};
+    writeCoachHistory({
+      id:uid(), date:todayISO(), view:lastResult.view,
+      tempo:m.tempoRatio,
+      shoulderTurn:m.shoulderTurn,
+      hipTurn:m.hipTurn,
+      xFactor:m.xFactor,
+      headSway:m.headSway,
+      tiltAddr:m.tiltAddr,
+      tiltChange:m.tiltChange,
+      sway:m.sway,
+      postureLoss:m.postureLoss,
+      hipDepth:m.hipDepth,
+      earlyArmDominance:m.earlyArmDominance,
+      earlyArmHigh:!!m.earlyArmHigh,
+      conf:lastResult.conf,
+      impactManual:!!lastResult.impactManual,
+      addressManual:!!lastResult.addressManual,
+      topManual:!!lastResult.topManual,
+      confirmed:true,
+      focusId:(active&&active.primary&&active.primary.id)||m.focusId||null,
+      coachLayer:(active&&active.tab==='baseline')?'personal':(m.coachLayer||'fundamentals'),
+      impactLevel:impactConf.level||'high'
+    });
+    const pcw=document.getElementById('phaseConfirmWrap');
+    if(pcw){
+      const hint=document.getElementById('phaseConfirmHint');
+      if(hint) hint.textContent='Phases confirmed. Coaching is unlocked — adjust markers anytime and metrics will update.';
+      const cbtn=document.getElementById('confirmPhasesBtn');
+      if(cbtn){ cbtn.textContent='Phases confirmed ✓'; cbtn.disabled=true; }
+    }
+    stateEl.textContent='Confirmed';
+    hud.innerHTML='<b>CONFIRMED</b> — Tempo '+m.display.tempo+' · Conf '+(lastResult.conf||'—')+'%';
+    document.getElementById('diagState').textContent='Confirmed';
+    renderCompareStrip(m);
+    const st=document.getElementById('saveStatus');
+    if(st) st.textContent='Phases confirmed. Review Fundamentals or Vs baseline, then save to Practice if you want.';
+  });
+
+  document.getElementById('adviceTabs')?.addEventListener('click', e=>{
+    const btn=e.target.closest('.sc-advice-tab');
+    if(!btn || btn.disabled) return;
+    adviceTab=btn.dataset.advice||'fundamentals';
+    if(lastResult && lastResult.metrics && phasesConfirmed) renderAdviceTab(lastResult.metrics);
+  });
+
   analyzeBtn.addEventListener('click',async()=>{
     if(busy||!coachUrl)return;
     busy=true;analyzeBtn.disabled=true;stateEl.textContent='Analyzing…';
@@ -8565,9 +8868,10 @@ async function init(){
       if(impactConf.level==='high') conf+=4;
       else if(impactConf.level==='low') conf=Math.max(22,conf-6);
       conf=Math.max(22,Math.min(92,Math.round(conf)));
-      applyResultUI(metrics,conf);
+      phasesConfirmed=false;
       lastResult={metrics,conf,view,address:addressFrame,top:topFrame,impact:impactFrame,samples,sampleCount:samples.length,addressManual:false,topManual:false,impactManual:false};
-      // Scrubber: full clip, skeleton from nearest analyzed frame
+      applyResultUI(metrics,conf);
+      // Scrubber + phase confirm — coaching waits for Confirm
       if(scrubRow && scrubInput){
         const durMs = Math.max(100, (video.duration || 3) * 1000);
         scrubInput.min = '0';
@@ -8578,33 +8882,16 @@ async function init(){
         if(scrubTimeEl) scrubTimeEl.textContent = (topFrame.t/1000).toFixed(2) + 's';
         if(scrubPhaseHint) scrubPhaseHint.textContent = 'Top';
         updatePhaseSetButtons();
+        const pcw=document.getElementById('phaseConfirmWrap');
+        if(pcw) pcw.style.display='block';
+        const cbtn=document.getElementById('confirmPhasesBtn');
+        if(cbtn){ cbtn.disabled=false; cbtn.textContent='Confirm phases'; }
       }
-      writeCoachHistory({
-        id:uid(),date:todayISO(),view,
-        tempo:metrics.tempoRatio,
-        shoulderTurn:metrics.shoulderTurn,
-        hipTurn:metrics.hipTurn,
-        xFactor:metrics.xFactor,
-        headSway:metrics.headSway,
-        tiltAddr:metrics.tiltAddr,
-        tiltChange:metrics.tiltChange,
-        sway:metrics.sway,
-        postureLoss:metrics.postureLoss,
-        hipDepth:metrics.hipDepth,
-        earlyArmDominance: metrics.earlyArmDominance,
-        earlyArmHigh: !!metrics.earlyArmHigh,
-        conf,
-        impactManual: false,
-        focusId: metrics.focusId || null,
-        coachLayer: metrics.coachLayer || null,
-        impactLevel: impactConf.level
-      });
-      renderBaseline(metrics);
       phaseRow.style.display='flex';await showPhase('top');
-      setProgress(1);stateEl.textContent='Done';
-      hud.innerHTML='<b>DONE</b> — Tempo '+metrics.display.tempo+' · Conf '+conf+'%'+(impactConf.level==='low'?' · Impact uncertain':'');
-      diagnostics.textContent=['View: '+(view==='dtl'?'Down-the-line':'Face-on'),'Frames with pose: '+samples.length+' / '+nFrames,'Address @ '+(addressFrame.t/1000).toFixed(2)+'s · Top @ '+(topFrame.t/1000).toFixed(2)+'s · Impact ~'+(impactFrame.t/1000).toFixed(2)+'s ('+impactConf.level+')','Backswing: '+Math.round(metrics.backMs)+' ms · Downswing: '+Math.round(metrics.downMs)+' ms','Tempo: '+metrics.display.tempo,'Confidence: '+conf+'%','Focus: '+(metrics.focusId||'—')].join('\n');
-      document.getElementById('diagState').textContent='Complete';
+      setProgress(1);stateEl.textContent='Confirm phases';
+      hud.innerHTML='<b>CHECK PHASES</b> — Auto-detected · Tempo '+metrics.display.tempo+' · Conf '+conf+'%. Adjust if needed, then Confirm.';
+      diagnostics.textContent=['View: '+(view==='dtl'?'Down-the-line':'Face-on'),'Frames with pose: '+samples.length+' / '+nFrames,'Address @ '+(addressFrame.t/1000).toFixed(2)+'s · Top @ '+(topFrame.t/1000).toFixed(2)+'s · Impact ~'+(impactFrame.t/1000).toFixed(2)+'s ('+impactConf.level+')','Backswing: '+Math.round(metrics.backMs)+' ms · Downswing: '+Math.round(metrics.downMs)+' ms','Tempo: '+metrics.display.tempo,'Confidence: '+conf+'%','Phases: awaiting confirm'].join('\n');
+      document.getElementById('diagState').textContent='Awaiting confirm';
     }catch(e){
       stateEl.textContent='Error';hud.innerHTML='<b>FAILED</b> — '+(e.message||e);
       document.getElementById('cuesList').innerHTML='<li>'+(e.message||e)+'</li>';
@@ -8620,21 +8907,45 @@ async function init(){
   function uid(){return 'c_'+Math.random().toString(36).slice(2,10)+Date.now().toString(36);}
 
   saveBtn.addEventListener('click',()=>{
-    if(!lastResult)return;
+    if(!lastResult || !phasesConfirmed) return;
     const m=lastResult.metrics;
     const viewLabel=lastResult.view==='dtl'?'Down-the-line':'Face-on';
-    const summary=buildCoachSummary(m);
-    const drillLine = summary.drill ? ('Drill: '+summary.drill.title+' — '+summary.drill.text) : '';
-    const cueText=[summary.primary.title+': '+summary.primary.text,summary.positive.title+': '+summary.positive.text].join(' · ');
-    const notes=['Swing Coach ('+viewLabel+')','Focus: '+summary.primary.title,'Tempo '+(m.tempoRatio<2?'quick':m.tempoRatio>4.5?'deliberate':'steady')+' ('+m.display.tempo+')',m.labels.m2+': '+m.display.m2,m.labels.m3+': '+m.display.m3,m.labels.m4+': '+m.display.m4,m.labels.m5+': '+m.display.m5,'Confidence '+lastResult.conf+'%',cueText,drillLine].filter(Boolean).join(' · ');
-    const focusLabel = 'Swing Coach — '+(summary.primary.title || viewLabel);
-    const entry={id:uid(),date:todayISO(),focus:focusLabel,duration:null,notes,source:'swing-coach',coachView:lastResult.view,coachConf:lastResult.conf,coachFocusId:summary.primary.id||null};
+    const active=lastResult.activeAdvice || {};
+    const primary=active.primary || {title:'Swing work', text:''};
+    const positive=active.positive || {title:'', text:''};
+    const drill=active.drill || null;
+    const drillLine = drill && drill.text ? ('Drill: '+(drill.title?drill.title+' — ':'')+drill.text) : '';
+    const tabLabel = active.tab==='baseline' ? 'Vs baseline' : 'Fundamentals';
+    const notes=[
+      'Swing Coach ('+viewLabel+' · '+tabLabel+')',
+      'Focus: '+primary.title,
+      primary.text,
+      'Tempo '+(m.tempoRatio<2?'quick':m.tempoRatio>4.5?'deliberate':'steady')+' ('+m.display.tempo+')',
+      m.labels.m2+': '+m.display.m2,
+      m.labels.m3+': '+m.display.m3,
+      m.labels.m4+': '+m.display.m4,
+      m.labels.m5+': '+m.display.m5,
+      'Confidence '+lastResult.conf+'%',
+      positive.title?('Keep: '+positive.title):'',
+      drillLine
+    ].filter(Boolean).join(' · ');
+    const focusLabel = 'Swing Coach — '+(primary.title || viewLabel);
+    const entry={id:uid(),date:todayISO(),focus:focusLabel,duration:null,notes,source:'swing-coach',coachView:lastResult.view,coachConf:lastResult.conf,coachFocusId:primary.id||null};
     try{
       const key='adairway_coach_practice_queue';
       const prev=JSON.parse(localStorage.getItem(key)||'[]');
       const list=Array.isArray(prev)?prev:[];list.push(entry);
       localStorage.setItem(key,JSON.stringify(list));
-      document.getElementById('saveStatus').textContent='Saved to the Practice queue. Open the main app → Practice tab and it will import automatically.';
+      writeCurrentFocus({
+        title: primary.title,
+        viewLabel,
+        date: todayISO(),
+        drillTitle: drill && drill.title ? drill.title : null,
+        focusId: primary.id||null,
+        tab: active.tab||'fundamentals'
+      });
+      renderCurrentFocusUI();
+      document.getElementById('saveStatus').textContent='Saved to Practice queue and set as current swing focus. Practice tab will import automatically.';
       saveBtn.textContent='Saved ✓';setTimeout(()=>{saveBtn.textContent='Save to Practice log';},2000);
     }catch(e){
       document.getElementById('saveStatus').textContent='Could not write local queue ('+(e.message||e)+'). Copy notes manually from Results.';
@@ -8642,6 +8953,7 @@ async function init(){
   });
 
   setView('faceon');
+  try{ renderCurrentFocusUI(); }catch(e){}
 })();
 </script>
 </body>
