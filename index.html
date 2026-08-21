@@ -1636,7 +1636,7 @@
             <div class="panel"><ul class="setup" id="setupList"></ul></div>
           </div>
 
-          <div class="sc-card wide">
+          <div class="sc-card wide" id="coachDiagnosticsCard" style="display:none" hidden>
             <div class="sc-head"><strong>Diagnostics</strong><span class="state" id="diagState">Idle</span></div>
             <div class="panel"><pre class="diag" id="diagnostics">Pick Face-on or Down-the-line, then upload a clip.</pre></div>
           </div>
@@ -8912,22 +8912,13 @@ async function init(){
     const viewLabel=lastResult.view==='dtl'?'Down-the-line':'Face-on';
     const active=lastResult.activeAdvice || {};
     const primary=active.primary || {title:'Swing work', text:''};
-    const positive=active.positive || {title:'', text:''};
     const drill=active.drill || null;
-    const drillLine = drill && drill.text ? ('Drill: '+(drill.title?drill.title+' — ':'')+drill.text) : '';
     const tabLabel = active.tab==='baseline' ? 'Vs baseline' : 'Fundamentals';
-    const notes=[
-      'Swing Coach ('+viewLabel+' · '+tabLabel+')',
-      'Focus: '+primary.title,
-      primary.text,
-      'Tempo '+(m.tempoRatio<2?'quick':m.tempoRatio>4.5?'deliberate':'steady')+' ('+m.display.tempo+')',
-      m.labels.m2+': '+m.display.m2,
-      m.labels.m3+': '+m.display.m3,
-      m.labels.m4+': '+m.display.m4,
-      m.labels.m5+': '+m.display.m5,
-      'Confidence '+lastResult.conf+'%',
-      positive.title?('Keep: '+positive.title):'',
-      drillLine
+    // Short log line — current-focus card holds the active cue
+    const notes = [
+      viewLabel+' · '+tabLabel,
+      'Tempo '+m.display.tempo,
+      drill && drill.title ? ('Drill: '+drill.title) : null
     ].filter(Boolean).join(' · ');
     const focusLabel = 'Swing Coach — '+(primary.title || viewLabel);
     const entry={id:uid(),date:todayISO(),focus:focusLabel,duration:null,notes,source:'swing-coach',coachView:lastResult.view,coachConf:lastResult.conf,coachFocusId:primary.id||null};
