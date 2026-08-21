@@ -7798,6 +7798,13 @@ async function init(){
     return n;
   }
 
+  /** Tempo averages for baseline — prefer higher-confidence impact when available. */
+  function qualityTempoHistory(history){
+    const withTempo = (history||[]).filter(x => Number.isFinite(x.tempo));
+    const trusted = withTempo.filter(x => x.impactLevel === 'high' || x.impactLevel === 'medium' || x.impactManual);
+    return trusted.length >= 3 ? trusted : withTempo;
+  }
+
   function buildPersonalBaseline(metrics, view){
     const history=readCoachHistory().filter(x=>x.view===view);
     if(history.length<5){
@@ -7810,14 +7817,32 @@ async function init(){
     }
 
     const parts=[];
-    const tempoAvg=average(history.map(x=>x.tempo).filter(Number.isFinite));
+    const tempoHist=qualityTempoHistory(history);
+    const tempoAvg=average(tempoHist.map(x=>x.tempo));
     if(tempoAvg!=null && metrics.tempoRatio!=null){
       const delta=metrics.tempoRatio-tempoAvg;
       const tempoUncertain = metrics.impactConfidence && metrics.impactConfidence.level === 'low';
       if(tempoUncertain){
-        parts.push('Tempo trend is held lightly until impact is confirmed (scrub and Set as Impact).');
+        parts.push('Tempo vs baseline is held lightly until impact is confirmed (scrub and Set Address / Top / Impact).');
+      }else if(Math.abs(delta)<0.25){
+        parts.push('Transition timing is close to your recent average.');
+      }else if(delta<0){
+        // Quicker than baseline — but if still deliberate in absolute terms, say so clearly
+        if(metrics.tempoRatio > 4.5){
+          parts.push('Still deliberate overall, though less paused than your recent average.');
+        }else if(metrics.tempoRatio < 2.0){
+          parts.push('Transition is quicker than your recent average (and also quick in absolute terms).');
+        }else{
+          parts.push('Transition is quicker than your recent average.');
+        }
       }else{
-        parts.push(`Your transition is ${Math.abs(delta)<0.25?'close to':delta<0?'quicker than':'more deliberate than'} your recent average.`);
+        if(metrics.tempoRatio < 2.0){
+          parts.push('Still on the quick side overall, though more deliberate than your recent average.');
+        }else if(metrics.tempoRatio > 4.5){
+          parts.push('Transition is more deliberate than your recent average (and deliberate in absolute terms).');
+        }else{
+          parts.push('Transition is more deliberate than your recent average.');
+        }
       }
     }
 
@@ -7841,7 +7866,6 @@ async function init(){
       }
     }
 
-    // Streak note
     if(metrics.focusId && metrics.focusId !== 'none'){
       const streak = focusStreak(view, metrics.focusId);
       if(streak >= 2){
@@ -7849,7 +7873,7 @@ async function init(){
       }
     }
     if(history.length >= 5){
-      parts.unshift('Personal baseline is active: coaching can prioritize drift from your pattern as well as fundamentals.');
+      parts.unshift('Baseline active: this card is how you compare to your own recent pattern. Primary focus stays one coherent action.');
     }
 
     return {count:history.length,text:parts.join(' ')};
@@ -7864,27 +7888,64 @@ async function init(){
     const view = metrics.view || 'faceon';
     const history = readCoachHistory().filter(x => x.view === view);
     const hasPersonal = history.length >= 5;
+    const ratio = metrics.tempoRatio;
+    // Absolute tempo buckets — single source of truth for direction
+    const absRushed = ratio != null && ratio < 2.0;
+    const absStalled = ratio != null && ratio > 4.5;
+    const absSteady = ratio != null && !absRushed && !absStalled;
 
     // ---- Personal deviations (seasoned-player layer) ----
+    // Rule: personal tempo tips must never prescribe the opposite of the absolute bucket.
+    // - If abs stalled: only allow "more deliberate than baseline" (same direction), never "quicker"
+    // - If abs rushed: only allow "quicker than baseline", never "more deliberate"
+    // - If abs steady: personal tempo drift can be primary (this is where baseline is most useful)
     const personal = [];
     if(hasPersonal){
-      const tempoAvg = average(history.map(x => x.tempo).filter(Number.isFinite));
-      if(tempoAvg != null && metrics.tempoRatio != null && impactLvl !== 'low'){
-        const delta = metrics.tempoRatio - tempoAvg;
+      const tempoAvg = average(qualityTempoHistory(history).map(x => x.tempo));
+      if(tempoAvg != null && ratio != null && impactLvl !== 'low'){
+        const delta = ratio - tempoAvg;
         if(delta < -0.45){
-          personal.push({
-            title: 'Transition is quicker than your normal',
-            text: 'Compared with your recent swings, this change of direction is abrupt. That can creep in when you get aggressive — smooth it back toward your usual feel rather than rebuilding from a textbook tempo.',
-            id: 'personal_tempo_quick',
-            severity: Math.min(3, Math.abs(delta) / 0.45)
-          });
+          // Quicker than baseline
+          if(absStalled){
+            // Conflict with absolute: do NOT coach "quicker" — baseline card handles the nuance
+          }else if(absRushed){
+            personal.push({
+              title: 'Transition is quicker than your normal',
+              text: 'This is quick in absolute terms and also quicker than your recent average — same direction, so worth smoothing the change of direction back toward your usual feel.',
+              id: 'personal_tempo_quick',
+              severity: Math.min(3, Math.abs(delta) / 0.45),
+              agreesWithAbs: true
+            });
+          }else if(absSteady){
+            personal.push({
+              title: 'Transition is quicker than your normal',
+              text: 'Absolute timing still looks usable, but compared with your recent swings this change of direction is abrupt. Smooth it back toward your usual feel rather than rebuilding from a textbook tempo.',
+              id: 'personal_tempo_quick',
+              severity: Math.min(3, Math.abs(delta) / 0.45),
+              agreesWithAbs: false
+            });
+          }
         }else if(delta > 0.55){
-          personal.push({
-            title: 'Transition is more deliberate than your normal',
-            text: 'You’re holding the top longer than your recent pattern. If contact felt stuck or weak, return to a continuous flow closer to your baseline — not necessarily faster, just less paused.',
-            id: 'personal_tempo_slow',
-            severity: Math.min(3, delta / 0.55)
-          });
+          // More deliberate than baseline
+          if(absRushed){
+            // Conflict: skip as coaching tip
+          }else if(absStalled){
+            personal.push({
+              title: 'Transition is more deliberate than your normal',
+              text: 'This is deliberate in absolute terms and also more paused than your recent pattern — same direction. Return toward a continuous flow closer to your baseline.',
+              id: 'personal_tempo_slow',
+              severity: Math.min(3, delta / 0.55),
+              agreesWithAbs: true
+            });
+          }else if(absSteady){
+            personal.push({
+              title: 'Transition is more deliberate than your normal',
+              text: 'Absolute timing still looks usable, but you’re holding the top longer than your recent pattern. If contact felt stuck, return to a continuous flow closer to your baseline — not necessarily faster, just less paused.',
+              id: 'personal_tempo_slow',
+              severity: Math.min(3, delta / 0.55),
+              agreesWithAbs: false
+            });
+          }
         }
       }
       if(view === 'faceon'){
@@ -7940,12 +8001,12 @@ async function init(){
     }
 
     // Helper: is this absolute flag still "normal for you"?
-    function withinPersonalNorm(key, value, lowerIsBetter){
-      if(!hasPersonal || value == null) return false;
-      if(key === 'tempo' && metrics.tempoRatio != null){
-        const avg = average(history.map(x => x.tempo).filter(Number.isFinite));
+    function withinPersonalNorm(key){
+      if(!hasPersonal) return false;
+      if(key === 'tempo' && ratio != null){
+        const avg = average(qualityTempoHistory(history).map(x => x.tempo));
         if(avg == null) return false;
-        return Math.abs(metrics.tempoRatio - avg) < 0.35;
+        return Math.abs(ratio - avg) < 0.35;
       }
       if(key === 'head' && metrics.headSway != null){
         const avg = average(historyMetricValues(history, view, 'headSway'));
@@ -7958,32 +8019,36 @@ async function init(){
       return false;
     }
 
-    // ---- Fundamentals candidates ----
+    // ---- Fundamentals candidates (absolute ranges — newbie + everyone) ----
     const fundamentals = [];
 
-    if(metrics.tempoRatio < 2.0){
+    if(absRushed){
       const soft = impactLvl === 'low';
       const personalOk = withinPersonalNorm('tempo');
-      const text = soft
-        ? 'Tempo looks quick, but impact timing is uncertain — confirm with Set as Impact before grinding on transition.'
-        : (personalOk
-          ? 'Absolute tempo looks quick, but it’s close to your recent average — only chase this if contact or start direction suffered.'
-          : (impactLvl === 'medium'
-            ? 'Transition may be a bit quick. Scrub to true impact if needed, then smooth the change of direction — not simply a slower swing.'
-            : 'Make a complete backswing, then feel a tiny moment of direction change before the club starts down. Smoother, not necessarily slower.'));
+      let text;
+      if(soft){
+        text = 'Tempo looks quick, but impact timing is uncertain — scrub and Set Address / Top / Impact before grinding on transition.';
+      }else if(personalOk){
+        text = 'Absolute tempo looks quick, but it’s close to your recent average — only chase this if contact or start direction suffered.';
+      }else if(impactLvl === 'medium'){
+        text = 'Transition may be a bit quick. Confirm impact if needed, then smooth the change of direction — not simply a slower swing.';
+      }else{
+        text = 'Make a complete backswing, then feel a tiny moment of direction change before the club starts down. Smoother, not necessarily slower.';
+      }
       if((tempoTrusted || soft) && !personalOk){
         fundamentals.push({title:'Your transition looks rushed', text, id:'tempo_rushed', severity: soft ? 1.2 : 2.2});
-      }else if(personalOk && metrics.tempoRatio < 2.0){
-        secondary.push({title:'Tempo note', text, id:null, layer:'fundamentals'});
       }
-    }else if(metrics.tempoRatio > 4.5){
+    }else if(absStalled){
       const soft = impactLvl === 'low';
       const personalOk = withinPersonalNorm('tempo');
-      const text = soft
-        ? 'Transition looks very patient, but impact is uncertain. Set Impact, then re-check.'
-        : (personalOk
-          ? 'This looks deliberate in absolute terms, but it’s near your normal — only change it if the club feels stuck.'
-          : 'Let the backswing flow into the downswing instead of holding the top. Continuous motion, not a pause.');
+      let text;
+      if(soft){
+        text = 'Transition looks very patient, but impact is uncertain. Scrub and Set Address / Top / Impact, then re-check.';
+      }else if(personalOk){
+        text = 'This looks deliberate in absolute terms, but it’s near your normal — only change it if the club feels stuck.';
+      }else{
+        text = 'Let the backswing flow into the downswing instead of holding the top. Continuous motion, not a pause.';
+      }
       if((tempoTrusted || soft) && !personalOk){
         fundamentals.push({title:'Your transition looks stalled', text, id:'tempo_stalled', severity: soft ? 1.2 : 2.0});
       }
@@ -8045,7 +8110,6 @@ async function init(){
         add(positive,'Height is reasonably maintained','That is a useful piece to keep through the backswing.','', 'fundamentals');
     }
 
-    // Possible OTT / early arm hypothesis (both views) — never claim measured path
     if(metrics.earlyArmHigh){
       fundamentals.push({
         title:'Early upper-body / arm move (check path)',
@@ -8057,27 +8121,56 @@ async function init(){
 
     fundamentals.sort((a,b) => b.severity - a.severity);
 
-    // ---- Rank primary: personal drift can outrank fundamentals when clear ----
-    const topPersonal = personal[0] || null;
+    // ---- Rank primary (never stack opposing tempo advice) ----
+    // 1. Absolute extremes (rushed/stalled) win over opposing personal tempo.
+    // 2. Personal can be primary when absolute is steady, or when it agrees with absolute.
+    // 3. Secondary never contradicts primary on tempo direction.
     const topFund = fundamentals[0] || null;
+    const personalTempo = personal.find(p => p.id === 'personal_tempo_quick' || p.id === 'personal_tempo_slow') || null;
+    const personalBody = personal.filter(p => p !== personalTempo);
+    const topPersonalBody = personalBody[0] || null;
 
-    if(topPersonal && topPersonal.severity >= 1.6 && (!topFund || topPersonal.severity + 0.15 >= topFund.severity)){
-      add(primary, topPersonal.title, topPersonal.text, topPersonal.id, 'personal');
-      if(topFund) add(secondary, topFund.title, topFund.text, topFund.id, 'fundamentals');
-      // other personal as softer notes
-      personal.slice(1,3).forEach(p => {
-        if(secondary.length < 2) add(secondary, p.title, p.text, p.id, 'personal');
-      });
-    }else if(topFund){
-      if(preferBody && topFund.id && topFund.id.indexOf('tempo') === 0 && fundamentals.length > 1){
-        const body = fundamentals.find(f => f.id && f.id.indexOf('tempo') !== 0) || topFund;
-        add(primary, body.title, body.text, body.id, 'fundamentals');
-        if(body !== topFund) add(secondary, topFund.title, topFund.text, topFund.id, 'fundamentals');
-      }else{
-        add(primary, topFund.title, topFund.text, topFund.id, 'fundamentals');
+    function tempoIdsConflict(a, b){
+      if(!a || !b) return false;
+      const A = a.id || '', B = b.id || '';
+      const quick = (id) => id === 'tempo_rushed' || id === 'personal_tempo_quick';
+      const slow = (id) => id === 'tempo_stalled' || id === 'personal_tempo_slow';
+      return (quick(A) && slow(B)) || (slow(A) && quick(B));
+    }
+
+    // Prefer body metrics over soft/uncertain tempo when impact is low confidence
+    let fundPick = topFund;
+    if(preferBody && topFund && topFund.id && topFund.id.indexOf('tempo') === 0 && fundamentals.length > 1){
+      fundPick = fundamentals.find(f => f.id && f.id.indexOf('tempo') !== 0) || topFund;
+    }
+
+    // Choose primary
+    if(fundPick && (absRushed || absStalled)){
+      // Absolute extreme: fundamentals own primary. Personal only as secondary if same direction.
+      let fundText = fundPick.text;
+      if(personalTempo && personalTempo.agreesWithAbs){
+        fundText = fundPick.text + ' This is also off your recent baseline in the same direction.';
       }
-      if(topPersonal){
-        add(secondary, topPersonal.title, topPersonal.text, topPersonal.id, 'personal');
+      add(primary, fundPick.title, fundText, fundPick.id, 'fundamentals');
+      if(personalTempo && personalTempo.agreesWithAbs && !tempoIdsConflict(fundPick, personalTempo)){
+        // already reinforced in primary text — prefer body personal or meta for secondary
+      }
+      if(topPersonalBody) add(secondary, topPersonalBody.title, topPersonalBody.text, topPersonalBody.id, 'personal');
+      else if(fundPick !== topFund && topFund) add(secondary, topFund.title, topFund.text, topFund.id, 'fundamentals');
+    }else if(personalTempo && absSteady && personalTempo.severity >= 1.6 && (!fundPick || personalTempo.severity + 0.1 >= (fundPick.severity||0))){
+      // Steady absolute + clear personal tempo drift: baseline is the point
+      add(primary, personalTempo.title, personalTempo.text, personalTempo.id, 'personal');
+      if(fundPick) add(secondary, fundPick.title, fundPick.text, fundPick.id, 'fundamentals');
+      else if(topPersonalBody) add(secondary, topPersonalBody.title, topPersonalBody.text, topPersonalBody.id, 'personal');
+    }else if(topPersonalBody && topPersonalBody.severity >= 1.6 && (!fundPick || topPersonalBody.severity + 0.15 >= (fundPick.severity||0))){
+      add(primary, topPersonalBody.title, topPersonalBody.text, topPersonalBody.id, 'personal');
+      if(fundPick) add(secondary, fundPick.title, fundPick.text, fundPick.id, 'fundamentals');
+      else if(personalTempo && absSteady) add(secondary, personalTempo.title, personalTempo.text, personalTempo.id, 'personal');
+    }else if(fundPick){
+      add(primary, fundPick.title, fundPick.text, fundPick.id, 'fundamentals');
+      if(topPersonalBody) add(secondary, topPersonalBody.title, topPersonalBody.text, topPersonalBody.id, 'personal');
+      else if(personalTempo && absSteady && !tempoIdsConflict(fundPick, personalTempo)){
+        add(secondary, personalTempo.title, personalTempo.text, personalTempo.id, 'personal');
       }
     }
 
@@ -8089,7 +8182,12 @@ async function init(){
       }
     }
 
-    // Streak
+    // Drop secondary if it would fight primary on tempo
+    if(secondary.length && tempoIdsConflict(primary[0], secondary[0])){
+      secondary.shift();
+    }
+
+    // Streak / meta fill for secondary
     const focusId = primary[0] && primary[0].id;
     const streak = focusStreak(view, focusId);
     if(streak >= 2 && focusId && focusId !== 'none'){
@@ -8101,9 +8199,9 @@ async function init(){
       });
     }else if(!secondary.length){
       if(hasPersonal){
-        add(secondary, 'Fundamentals + your pattern', 'Primary blends textbook ranges with how you usually move. After 5+ swings in a view, drift from your baseline can take priority when it’s clear.', null, 'meta');
+        add(secondary, 'How the two layers work', 'Fundamentals use fixed ranges (useful when you’re learning). After 5+ swings, “vs your baseline” flags drift from your normal — never the opposite of a clear absolute flag.', null, 'meta');
       }else{
-        add(secondary, 'Building your baseline', 'After five swings in this camera view, coaching can prioritize what’s different from your normal — not only generic targets.', null, 'meta');
+        add(secondary, 'Building your baseline', 'After five swings in this camera view, coaching can also flag what’s different from your normal — not only generic targets.', null, 'meta');
       }
     }
 
@@ -8115,17 +8213,16 @@ async function init(){
 
     let impactNote = null;
     if(impactLvl === 'low'){
-      impactNote = 'Impact looks uncertain — tempo is a softer estimate. Scrub to impact and tap Set as Impact.';
+      impactNote = 'Phase timing looks uncertain — tempo is a softer estimate. Scrub and use Set Address / Top / Impact, then tips will recalculate.';
     }else if(impactLvl === 'medium' && !(metrics.impactConfidence && metrics.impactConfidence.reason === 'manual')){
-      impactNote = 'Impact was estimated near the end of the clip. If tempo feels off, scrub and Set as Impact.';
+      impactNote = 'Impact was estimated near the end of the clip. If tempo feels off, scrub and Set Impact (or Address / Top).';
     }
 
     metrics.focusId = prim.id || 'none';
     metrics.coachLayer = prim.layer || 'fundamentals';
     metrics.drill = drill;
 
-    // Label primary with layer for the golfer
-    const layerTag = prim.layer === 'personal' ? 'Personal' : (prim.layer === 'fundamentals' ? 'Fundamentals' : null);
+    const layerTag = prim.layer === 'personal' ? 'Vs baseline' : (prim.layer === 'fundamentals' ? 'Fundamentals' : null);
 
     return {
       primary: prim,
@@ -8298,6 +8395,34 @@ async function init(){
       lastResult.metrics = metrics;
       applyResultUI(metrics, lastResult.conf || 0);
       if(typeof renderBaseline === 'function') renderBaseline(metrics);
+      // Patch last history entry so baseline uses corrected tempo/phases
+      try{
+        const list = readCoachHistory();
+        if(list.length){
+          const last = list[list.length - 1];
+          if(last && last.view === lastResult.view){
+            last.tempo = metrics.tempoRatio;
+            last.shoulderTurn = metrics.shoulderTurn;
+            last.hipTurn = metrics.hipTurn;
+            last.xFactor = metrics.xFactor;
+            last.headSway = metrics.headSway;
+            last.tiltAddr = metrics.tiltAddr;
+            last.tiltChange = metrics.tiltChange;
+            last.sway = metrics.sway;
+            last.postureLoss = metrics.postureLoss;
+            last.hipDepth = metrics.hipDepth;
+            last.earlyArmDominance = metrics.earlyArmDominance;
+            last.earlyArmHigh = !!metrics.earlyArmHigh;
+            last.focusId = metrics.focusId || last.focusId;
+            last.coachLayer = metrics.coachLayer || last.coachLayer;
+            last.impactLevel = impactConf.level;
+            last.impactManual = !!lastResult.impactManual;
+            last.addressManual = !!lastResult.addressManual;
+            last.topManual = !!lastResult.topManual;
+            localStorage.setItem(COACH_HISTORY_KEY, JSON.stringify(list.slice(-40)));
+          }
+        }
+      }catch(e){}
       // Refresh diagnostics timestamps
       try{
         diagnostics.textContent = [
@@ -8429,7 +8554,7 @@ async function init(){
       if(impactConf.level==='low' && Array.isArray(metrics.cues)){
         metrics.cues=metrics.cues.map(c=>{
           if(/Transition is rushed|Transition is very patient|Transition timing looks steady/.test(c)){
-            return c+' <span style="opacity:.75">(Impact uncertain — use Set as Impact to refine tempo.)</span>';
+            return c+' <span style="opacity:.75">(Timing uncertain — use Set Address / Top / Impact to refine.)</span>';
           }
           return c;
         });
@@ -8469,6 +8594,7 @@ async function init(){
         earlyArmDominance: metrics.earlyArmDominance,
         earlyArmHigh: !!metrics.earlyArmHigh,
         conf,
+        impactManual: false,
         focusId: metrics.focusId || null,
         coachLayer: metrics.coachLayer || null,
         impactLevel: impactConf.level
