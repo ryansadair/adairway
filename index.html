@@ -872,13 +872,19 @@
     margin-top:4px; font-family:'IBM Plex Mono',monospace; font-size:11px; color: var(--sc-muted);
   }
   #swingCoachRoot .sc-scrub-meta #scrubPhaseHint{ color: var(--turf); font-weight:600; }
-  #swingCoachRoot .sc-set-impact{
+  #swingCoachRoot .sc-set-phases{
+    display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;
+  }
+  #swingCoachRoot .sc-set-phase{
     font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:600;
     text-transform:uppercase; letter-spacing:0.04em;
     border:1px solid var(--sc-line); background:#fff; color: var(--sc-accent);
-    border-radius:4px; padding:4px 8px; cursor:pointer;
+    border-radius:4px; padding:6px 10px; cursor:pointer; flex:1 1 auto; min-width:0;
   }
-  #swingCoachRoot .sc-set-impact:hover{ background: var(--sc-accent-soft); }
+  #swingCoachRoot .sc-set-phase:hover{ background: var(--sc-accent-soft); }
+  #swingCoachRoot .sc-set-phase.is-set{
+    border-color: var(--turf); background: rgba(63,107,74,0.12);
+  }
   #swingCoachRoot .phaseBtn{
     flex:1; min-width:72px; border:1px solid var(--sc-line); border-radius:6px;
     background:#fff; color: var(--sc-muted); padding:8px 6px; font-size:11px; font-weight:700; cursor:pointer;
@@ -1531,7 +1537,11 @@
                 <div class="sc-scrub-meta">
                   <span id="scrubTime">0.00s</span>
                   <span id="scrubPhaseHint"></span>
-                  <button type="button" class="sc-set-impact" id="setImpactBtn" title="Mark the current frame as Impact">Set as Impact</button>
+                </div>
+                <div class="sc-set-phases">
+                  <button type="button" class="sc-set-phase" id="setAddressBtn" title="Mark the current frame as Address">Set Address</button>
+                  <button type="button" class="sc-set-phase" id="setTopBtn" title="Mark the current frame as Top">Set Top</button>
+                  <button type="button" class="sc-set-phase" id="setImpactBtn" title="Mark the current frame as Impact">Set Impact</button>
                 </div>
               </div>
               <label class="drop" id="coachDrop">
@@ -7474,6 +7484,7 @@ async function init(){
     if(scrubRow) scrubRow.style.display='none';
     octx.clearRect(0,0,overlay.width||1,overlay.height||1);
     resetMetricLabels();
+    try{ updatePhaseSetButtons(); }catch(e){}
   }
 
   fileInput.addEventListener('change',async()=>{
@@ -7570,6 +7581,7 @@ async function init(){
       let maxDx=0;samples.forEach(s=>{if(s.headX!=null)maxDx=Math.max(maxDx,Math.abs(s.headX-address.headX));});
       const sw=shoulderWidth(address.lms)||0.2;headSway=sw>0.02?(maxDx/sw):maxDx;
     }
+    const earlyArm = earlyArmDominanceProxy(samples, top, impact);
     const cues=[];
     if(tempoRatio<2.0)cues.push('<strong>Transition is rushed</strong> — the change from backswing to downswing is happening quickly. This can make the club feel like it has to catch up at the bottom.');
     else if(tempoRatio>4.5)cues.push('<strong>Transition is very patient</strong> — the change of direction is taking a long time. If contact feels weak or the club gets stuck, try a smoother continuous transition rather than forcing more speed.');
@@ -8245,53 +8257,130 @@ async function init(){
     scrubInput.addEventListener('change', onScrub);
   }
 
-  const setImpactBtn = document.getElementById('setImpactBtn');
-  if(setImpactBtn){
-    setImpactBtn.addEventListener('click', async ()=>{
-      if(!lastResult || busy) return;
-      const tMs = scrubInput ? (+scrubInput.value || 0) : 0;
-      // Must be after top — impact before top is invalid
-      if(lastResult.top && tMs <= lastResult.top.t + 40){
-        const st = document.getElementById('saveStatus');
+  function frameFromScrubTime(tMs){
+    let frame = nearestSample(tMs);
+    if(!frame){
+      return { t: tMs, lms: null, wristY: null, shoulder: null, hip: null, headX: null, spineTilt: null, ankleMid: null, hipMid: null, shoulderMid: null };
+    }
+    return Object.assign({}, frame, { t: tMs });
+  }
+
+  function updatePhaseSetButtons(){
+    const addrBtn = document.getElementById('setAddressBtn');
+    const topBtn = document.getElementById('setTopBtn');
+    const impactBtn = document.getElementById('setImpactBtn');
+    if(addrBtn) addrBtn.classList.toggle('is-set', !!(lastResult && lastResult.addressManual));
+    if(topBtn) topBtn.classList.toggle('is-set', !!(lastResult && lastResult.topManual));
+    if(impactBtn) impactBtn.classList.toggle('is-set', !!(lastResult && lastResult.impactManual));
+  }
+
+  function recomputeMetricsFromPhases(){
+    if(!lastResult) return false;
+    const samples = Array.isArray(lastResult.samples) ? lastResult.samples : [];
+    const address = lastResult.address;
+    const top = lastResult.top;
+    const impact = lastResult.impact;
+    if(!address || !top || !impact) return false;
+    try{
+      const impactConf = assessImpactConfidence(samples, top, impact, !!lastResult.impactManual);
+      // Manual address/top also raise confidence in tempo/turn math
+      if(lastResult.addressManual || lastResult.topManual){
+        if(impactConf.level === 'low'){ impactConf.level = 'medium'; impactConf.score = Math.max(impactConf.score || 0, 0.6); }
+        else if(impactConf.level === 'medium' && lastResult.impactManual){
+          impactConf.level = 'high'; impactConf.score = Math.max(impactConf.score || 0, 0.88);
+        }
+      }
+      const metrics = (lastResult.view === 'dtl')
+        ? buildDtlMetrics(samples, address, top, impact)
+        : buildFaceOnMetrics(samples, address, top, impact);
+      metrics.view = lastResult.view;
+      metrics.impactConfidence = impactConf;
+      lastResult.metrics = metrics;
+      applyResultUI(metrics, lastResult.conf || 0);
+      if(typeof renderBaseline === 'function') renderBaseline(metrics);
+      // Refresh diagnostics timestamps
+      try{
+        diagnostics.textContent = [
+          'View: '+(lastResult.view==='dtl'?'Down-the-line':'Face-on'),
+          'Frames with pose: '+(lastResult.sampleCount || samples.length),
+          'Address @ '+(address.t/1000).toFixed(2)+'s'+(lastResult.addressManual?' (manual)':'')+
+            ' · Top @ '+(top.t/1000).toFixed(2)+'s'+(lastResult.topManual?' (manual)':'')+
+            ' · Impact ~'+(impact.t/1000).toFixed(2)+'s'+(lastResult.impactManual?' (manual)':'')+' ('+impactConf.level+')',
+          'Backswing: '+Math.round(metrics.backMs)+' ms · Downswing: '+Math.round(metrics.downMs)+' ms',
+          'Tempo: '+metrics.display.tempo,
+          'Confidence: '+(lastResult.conf||'—')+'%',
+          'Focus: '+(metrics.focusId||'—')
+        ].join('\n');
+      }catch(e){}
+      return true;
+    }catch(e){
+      console.warn('Phase recompute failed', e);
+      return false;
+    }
+  }
+
+  async function setPhaseManual(phase){
+    if(!lastResult || busy) return;
+    const tMs = scrubInput ? (+scrubInput.value || 0) : 0;
+    const st = document.getElementById('saveStatus');
+    const address = lastResult.address;
+    const top = lastResult.top;
+    const impact = lastResult.impact;
+    const GAP = 40;
+
+    if(phase === 'address'){
+      if(top && tMs >= top.t - GAP){
+        if(st) st.textContent = 'Address must be before the top of the swing. Scrub earlier in the clip.';
+        return;
+      }
+      if(impact && tMs >= impact.t - GAP){
+        if(st) st.textContent = 'Address must be before impact. Scrub earlier in the clip.';
+        return;
+      }
+      lastResult.address = frameFromScrubTime(tMs);
+      lastResult.addressManual = true;
+    }else if(phase === 'top'){
+      if(address && tMs <= address.t + GAP){
+        if(st) st.textContent = 'Top must be after address. Scrub further into the backswing.';
+        return;
+      }
+      if(impact && tMs >= impact.t - GAP){
+        if(st) st.textContent = 'Top must be before impact. Scrub earlier than impact.';
+        return;
+      }
+      lastResult.top = frameFromScrubTime(tMs);
+      lastResult.topManual = true;
+    }else if(phase === 'impact'){
+      if(top && tMs <= top.t + GAP){
         if(st) st.textContent = 'Impact must be after the top of the swing. Scrub further into the downswing.';
         return;
       }
-      let frame = nearestSample(tMs);
-      if(!frame){
-        frame = { t: tMs, lms: null, wristY: null };
-      } else {
-        frame = Object.assign({}, frame, { t: tMs });
+      if(address && tMs <= address.t + GAP){
+        if(st) st.textContent = 'Impact must be after address. Scrub further into the swing.';
+        return;
       }
-      lastResult.impact = frame;
+      lastResult.impact = frameFromScrubTime(tMs);
       lastResult.impactManual = true;
+    }else{
+      return;
+    }
 
-      // Rebuild metrics + coaching tips with the corrected impact time
-      try{
-        const samples = Array.isArray(lastResult.samples) ? lastResult.samples : [];
-        const address = lastResult.address;
-        const top = lastResult.top;
-        if(address && top){
-          const impactConf = assessImpactConfidence(samples, top, frame, true);
-          const metrics = (lastResult.view === 'dtl')
-            ? buildDtlMetrics(samples, address, top, frame)
-            : buildFaceOnMetrics(samples, address, top, frame);
-          metrics.view = lastResult.view;
-          metrics.impactConfidence = impactConf;
-          lastResult.metrics = metrics;
-          applyResultUI(metrics, lastResult.conf || 0);
-          if(typeof renderBaseline === 'function') renderBaseline(metrics);
-        }
-      }catch(e){
-        console.warn('Set impact recompute failed', e);
-      }
-
-      document.querySelectorAll('#swingCoachRoot .phaseBtn').forEach(b=>b.classList.toggle('active', b.dataset.phase==='impact'));
-      await showAtTime(tMs, 'Impact');
-      if(scrubPhaseHint) scrubPhaseHint.textContent = 'Impact (set)';
-      const st = document.getElementById('saveStatus');
-      if(st) st.textContent = 'Impact set to ' + (tMs/1000).toFixed(2) + 's. Tempo, cues, and coaching tips updated.';
-    });
+    const ok = recomputeMetricsFromPhases();
+    updatePhaseSetButtons();
+    const label = phase.charAt(0).toUpperCase() + phase.slice(1);
+    document.querySelectorAll('#swingCoachRoot .phaseBtn').forEach(b=>b.classList.toggle('active', b.dataset.phase===phase));
+    await showAtTime(tMs, label);
+    if(scrubPhaseHint) scrubPhaseHint.textContent = label + ' (set)';
+    if(st){
+      st.textContent = ok
+        ? (label + ' set to ' + (tMs/1000).toFixed(2) + 's. Tempo, metrics, cues, and coaching tips updated.')
+        : (label + ' set to ' + (tMs/1000).toFixed(2) + 's. Could not fully recompute metrics — check that Address, Top, and Impact are all set in order.');
+    }
   }
+
+  document.getElementById('setAddressBtn')?.addEventListener('click', ()=> setPhaseManual('address'));
+  document.getElementById('setTopBtn')?.addEventListener('click', ()=> setPhaseManual('top'));
+  document.getElementById('setImpactBtn')?.addEventListener('click', ()=> setPhaseManual('impact'));
 
   analyzeBtn.addEventListener('click',async()=>{
     if(busy||!coachUrl)return;
@@ -8352,7 +8441,7 @@ async function init(){
       else if(impactConf.level==='low') conf=Math.max(22,conf-6);
       conf=Math.max(22,Math.min(92,Math.round(conf)));
       applyResultUI(metrics,conf);
-      lastResult={metrics,conf,view,address:addressFrame,top:topFrame,impact:impactFrame,samples,sampleCount:samples.length,impactManual:false};
+      lastResult={metrics,conf,view,address:addressFrame,top:topFrame,impact:impactFrame,samples,sampleCount:samples.length,addressManual:false,topManual:false,impactManual:false};
       // Scrubber: full clip, skeleton from nearest analyzed frame
       if(scrubRow && scrubInput){
         const durMs = Math.max(100, (video.duration || 3) * 1000);
@@ -8363,6 +8452,7 @@ async function init(){
         scrubRow.style.display = 'block';
         if(scrubTimeEl) scrubTimeEl.textContent = (topFrame.t/1000).toFixed(2) + 's';
         if(scrubPhaseHint) scrubPhaseHint.textContent = 'Top';
+        updatePhaseSetButtons();
       }
       writeCoachHistory({
         id:uid(),date:todayISO(),view,
